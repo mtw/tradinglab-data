@@ -1,0 +1,41 @@
+paths:
+  universe_csv: "/absolute/path/to/tradinglab-store/meta/universe_master.csv"
+  universe_dir: "/absolute/path/to/tradinglab-store/meta/universes"
+  ticker_overrides_csv: "/absolute/path/to/tradinglab-store/meta/ticker_overrides.csv"
+  update_log_csv: "/absolute/path/to/tradinglab-store/meta/update_log.csv"
+  parquet_root: "/absolute/path/to/tradinglab-store/parquet/daily"
+  runs_root: "/absolute/path/to/tradinglab-runs/tradinglab"
+  registry_root: "/absolute/path/to/tradinglab-runs/tradinglab/runs_registry"
+
+timeframe: "1d"
+lookback_days: 2000
+
+yf:
+  chunk_size: 100
+  sleep_seconds: 2.0
+  max_retries: 5
+  backoff_max_seconds: 120.0
+  threads: false
+
+update:
+  history_provider: "yfinance"
+  recent_provider: "yfinance"
+  recent_days: 5
+  incremental_days: 60
+  assert_postwrite_integrity: true
+  stooq_refresh_all: false
+
+extended_hours:
+  enabled: true
+  intraday_root: "/absolute/path/to/tradinglab-store/parquet/intraday"
+  preferred_interval: "5m"
+  fallback_interval: "1m"
+  retention_days: 10
+  prepost: true
+  chunk_size: 20
+  sleep_seconds: 1.0
+  max_retries: 5
+  backoff_max_seconds: 120.0
+  threads: false
+  pct_move_threshold: 2.0
+  min_volume: 0

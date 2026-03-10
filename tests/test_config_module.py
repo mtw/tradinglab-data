@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+
+from tradinglab_data.config import Config, intraday_root_path, registry_root_path, ticker_overrides_path, universe_dir_path, update_log_path
+
+
+def test_config_load_missing_has_clear_message():
+    with pytest.raises(FileNotFoundError, match="Create a config from"):
+        Config.load("does-not-exist.yaml")
+
+
+def test_config_load_reads_yaml(tmp_path: Path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("paths:\n  parquet_root: data/parquet/daily\n", encoding="utf-8")
+    loaded = Config.load(cfg)
+    assert loaded.get("paths", "parquet_root") == "data/parquet/daily"
+
+
+def test_config_load_expands_home_env_and_nested_values(tmp_path: Path, monkeypatch):
+    home_dir = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("TLAB_ROOT", str(tmp_path / "root"))
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "\n".join(
+            [
+                "paths:",
+                "  parquet_root: $HOME/data/parquet",
+                "  universe_csv: ~/data/universe.csv",
+                "nested:",
+                "  report_dir: $TLAB_ROOT/reports",
+                "  outputs:",
+                "    - ~/runs/latest",
+                "    - $TLAB_ROOT/archive",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = Config.load(cfg)
+
+    assert loaded.get("paths", "parquet_root") == os.path.join(str(home_dir), "data/parquet")
+    assert loaded.get("paths", "universe_csv") == os.path.join(str(home_dir), "data/universe.csv")
+    assert loaded.get("nested", "report_dir") == os.path.join(str(tmp_path / "root"), "reports")
+    assert loaded.get("nested", "outputs") == [
+        os.path.join(str(home_dir), "runs/latest"),
+        os.path.join(str(tmp_path / "root"), "archive"),
+    ]
+
+
+def test_config_path_returns_path_for_expanded_value(tmp_path: Path, monkeypatch):
+    home_dir = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home_dir))
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("paths:\n  universe_csv: ~/data/universe.csv\n", encoding="utf-8")
+
+    loaded = Config.load(cfg)
+
+    assert loaded.path("paths", "universe_csv") == home_dir / "data" / "universe.csv"
+    assert loaded.path("paths", "missing") is None
+    assert loaded.path("paths", "missing", default="~/fallback.csv") == home_dir / "fallback.csv"
+
+
+def test_config_load_expands_strings_inside_list_of_dicts_without_touching_scalars(tmp_path: Path, monkeypatch):
+    home_dir = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path / "cache"))
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "\n".join(
+            [
+                "jobs:",
+                "  - name: daily",
+                "    out: ~/runs/daily",
+                "    enabled: true",
+                "    retries: 3",
+                "  - name: cache",
+                "    out: $CACHE_ROOT/files",
+                "    enabled: false",
+                "    retries: 0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = Config.load(cfg)
+    jobs = loaded.get("jobs")
+
+    assert jobs == [
+        {
+            "name": "daily",
+            "out": str(home_dir / "runs" / "daily"),
+            "enabled": True,
+            "retries": 3,
+        },
+        {
+            "name": "cache",
+            "out": str(tmp_path / "cache" / "files"),
+            "enabled": False,
+            "retries": 0,
+        },
+    ]
+
+
+def test_config_derived_paths(tmp_path: Path):
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(
+        "\n".join([
+            "paths:",
+            f"  universe_csv: {tmp_path / 'meta' / 'universe_master.csv'}",
+            f"  parquet_root: {tmp_path / 'parquet' / 'daily'}",
+            f"  runs_root: {tmp_path / 'runs'}",
+        ]),
+        encoding="utf-8",
+    )
+    cfg = Config.load(cfg_file)
+    assert universe_dir_path(cfg) == tmp_path / "meta" / "universes"
+    assert update_log_path(cfg) == tmp_path / "meta" / "update_log.csv"
+    assert ticker_overrides_path(cfg) == tmp_path / "meta" / "ticker_overrides.csv"
+    assert intraday_root_path(cfg) == tmp_path / "parquet" / "intraday"
+    assert registry_root_path(cfg) == tmp_path / "runs" / "runs_registry"
