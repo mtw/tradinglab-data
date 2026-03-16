@@ -524,7 +524,7 @@ def render_extended_hours_report_html(
         </table>
       </article>
     </section>
-    <div class="footer">Artifact source: <code>runs/YYYY-MM-DD/monitor/extended_hours_alerts.csv</code> and intraday parquet cache.</div>
+    <div class="footer">Artifact source: <code>&lt;paths.runs_root&gt;/YYYY-MM-DD/monitor/extended_hours_alerts.csv</code> and intraday parquet cache.</div>
   </div>
   <script>
     const alerts = {json.dumps(alerts, default=str)};

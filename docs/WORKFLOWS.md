@@ -25,7 +25,7 @@ Outputs:
 - daily parquet under `paths.parquet_root`
 - intraday parquet under `extended_hours.intraday_root`
 - update log under `<paths.update_log_csv>`
-- extended-hours alerts/report under `runs/YYYY-MM-DD/monitor/`
+- extended-hours alerts/report under `<paths.runs_root>/YYYY-MM-DD/monitor/`
 
 ## Extended-Hours Monitoring Workflow
 
@@ -47,8 +47,8 @@ High-level behavior:
 
 Outputs:
 
-- `runs/YYYY-MM-DD/monitor/extended_hours_alerts.csv`
-- `runs/YYYY-MM-DD/monitor/extended_hours_report.html`
+- `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_alerts.csv`
+- `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_report.html`
 
 ## Universe Build Workflow
 

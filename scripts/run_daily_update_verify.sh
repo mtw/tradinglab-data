@@ -39,7 +39,7 @@ INTRADAY_CLEAN_CACHE="${TLD_INTRADAY_CLEAN_CACHE:-1}"
 INTRADAY_LARGE_GAPS_CRITICAL="${TLD_INTRADAY_LARGE_GAPS_CRITICAL:-0}"
 PROVIDER_BASELINE="${TLD_PROVIDER_BASELINE:-mixed}"
 VERBOSE="${TL_VERBOSE:-1}"
-DATE_KEY="$(date +%F)"
+DATE_KEY="${TL_GATE_DATE:-$(date +%F)}"
 TS_KEY="$(date +%Y%m%dT%H%M%S)"
 CURRENT_STAGE="startup"
 FINALIZED=0
@@ -132,6 +132,8 @@ RUNS_ROOT="${TLD_RUNS_ROOT:-$(cfg_path runs_root)}"
 REGISTRY_ROOT="${TLD_REGISTRY_ROOT:-$(cfg_path registry_root)}"
 LOG_DIR="${TLD_LOG_DIR:-${REGISTRY_ROOT}/logs}"
 GATE_DIR="${TLD_GATE_DIR:-${REGISTRY_ROOT}/update_gate}"
+LOCK_DIR="${REGISTRY_ROOT}/locks"
+LOCK_PATH="${LOCK_DIR}/daily_update_verify.lockdir"
 SUMMARY_DIR="${GATE_DIR}/summaries"
 LOG_PATH="${LOG_DIR}/update_verify_${TS_KEY}.log"
 OK_FILE="${GATE_DIR}/${DATE_KEY}.ok"
@@ -139,8 +141,15 @@ FAIL_FILE="${GATE_DIR}/${DATE_KEY}.fail"
 RUNNING_FILE="${GATE_DIR}/${DATE_KEY}.running"
 SUMMARY_PATH="${SUMMARY_DIR}/${TS_KEY}.json"
 
-mkdir -p "$LOG_DIR" "$GATE_DIR" "$SUMMARY_DIR"
+mkdir -p "$LOG_DIR" "$GATE_DIR" "$SUMMARY_DIR" "$LOCK_DIR"
 exec >> "$LOG_PATH" 2>&1
+
+if ! mkdir "$LOCK_PATH" 2>/dev/null; then
+  log ERROR "another update/verify run already holds lock: $LOCK_PATH"
+  exit 4
+fi
+trap 'rmdir "$LOCK_PATH" 2>/dev/null || true' EXIT
+log INFO "lock acquired: $LOCK_PATH"
 
 rm -f "$OK_FILE" "$FAIL_FILE" "$RUNNING_FILE"
 {

@@ -122,7 +122,7 @@ def intraday_root_path(cfg: Config) -> Path:
 
 
 def runs_root_path(cfg: Config) -> Path:
-    return cfg.path("paths", "runs_root") or Path("runs")
+    return _require_path(cfg, "paths", "runs_root")
 
 
 def registry_root_path(cfg: Config) -> Path:

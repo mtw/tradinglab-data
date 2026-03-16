@@ -86,9 +86,9 @@ pip install -e .
 - intraday parquet
   - `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
 - extended-hours alerts
-  - `runs/YYYY-MM-DD/monitor/extended_hours_alerts.csv`
+  - `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_alerts.csv`
 - extended-hours HTML report
-  - `runs/YYYY-MM-DD/monitor/extended_hours_report.html`
+  - `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_report.html`
 
 ## Package Modules
 
