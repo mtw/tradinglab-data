@@ -12,7 +12,7 @@ Current package version in [`pyproject.toml`](../pyproject.toml): `0.1.0`
 
 API contract version:
 
-- `v0.1.0`
+- `v0.2.0`
 
 This version identifies the documented consumer-facing compatibility surface of the package.
 
@@ -34,6 +34,7 @@ Contract history:
 | Contract Version | Package Version | Notes |
 |---|---|---|
 | `v0.1.0` | `0.1.0` | Initial formalized package contract baseline |
+| `v0.2.0` | `0.1.0` | Adds parquet store integrity reporting command, artifact contract, and typed report shapes |
 
 ## Stability Boundary
 
@@ -76,6 +77,7 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 - `extended_hours_monitor`
 - `parquet_verify`
 - `schema`
+- `store_report`
 - `ticker_map`
 - `universe`
 - `universe_build`
@@ -90,6 +92,7 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `schema_manifest`
 - `render_schema_json`
 - `render_schema_markdown`
+- `generate_parquet_store_report`
 - `validate_daily_frame`
 - `validate_intraday_frame`
 - `validate_moves_frame`
@@ -102,6 +105,10 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `MonitorExtendedHoursResult`
 - `VerifyResult`
 - `API_CONTRACT_VERSION`
+- `StoreIntegrityReport`
+- `StoreIntegritySection`
+- `StoreIntegrityFileIssue`
+- `StoreHistoryEntry`
 
 ## CLI Contract
 
@@ -115,8 +122,8 @@ Global option:
     - source-tree `configs/config.yaml` when running from a checkout and it exists
     - `./config.yaml`
     - `./configs/config.yaml`
-  - is not required for `schema`
-  - is required in practice for `update`, `monitor-extended-hours`, and `build-universe` because those code paths load `Config`
+- is not required for `schema`
+- is required in practice for `update`, `monitor-extended-hours`, `build-universe`, and `report-parquet-store` because those code paths load `Config`
 
 Subcommands:
 
@@ -190,6 +197,23 @@ Contract:
 - reads reference closes from the daily parquet store
 - writes alert CSV and HTML report under `<paths.runs_root>/YYYY-MM-DD/monitor/`
 - accepts the same optional symbol filtering behavior as `update`
+
+### `report-parquet-store`
+
+Usage:
+
+```bash
+tradinglab-data report-parquet-store [--out-dir PATH] [--format both|json|markdown]
+```
+
+Contract:
+
+- scans the full daily parquet store
+- scans intraday parquet stores by interval directory when present
+- writes integrity reports under `<paths.runs_root>/YYYY-MM-DD/integrity/` unless `--out-dir` is given
+- report filenames are `parquet_store_report.json` and `parquet_store_report.md`
+- JSON report shape follows `StoreIntegrityReport`
+- markdown report includes section summaries, retained-history detail, dirty files, and daily parquet sanity status
 
 ## Config Contract
 
@@ -463,6 +487,30 @@ Current top-level keys returned by `run_parquet_sanity_checks(...)`:
 - `prev_file_count`
 - `config`
 
+### Parquet Store Integrity Reports
+
+Primary paths:
+
+- `<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.json`
+- `<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.md`
+
+Producer:
+
+- `generate_parquet_store_report(...)`
+- `tradinglab-data report-parquet-store`
+
+JSON report top-level keys:
+
+- `generated_at`
+- `config_path`
+- `daily_root`
+- `intraday_root`
+- `sections`
+- `dirty_files`
+- `parquet_sanity`
+- `json_path`
+- `markdown_path`
+
 ## Python API Contract
 
 This section records public names currently exposed by submodules. All names below are public in the Python sense because they do not start with `_`.
@@ -541,6 +589,11 @@ This section records public names currently exposed by submodules. All names bel
 - `run_parquet_sanity_checks(cfg) -> VerifyResult`
 - `write_verification_summary(path, summary) -> None`
 
+### `tradinglab_data.store_report`
+
+- `render_store_integrity_report_markdown(report) -> str`
+- `generate_parquet_store_report(cfg, out_dir=None, write_json=True, write_markdown=True) -> StoreIntegrityReport`
+
 ### `tradinglab_data.contracts`
 
 - `API_CONTRACT_VERSION`
@@ -548,6 +601,10 @@ This section records public names currently exposed by submodules. All names bel
 - `DailyCloseInfo`
 - `ExtendedHoursResult`
 - `MonitorExtendedHoursResult`
+- `StoreHistoryEntry`
+- `StoreIntegritySection`
+- `StoreIntegrityFileIssue`
+- `StoreIntegrityReport`
 - `UpdateResult`
 - `VerifyResult`
 - `SessionLabel`

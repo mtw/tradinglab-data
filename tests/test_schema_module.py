@@ -50,4 +50,4 @@ def test_validate_moves_frame_rejects_missing_columns():
 
 def test_schema_manifest_contains_api_contract_version():
     manifest = schema_manifest()
-    assert manifest["api_contract_version"] == "v0.1.0"
+    assert manifest["api_contract_version"] == "v0.2.0"

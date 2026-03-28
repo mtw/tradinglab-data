@@ -82,20 +82,34 @@ Use this when:
 
 ## Verification Workflow
 
-The main verification entrypoint still lives in the maintenance script:
+Primary command:
+
+```bash
+tradinglab-data report-parquet-store --config /path/to/config.yaml
+```
+
+High-level behavior:
+
+1. scan every daily parquet file under `paths.parquet_root`
+2. scan every intraday parquet file under `extended_hours.intraday_root`, separated by interval directory
+3. validate canonical schema presence and readability
+4. check ordering, duplicate timestamps, OHLC quality, and currency storage quality
+5. summarize retained history ranges, row counts, and currencies seen
+6. write JSON and markdown integrity reports
+7. include a dirty-files section and the current daily parquet sanity summary
+
+Outputs:
+
+- `<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.json`
+- `<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.md`
+
+Legacy maintenance wrapper:
 
 ```bash
 scripts/check_parquet_status.py
 ```
 
-It consumes `tradinglab_data` primitives for:
-
-- parquet sanity checks
-- provider verification
-- intraday cleaning
-- mismatch repair
-
-Until this script is moved into the standalone package, treat it as a TradingLab-side operational wrapper around package functionality.
+It still exists for provider verification, intraday cleaning, and mismatch repair, but the package-level integrity audit above is now the regular store-health entrypoint.
 
 ## Failure Semantics
 

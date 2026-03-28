@@ -50,6 +50,7 @@ tradinglab-data schema --format markdown
 tradinglab-data build-universe --indices sp500 djia dax mdax atx --out <paths.universe_csv>
 tradinglab-data update --config configs/config.yaml
 tradinglab-data monitor-extended-hours --config configs/config.yaml --session pre --top-n 25
+tradinglab-data report-parquet-store --config configs/config.yaml
 ```
 
 Monorepo usage together with TradingLab:
@@ -77,6 +78,11 @@ pip install -e .
 - `tradinglab-data schema`
   - print the canonical parquet schema in markdown or JSON form
 
+- `tradinglab-data report-parquet-store`
+  - audit every daily and intraday parquet file
+  - write JSON and markdown integrity reports
+  - highlight dirty files, schema issues, history ranges, and currency coverage
+
 ## Primary Outputs
 
 - universe CSV
@@ -89,6 +95,8 @@ pip install -e .
   - `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_alerts.csv`
 - extended-hours HTML report
   - `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_report.html`
+- parquet store integrity report
+  - `<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.{md,json}`
 
 ## Package Modules
 
@@ -103,6 +111,7 @@ pip install -e .
 | `parquet_verify.py` | Parquet sanity checks and summary helpers |
 | `schema.py` | Canonical parquet schema definitions and rendering helpers |
 | `contracts.py` | Typed result contracts and dataframe column-set constants |
+| `store_report.py` | Store-wide parquet integrity auditing and report rendering |
 | `workflows.py` | Config-driven update and extended-hours operational workflows |
 | `cli.py` | Standalone package CLI |
 
@@ -120,7 +129,14 @@ Exact schema and constraints:
 
 Current formal API contract version:
 
+- `v0.2.0`
+
+Contract history:
+
 - `v0.1.0`
+  - initial formalized contract baseline
+- `v0.2.0`
+  - adds parquet store integrity report workflow and typed report contract
 
 Operational boundary and ownership rules:
 

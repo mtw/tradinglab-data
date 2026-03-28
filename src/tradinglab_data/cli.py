@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .config import Config, default_config_path, ticker_overrides_path, universe_dir_path
 from .schema import render_schema_json, render_schema_markdown
+from .store_report import generate_parquet_store_report
 from .universe_build import build_universe
 from .workflows import monitor_extended_hours_from_config, update_from_config
 
@@ -31,6 +32,10 @@ def main(argv: list[str] | None = None) -> int:
     p_schema = sub.add_parser("schema", help="Print parquet schema specification")
     p_schema.add_argument("--format", default="markdown", choices=["markdown", "json"])
     p_schema.add_argument("--out", default="", help="Optional output path")
+
+    p_report = sub.add_parser("report-parquet-store", help="Audit the parquet store and write an integrity report")
+    p_report.add_argument("--out-dir", default="", help="Optional report output directory")
+    p_report.add_argument("--format", default="both", choices=["both", "json", "markdown"])
 
     args = ap.parse_args(argv)
 
@@ -59,5 +64,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "monitor-extended-hours":
         monitor_extended_hours_from_config(cfg, symbols_override=args.symbols, top_n=int(args.top_n), session_filter=str(args.session))
+        return 0
+    if args.cmd == "report-parquet-store":
+        write_json = args.format in {"both", "json"}
+        write_markdown = args.format in {"both", "markdown"}
+        report = generate_parquet_store_report(
+            cfg,
+            out_dir=args.out_dir or None,
+            write_json=write_json,
+            write_markdown=write_markdown,
+        )
+        print(f"[PARQUET_STORE_REPORT] json={report['json_path']} markdown={report['markdown_path']}")
         return 0
     raise SystemExit(f"Unknown command: {args.cmd}")
