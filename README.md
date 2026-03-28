@@ -115,6 +115,7 @@ The package writes symbol-partitioned parquet stores with stable columns and fil
 Exact schema and constraints:
 
 - [`docs/PARQUET_SCHEMA.md`](docs/PARQUET_SCHEMA.md)
+- [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
 
 Operational boundary and ownership rules:
 

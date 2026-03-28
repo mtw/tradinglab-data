@@ -84,6 +84,7 @@ The core contract is intentionally simple:
 - parquet files are the only required runtime data interface for TradingLab research/predict/screen/plot
 
 Detailed schema and constraints live in `docs/PARQUET_SCHEMA.md`.
+The broader package/API compatibility snapshot lives in `docs/API_CONTRACT.md`.
 
 ## Operational Model
 
