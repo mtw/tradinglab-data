@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,23 @@ from .universe import canonicalize_symbol, load_ticker_overrides, load_universe_
 STRICT_SINGLE_SYMBOL_SUFFIXES = (".VI",)
 
 
+@dataclass(frozen=True)
+class _IntradayConfig:
+    enabled: bool
+    root: str
+    preferred_interval: str
+    fallback_interval: str
+    retention_days: int
+    prepost: bool
+    chunk_size: int
+    sleep_seconds: float
+    max_retries: int
+    backoff_max_seconds: float
+    threads: bool
+    pct_move_threshold: float
+    min_volume: float
+
+
 def _run_dir(runs_root: str | Path) -> Path:
     d = datetime.now().strftime("%Y-%m-%d")
     p = Path(runs_root) / d
@@ -39,6 +57,24 @@ def _run_dir(runs_root: str | Path) -> Path:
 def _is_strict_single_symbol(sym: str) -> bool:
     up = sym.upper()
     return any(up.endswith(sfx) for sfx in STRICT_SINGLE_SYMBOL_SUFFIXES)
+
+
+def _read_intraday_config(cfg: Any) -> _IntradayConfig:
+    return _IntradayConfig(
+        enabled=bool(cfg.get("extended_hours", "enabled", default=True)),
+        root=str(intraday_root_path(cfg)),
+        preferred_interval=str(cfg.get("extended_hours", "preferred_interval", default="5m")).strip() or "5m",
+        fallback_interval=str(cfg.get("extended_hours", "fallback_interval", default="1m")).strip() or "1m",
+        retention_days=int(cfg.get("extended_hours", "retention_days", default=10)),
+        prepost=bool(cfg.get("extended_hours", "prepost", default=True)),
+        chunk_size=int(cfg.get("extended_hours", "chunk_size", default=20)),
+        sleep_seconds=float(cfg.get("extended_hours", "sleep_seconds", default=1.0)),
+        max_retries=int(cfg.get("extended_hours", "max_retries", default=5)),
+        backoff_max_seconds=float(cfg.get("extended_hours", "backoff_max_seconds", default=120.0)),
+        threads=bool(cfg.get("extended_hours", "threads", default=False)),
+        pct_move_threshold=float(cfg.get("extended_hours", "pct_move_threshold", default=2.0)),
+        min_volume=float(cfg.get("extended_hours", "min_volume", default=0.0)),
+    )
 
 
 def _load_active_symbols_from_cfg(cfg: Any, symbols_override: list[str] | None = None) -> list[str]:
@@ -107,6 +143,7 @@ def _write_extended_hours_artifacts(
     threshold: float,
     min_volume: float,
     top_n: int = 25,
+    session_filter: str = "all",
 ) -> str:
     report_html_path = _run_dir(runs_root) / "monitor" / "extended_hours_report.html"
     report_path = persist_extended_hours_report_html(
@@ -115,12 +152,14 @@ def _write_extended_hours_artifacts(
         path=report_html_path,
         threshold=threshold,
         top_n=max(10, int(top_n)),
+        session_filter=session_filter,
     )
     top_moves = summarize_gap_report(
         moves_df=intraday_res.get("moves_df"),
         threshold=threshold,
         min_volume=min_volume,
         top_n=max(1, int(top_n)),
+        session_filter=session_filter,
     )
     print(
         "[EXTENDED_HOURS] "
@@ -207,70 +246,36 @@ def monitor_extended_hours_from_config(
     daily_root = parquet_root_path(cfg)
     runs_root = runs_root_path(cfg)
     log_path = update_log_path(cfg)
-
-    intraday_root = str(intraday_root_path(cfg))
-    intraday_preferred_interval = str(cfg.get("extended_hours", "preferred_interval", default="5m")).strip() or "5m"
-    intraday_fallback_interval = str(cfg.get("extended_hours", "fallback_interval", default="1m")).strip() or "1m"
-    intraday_retention_days = int(cfg.get("extended_hours", "retention_days", default=10))
-    intraday_prepost = bool(cfg.get("extended_hours", "prepost", default=True))
-    intraday_chunk_size = int(cfg.get("extended_hours", "chunk_size", default=20))
-    intraday_sleep_seconds = float(cfg.get("extended_hours", "sleep_seconds", default=1.0))
-    intraday_max_retries = int(cfg.get("extended_hours", "max_retries", default=5))
-    intraday_backoff_max_seconds = float(cfg.get("extended_hours", "backoff_max_seconds", default=120.0))
-    intraday_threads = bool(cfg.get("extended_hours", "threads", default=False))
-    intraday_pct_move_threshold = float(cfg.get("extended_hours", "pct_move_threshold", default=2.0))
-    intraday_min_volume = float(cfg.get("extended_hours", "min_volume", default=0.0))
+    intraday_cfg = _read_intraday_config(cfg)
 
     alert_dir = _run_dir(runs_root) / "monitor"
     alert_path = alert_dir / "extended_hours_alerts.csv"
-    report_html_path = alert_dir / "extended_hours_report.html"
     res = update_extended_hours_store(
         symbols=symbols,
-        intraday_root=intraday_root,
+        intraday_root=intraday_cfg.root,
         daily_root=daily_root,
-        preferred_interval=intraday_preferred_interval,
-        fallback_interval=intraday_fallback_interval,
-        retention_days=intraday_retention_days,
-        prepost=intraday_prepost,
-        pct_move_threshold=intraday_pct_move_threshold,
-        min_volume=intraday_min_volume,
+        preferred_interval=intraday_cfg.preferred_interval,
+        fallback_interval=intraday_cfg.fallback_interval,
+        retention_days=intraday_cfg.retention_days,
+        prepost=intraday_cfg.prepost,
+        pct_move_threshold=intraday_cfg.pct_move_threshold,
+        min_volume=intraday_cfg.min_volume,
         alerts_path=alert_path,
-        chunk_size=intraday_chunk_size,
-        sleep_seconds=intraday_sleep_seconds,
-        max_retries=intraday_max_retries,
-        backoff_max_seconds=intraday_backoff_max_seconds,
-        threads=intraday_threads,
+        chunk_size=intraday_cfg.chunk_size,
+        sleep_seconds=intraday_cfg.sleep_seconds,
+        max_retries=intraday_cfg.max_retries,
+        backoff_max_seconds=intraday_cfg.backoff_max_seconds,
+        threads=intraday_cfg.threads,
         log_path=log_path,
     )
-    moves_df = res.get("moves_df")
-    alerts_df = res.get("alerts_df")
-    report_path = persist_extended_hours_report_html(
-        moves_df=moves_df,
-        alerts_df=alerts_df,
-        path=report_html_path,
-        threshold=intraday_pct_move_threshold,
-        top_n=max(10, int(top_n)),
+    report_path = _write_extended_hours_artifacts(
+        res,
+        runs_root=runs_root,
+        threshold=intraday_cfg.pct_move_threshold,
+        min_volume=intraday_cfg.min_volume,
+        top_n=top_n,
         session_filter=session_filter,
     )
-    top_moves = summarize_gap_report(
-        moves_df=moves_df,
-        threshold=intraday_pct_move_threshold,
-        min_volume=intraday_min_volume,
-        top_n=max(1, int(top_n)),
-        session_filter=session_filter,
-    )
-    print(
-        "[EXTENDED_HOURS] "
-        f"preferred_written={res.get('preferred_written', 0)} "
-        f"fallback_written={res.get('fallback_written', 0)} "
-        f"alerts={res.get('alerts', 0)} "
-        f"path={res.get('alerts_path', '')} "
-        f"html={report_path}"
-    )
-    if top_moves is not None and not top_moves.is_empty():
-        display_cols = [c for c in ["symbol", "pct_move", "ref_close", "last_price", "last_volume", "session", "last_ts"] if c in top_moves.columns]
-        print("\nExtended-Hours Top Movers")
-        print(top_moves.select(display_cols))
     res["report_html"] = str(report_path)
     return res
 
@@ -294,22 +299,14 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
     postwrite_integrity_enabled = bool(cfg.get("update", "assert_postwrite_integrity", default=True))
     stooq_refresh_all = bool(cfg.get("update", "stooq_refresh_all", default=False))
     runs_root = runs_root_path(cfg)
-    intraday_enabled = bool(cfg.get("extended_hours", "enabled", default=True))
-    intraday_root = str(intraday_root_path(cfg))
-    intraday_preferred_interval = str(cfg.get("extended_hours", "preferred_interval", default="5m")).strip() or "5m"
-    intraday_fallback_interval = str(cfg.get("extended_hours", "fallback_interval", default="1m")).strip() or "1m"
-    intraday_retention_days = int(cfg.get("extended_hours", "retention_days", default=10))
-    intraday_prepost = bool(cfg.get("extended_hours", "prepost", default=True))
-    intraday_chunk_size = int(cfg.get("extended_hours", "chunk_size", default=20))
-    intraday_sleep_seconds = float(cfg.get("extended_hours", "sleep_seconds", default=1.0))
-    intraday_max_retries = int(cfg.get("extended_hours", "max_retries", default=5))
-    intraday_backoff_max_seconds = float(cfg.get("extended_hours", "backoff_max_seconds", default=120.0))
-    intraday_threads = bool(cfg.get("extended_hours", "threads", default=False))
-    intraday_pct_move_threshold = float(cfg.get("extended_hours", "pct_move_threshold", default=2.0))
-    intraday_min_volume = float(cfg.get("extended_hours", "min_volume", default=0.0))
+    intraday_cfg = _read_intraday_config(cfg)
 
     symbols = _load_active_symbols_from_cfg(cfg, symbols_override=symbols_override)
-    _migrate_symbol_alias_parquet(symbols, parquet_root=parquet_root, intraday_root=intraday_root if intraday_enabled else None)
+    _migrate_symbol_alias_parquet(
+        symbols,
+        parquet_root=parquet_root,
+        intraday_root=intraday_cfg.root if intraday_cfg.enabled else None,
+    )
     print(f"Updating {len(symbols)} symbols into {parquet_root} ...")
 
     root = Path(parquet_root)
@@ -394,22 +391,22 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
                 except Exception as e:
                     append_update_log(log_path, sym, f"stooq_yf_recent_error:{e}", 1)
         intraday_res = _run_intraday_update(
-            enabled=intraday_enabled,
+            enabled=intraday_cfg.enabled,
             symbols=symbols,
             runs_root=runs_root,
-            intraday_root=intraday_root,
+            intraday_root=intraday_cfg.root,
             parquet_root=parquet_root,
-            preferred_interval=intraday_preferred_interval,
-            fallback_interval=intraday_fallback_interval,
-            retention_days=intraday_retention_days,
-            prepost=intraday_prepost,
-            pct_move_threshold=intraday_pct_move_threshold,
-            min_volume=intraday_min_volume,
-            chunk_size=intraday_chunk_size,
-            sleep_seconds=intraday_sleep_seconds,
-            max_retries=intraday_max_retries,
-            backoff_max_seconds=intraday_backoff_max_seconds,
-            threads=intraday_threads,
+            preferred_interval=intraday_cfg.preferred_interval,
+            fallback_interval=intraday_cfg.fallback_interval,
+            retention_days=intraday_cfg.retention_days,
+            prepost=intraday_cfg.prepost,
+            pct_move_threshold=intraday_cfg.pct_move_threshold,
+            min_volume=intraday_cfg.min_volume,
+            chunk_size=intraday_cfg.chunk_size,
+            sleep_seconds=intraday_cfg.sleep_seconds,
+            max_retries=intraday_cfg.max_retries,
+            backoff_max_seconds=intraday_cfg.backoff_max_seconds,
+            threads=intraday_cfg.threads,
             log_path=log_path,
         )
         print("Done.")
@@ -522,22 +519,22 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
                 append_update_log(log_path, sym, str(e), 1)
 
     intraday_res = _run_intraday_update(
-        enabled=intraday_enabled,
+        enabled=intraday_cfg.enabled,
         symbols=symbols,
         runs_root=runs_root,
-        intraday_root=intraday_root,
+        intraday_root=intraday_cfg.root,
         parquet_root=parquet_root,
-        preferred_interval=intraday_preferred_interval,
-        fallback_interval=intraday_fallback_interval,
-        retention_days=intraday_retention_days,
-        prepost=intraday_prepost,
-        pct_move_threshold=intraday_pct_move_threshold,
-        min_volume=intraday_min_volume,
-        chunk_size=intraday_chunk_size,
-        sleep_seconds=intraday_sleep_seconds,
-        max_retries=intraday_max_retries,
-        backoff_max_seconds=intraday_backoff_max_seconds,
-        threads=intraday_threads,
+        preferred_interval=intraday_cfg.preferred_interval,
+        fallback_interval=intraday_cfg.fallback_interval,
+        retention_days=intraday_cfg.retention_days,
+        prepost=intraday_cfg.prepost,
+        pct_move_threshold=intraday_cfg.pct_move_threshold,
+        min_volume=intraday_cfg.min_volume,
+        chunk_size=intraday_cfg.chunk_size,
+        sleep_seconds=intraday_cfg.sleep_seconds,
+        max_retries=intraday_cfg.max_retries,
+        backoff_max_seconds=intraday_cfg.backoff_max_seconds,
+        threads=intraday_cfg.threads,
         log_path=log_path,
     )
     print("Done.")

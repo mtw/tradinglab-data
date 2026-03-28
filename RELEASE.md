@@ -30,6 +30,7 @@ TradingLab should import `tradinglab_data` from the installed package, not from 
 Package CI:
 
 - `.github/workflows/ci.yml`
+- tests Python 3.10, 3.11, 3.12, and 3.13
 
 ## Build Commands
 

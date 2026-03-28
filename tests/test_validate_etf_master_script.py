@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from _load import load_script_module
+from tests._load import load_script_module
 
 mod = load_script_module('validate_etf_master')
 

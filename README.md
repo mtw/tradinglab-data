@@ -182,7 +182,7 @@ GitHub CI:
 
 - [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - runs on push and pull request
-- tests Python `3.11` and `3.12`
+- tests Python `3.10`, `3.11`, `3.12`, and `3.13`
 - executes the same core checks used for local release discipline:
   - `PYTHONPATH=src pytest -q tests`
   - `PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown`

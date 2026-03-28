@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from _load import load_script_module
+from tests._load import load_script_module
 
 
 mod = load_script_module("check_parquet_status")
