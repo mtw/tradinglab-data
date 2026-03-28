@@ -63,7 +63,7 @@ def _file_symbol(path: Path) -> str:
 def _currency_stats(df: pl.DataFrame) -> tuple[list[str], int, int]:
     if "currency" not in df.columns:
         return [], int(df.height), 0
-    currency_expr = pl.col("currency").cast(pl.Utf8, strict=False).str.strip_chars()
+    currency_expr = pl.col("currency").cast(pl.String, strict=False).str.strip_chars()
     currencies = (
         df.select(currency_expr.alias("currency"))
         .filter(pl.col("currency").is_not_null() & (pl.col("currency") != ""))

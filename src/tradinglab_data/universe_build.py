@@ -164,7 +164,7 @@ def _tradingview_components_rows(url: str, source: str) -> list[dict]:
     out = out.rename({sym_col: "symbol_raw"})
     out = out.with_columns(
         pl.col("symbol_raw")
-        .cast(pl.Utf8)
+        .cast(pl.String)
         .str.replace_all(r"\\s+", " ")
         .str.strip_chars()
         .alias("symbol_raw")

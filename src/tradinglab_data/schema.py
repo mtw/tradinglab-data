@@ -16,21 +16,21 @@ OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = {
     "close": pl.Float64,
     "adj_close": pl.Float64,
     "volume": pl.Float64,
-    "currency": pl.Utf8,
+    "currency": pl.String,
 }
 
 
 DAILY_PARQUET_SCHEMA: dict[str, pl.DataType] = dict(OHLC_PARQUET_SCHEMA)
 INTRADAY_PARQUET_SCHEMA: dict[str, pl.DataType] = dict(OHLC_PARQUET_SCHEMA)
 MOVE_ALERT_FRAME_SCHEMA: dict[str, pl.DataType] = {
-    "symbol": pl.Utf8,
+    "symbol": pl.String,
     "ref_close": pl.Float64,
     "last_price": pl.Float64,
     "pct_move": pl.Float64,
     "last_volume": pl.Float64,
-    "currency": pl.Utf8,
+    "currency": pl.String,
     "last_ts": pl.Datetime,
-    "session": pl.Utf8,
+    "session": pl.String,
 }
 
 

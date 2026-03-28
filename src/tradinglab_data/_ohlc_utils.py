@@ -27,7 +27,7 @@ def currency_from_df(df: PriceFrame) -> str | None:
         return None
     try:
         values = (
-            df.select(pl.col("currency").cast(pl.Utf8, strict=False))
+            df.select(pl.col("currency").cast(pl.String, strict=False))
             .drop_nulls()
             .get_column("currency")
             .to_list()
@@ -73,11 +73,11 @@ def ensure_currency(
     if "currency" in df.columns:
         out = df.with_columns(
             pl.when(
-                pl.col("currency").cast(pl.Utf8, strict=False).is_null()
-                | (pl.col("currency").cast(pl.Utf8, strict=False) == "")
+                pl.col("currency").cast(pl.String, strict=False).is_null()
+                | (pl.col("currency").cast(pl.String, strict=False) == "")
             )
             .then(pl.lit(resolved))
-            .otherwise(pl.col("currency").cast(pl.Utf8, strict=False))
+            .otherwise(pl.col("currency").cast(pl.String, strict=False))
             .alias("currency")
         )
     else:

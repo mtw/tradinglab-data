@@ -65,7 +65,7 @@ def load_universe_frame(
                     if missing:
                         f = f.with_columns([pl.lit(None).alias(c) for c in missing])
                     f = f.select(sorted(all_cols))
-                    f = f.with_columns([pl.col(c).cast(pl.Utf8) for c in f.columns])
+                    f = f.with_columns([pl.col(c).cast(pl.String) for c in f.columns])
                     normalized.append(f)
                 df = pl.concat(normalized, how="vertical")
     if "symbol" not in df.columns:
@@ -74,11 +74,11 @@ def load_universe_frame(
         df = df.with_columns(pl.col("active").cast(pl.Int64, strict=False))
         df = df.filter(pl.col("active") == 1)
     overrides = load_ticker_overrides(ticker_overrides_path)
-    df = df.with_columns(pl.col("symbol").cast(pl.Utf8).str.strip_chars().str.to_uppercase().alias("symbol"))
+    df = df.with_columns(pl.col("symbol").cast(pl.String).str.strip_chars().str.to_uppercase().alias("symbol"))
     df = df.filter((pl.col("symbol") != "") & (~pl.col("symbol").str.contains(r"[\\$\\s]")))
     if overrides:
         df = df.with_columns(
-            pl.col("symbol").map_elements(lambda s: overrides.get(str(s), str(s)), return_dtype=pl.Utf8).alias("symbol")
+            pl.col("symbol").map_elements(lambda s: overrides.get(str(s), str(s)), return_dtype=pl.String).alias("symbol")
         ).unique(subset=["symbol"], keep="first", maintain_order=True)
     return df
 

@@ -37,7 +37,7 @@ INTRADAY_SCHEMA = {
     "close": pl.Float64,
     "adj_close": pl.Float64,
     "volume": pl.Float64,
-    "currency": pl.Utf8,
+    "currency": pl.String,
 }
 
 MAX_PERIOD_BY_INTERVAL = {
@@ -272,19 +272,19 @@ def compute_moves_vs_close(
     if data.is_empty() or "symbol" not in data.columns:
         return pl.DataFrame(
             schema={
-                "symbol": pl.Utf8,
+                "symbol": pl.String,
                 "ref_close": pl.Float64,
                 "last_price": pl.Float64,
                 "pct_move": pl.Float64,
                 "last_volume": pl.Float64,
-                "currency": pl.Utf8,
+                "currency": pl.String,
                 "last_ts": pl.Datetime,
-                "session": pl.Utf8,
+                "session": pl.String,
             }
         )
 
     rows: list[dict[str, Any]] = []
-    for sym in sorted(set(data.get_column("symbol").cast(pl.Utf8, strict=False).to_list())):
+    for sym in sorted(set(data.get_column("symbol").cast(pl.String, strict=False).to_list())):
         sdf = data.filter(pl.col("symbol") == sym).sort("date")
         if sdf.is_empty():
             continue
@@ -368,7 +368,7 @@ def summarize_gap_report(
     if wanted not in {"all", "pre", "post", "regular", "closed"}:
         wanted = "all"
     if wanted != "all" and "session" in out.columns:
-        out = out.filter(pl.col("session").cast(pl.Utf8, strict=False) == wanted)
+        out = out.filter(pl.col("session").cast(pl.String, strict=False) == wanted)
     if min_volume is not None and float(min_volume) > 0:
         out = out.filter(pl.col("last_volume").fill_null(0.0) >= float(min_volume))
     out = out.with_columns(pl.col("pct_move").abs().alias("abs_pct_move")).sort(
