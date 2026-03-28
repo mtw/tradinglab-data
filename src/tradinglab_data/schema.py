@@ -121,7 +121,7 @@ def render_schema_markdown() -> str:
 
     notes = "\n".join(f"- {item}" for item in SCHEMA_NOTES["constraints"])
     return (
-        "# TradingLab Data Parquet Schema\n\n"
+        "# Data Parquet Schema\n\n"
         + _table("Daily", DAILY_PARQUET_SCHEMA)
         + "\n"
         + _table("Intraday", INTRADAY_PARQUET_SCHEMA)

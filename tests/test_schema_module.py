@@ -17,7 +17,7 @@ def test_schema_manifest_has_daily_and_intraday():
 
 def test_render_schema_markdown_contains_header():
     text = render_schema_markdown()
-    assert "# TradingLab Data Parquet Schema" in text
+    assert "# Data Parquet Schema" in text
     assert "## Daily" in text
 
 

@@ -40,7 +40,7 @@ tradinglab-data schema --format markdown
 
 ## Important Boundary Note
 
-At the moment, full nightly verification is not yet fully standalone because the verifier and gate script still live in the TradingLab repository:
+At the moment, full nightly verification is not yet fully standalone because the verifier and gate script still live outside this package:
 
 - `scripts/check_parquet_status.py`
 - `scripts/run_daily_update_verify.sh`
@@ -66,4 +66,4 @@ Once that happens, the standalone repo should provide its own:
 ./scripts/run_daily_update_verify.sh
 ```
 
-without any dependency on a local TradingLab checkout.
+without any dependency on another local application checkout.

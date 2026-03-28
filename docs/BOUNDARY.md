@@ -2,7 +2,7 @@
 
 `tradinglab-data` is responsible for data acquisition, normalization, storage, verification, and repair.
 
-`tradinglab` is responsible for consuming prepared artifacts for:
+Downstream applications are responsible for consuming prepared artifacts for:
 
 - screening
 - plotting
@@ -10,7 +10,7 @@
 - prediction
 - experiment analysis
 
-Required artifact inputs for `tradinglab`:
+Required artifact inputs for downstream consumers:
 
 - universe CSVs
 - daily parquet store
@@ -18,5 +18,5 @@ Required artifact inputs for `tradinglab`:
 
 Design rule:
 
-- `tradinglab` should not fetch market data on demand during research workflows.
+- downstream applications should not fetch market data on demand during research workflows.
 - Missing parquet is an operational failure, not a signal to call providers from research code.

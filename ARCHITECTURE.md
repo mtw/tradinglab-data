@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`tradinglab-data` is the standalone artifact-production layer for the TradingLab ecosystem.
+`tradinglab-data` is the standalone artifact-production layer for market-data maintenance.
 It is responsible for obtaining raw market data, normalizing it, and materializing deterministic local artifacts that other packages consume.
 
 Primary artifacts:
@@ -17,12 +17,12 @@ Primary artifacts:
 Allowed direction:
 
 - `tradinglab-data` -> upstream providers (`yfinance`, `stooq`, web sources for universe construction)
-- `tradinglab` -> `tradinglab-data` artifacts and package APIs
+- downstream consumers -> `tradinglab-data` artifacts and package APIs
 
 Disallowed direction:
 
-- `tradinglab-data` importing research or prediction logic from `tradinglab`
-- `tradinglab` research code fetching providers directly as an implicit fallback
+- `tradinglab-data` importing research or prediction logic from downstream applications
+- downstream research code fetching providers directly as an implicit fallback
 
 ## Module Map
 
@@ -81,7 +81,7 @@ The core contract is intentionally simple:
 - one parquet file per symbol
 - stable column schema across files of the same store kind
 - stable file naming based on canonicalized symbol
-- parquet files are the only required runtime data interface for TradingLab research/predict/screen/plot
+- parquet files are the primary runtime data interface for downstream research/predict/screen/plot workflows
 
 Detailed schema and constraints live in `docs/PARQUET_SCHEMA.md`.
 The broader package/API compatibility snapshot lives in `docs/API_CONTRACT.md`.
@@ -110,7 +110,7 @@ Verification and repair:
 - Provider instability is expected; workflows must degrade gracefully and log errors.
 - Extended-hours intraday data is inherently sparse; policy should distinguish sparse but valid data from corruption.
 - ETF history is allowed to be less strict than stock history where explicitly configured.
-- The package should be reusable by multiple downstream codebases, not only TradingLab.
+- The package should be reusable by multiple downstream codebases.
 
 ## Non-Goals
 

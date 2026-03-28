@@ -1,13 +1,13 @@
 # tradinglab-data
 
-`tradinglab-data` is the standalone data-maintenance package for the TradingLab ecosystem.
+`tradinglab-data` is a standalone data-maintenance package for market-data artifact workflows.
 It is responsible for fetching market data, normalizing it into a stable parquet contract, maintaining universe files, and validating the resulting local data store.
 
-It does not own research, screening, plotting, prediction, or experiment analysis. Those remain in `tradinglab`.
+It does not own research, screening, plotting, prediction, or experiment analysis. Those belong in downstream consumer applications.
 
 ## Why This Exists
 
-Splitting data maintenance from TradingLab has three purposes:
+Splitting data maintenance into a standalone package has three purposes:
 
 - keep research infrastructure independent from provider and cache-maintenance code
 - make parquet/universe artifacts reusable from other packages

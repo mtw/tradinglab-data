@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repository is the standalone data-maintenance package behind TradingLab.
+This repository is a standalone data-maintenance package.
 
 ## What This Repo Owns
 
@@ -22,13 +22,13 @@ This repository is the standalone data-maintenance package behind TradingLab.
 - predictive modeling
 - experiment registry analysis
 
-Those remain in the separate `tradinglab` repository/package.
+Those remain in separate downstream applications.
 
 ## Hard Boundary Rules
 
 - Do not add research or prediction logic here.
-- Do not reintroduce provider fetches into TradingLab research code.
-- Treat parquet and universe CSVs as public artifacts consumed by TradingLab and potentially other packages.
+- Do not reintroduce provider fetches into downstream research code.
+- Treat parquet and universe CSVs as public artifacts consumed by downstream packages.
 - Schema changes must update `docs/PARQUET_SCHEMA.md`.
 - Workflow changes must update `docs/WORKFLOWS.md` when user-visible behavior changes.
 
@@ -66,10 +66,10 @@ If the change affects update behavior, also run at least one config-backed smoke
 ## Testing Ownership
 
 - Unit tests for provider adapters, universe handling, parquet verification, schema rendering, and package CLI belong here.
-- TradingLab should keep only integration tests that verify it delegates correctly to this package and respects the artifact boundary.
+- Downstream applications should keep only integration tests that verify they delegate correctly to this package and respect the artifact boundary.
 
 ## Change Discipline
 
 - Preserve backward compatibility of the parquet schema unless there is a deliberate versioned migration.
 - Prefer additive config changes over silent behavior changes.
-- Avoid writing code that assumes the package lives inside the TradingLab monorepo.
+- Avoid writing code that assumes the package lives inside any larger monorepo.

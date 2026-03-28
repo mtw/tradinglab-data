@@ -11,7 +11,7 @@ from .workflows import monitor_extended_hours_from_config, update_from_config
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="tradinglab-data", description="Standalone data maintenance package for TradingLab parquet/universe artifacts.")
+    ap = argparse.ArgumentParser(prog="tradinglab-data", description="Standalone data maintenance package for parquet and universe artifacts.")
     ap.add_argument("--config", default=str(default_config_path()), help="YAML config path")
     sub = ap.add_subparsers(dest="cmd", required=True)
 

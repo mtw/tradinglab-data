@@ -10,7 +10,7 @@ The source of truth is:
 
 - `src/tradinglab_data/`
 
-TradingLab should import `tradinglab_data` from the installed package, not from in-repo bridge code.
+Downstream consumers should import `tradinglab_data` from the installed package, not from in-repo bridge code.
 
 ## PyPI Release Checklist
 

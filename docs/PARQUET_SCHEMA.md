@@ -1,4 +1,4 @@
-# TradingLab Data Parquet Schema
+# Data Parquet Schema
 
 Artifact schema version: `v0.1.0`
 

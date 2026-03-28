@@ -1,7 +1,7 @@
 [project]
 name = "tradinglab-data"
 version = "0.1.0"
-description = "Market data maintenance package for TradingLab parquet and universe artifacts"
+description = "Market data maintenance package for parquet and universe artifacts"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
