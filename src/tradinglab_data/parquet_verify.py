@@ -6,7 +6,9 @@ import csv
 import json
 import random
 
-import pandas as pd
+import polars as pl
+
+from .contracts import VerifyResult
 
 
 @dataclass(frozen=True)
@@ -47,7 +49,7 @@ def _symbol_candidates(root: Path, symbol: str) -> list[Path]:
     ]
 
 
-def run_parquet_sanity_checks(cfg: ParquetVerifyConfig) -> dict:
+def run_parquet_sanity_checks(cfg: ParquetVerifyConfig) -> VerifyResult:
     errors: list[str] = []
 
     root = Path(cfg.root)
@@ -80,8 +82,8 @@ def run_parquet_sanity_checks(cfg: ParquetVerifyConfig) -> dict:
     sample_read_failures: list[str] = []
     for p in sample:
         try:
-            df = pd.read_parquet(p)
-            if df.empty:
+            df = pl.read_parquet(str(p))
+            if df.is_empty():
                 sample_read_failures.append(f"empty:{p.name}")
         except Exception as e:
             sample_read_failures.append(f"read_error:{p.name}:{type(e).__name__}")

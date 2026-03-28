@@ -19,6 +19,18 @@ def test_load_overrides_from_csv(tmp_path: Path, monkeypatch):
     p = tmp_path / "ticker_overrides.csv"
     pl.DataFrame({"raw": ["FOO", "BAR"], "yahoo": ["FOO.VI", "BAR.DE"]}).write_csv(str(p))
     monkeypatch.setattr(ticker_map, "_OVERRIDE_CACHE", None)
+    monkeypatch.setattr(ticker_map, "_OVERRIDE_CACHE_SOURCE", None)
     overrides = ticker_map._load_overrides(path=p)
     assert overrides["FOO"] == "FOO.VI"
     assert overrides["BAR"] == "BAR.DE"
+
+
+def test_load_overrides_uses_cached_file_contents(tmp_path: Path, monkeypatch):
+    p = tmp_path / "ticker_overrides.csv"
+    pl.DataFrame({"raw": ["FOO"], "yahoo": ["FOO.VI"]}).write_csv(str(p))
+    monkeypatch.setattr(ticker_map, "_OVERRIDE_CACHE", None)
+    monkeypatch.setattr(ticker_map, "_OVERRIDE_CACHE_SOURCE", None)
+    first = ticker_map._load_overrides(path=p)
+    p.write_text("raw,yahoo\nFOO,FOO.DE\n", encoding="utf-8")
+    second = ticker_map._load_overrides(path=p)
+    assert first == second

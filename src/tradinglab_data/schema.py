@@ -5,7 +5,7 @@ import json
 import polars as pl
 
 
-DAILY_PARQUET_SCHEMA: dict[str, pl.DataType] = {
+OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = {
     "date": pl.Datetime,
     "open": pl.Float64,
     "high": pl.Float64,
@@ -17,16 +17,8 @@ DAILY_PARQUET_SCHEMA: dict[str, pl.DataType] = {
 }
 
 
-INTRADAY_PARQUET_SCHEMA: dict[str, pl.DataType] = {
-    "date": pl.Datetime,
-    "open": pl.Float64,
-    "high": pl.Float64,
-    "low": pl.Float64,
-    "close": pl.Float64,
-    "adj_close": pl.Float64,
-    "volume": pl.Float64,
-    "currency": pl.Utf8,
-}
+DAILY_PARQUET_SCHEMA: dict[str, pl.DataType] = dict(OHLC_PARQUET_SCHEMA)
+INTRADAY_PARQUET_SCHEMA: dict[str, pl.DataType] = dict(OHLC_PARQUET_SCHEMA)
 
 
 SCHEMA_NOTES = {
@@ -72,3 +64,74 @@ def render_schema_markdown() -> str:
         + notes
         + "\n"
     )
+
+
+def _dtype_matches(actual: pl.DataType, expected: pl.DataType) -> bool:
+    if actual == expected:
+        return True
+    try:
+        return actual.base_type() == expected
+    except Exception:
+        return False
+
+
+def validate_frame_schema(
+    df: pl.DataFrame,
+    expected_schema: dict[str, pl.DataType],
+    *,
+    allow_extra_columns: bool = True,
+) -> None:
+    missing = [column for column in expected_schema if column not in df.columns]
+    extras = [column for column in df.columns if column not in expected_schema]
+    mismatched = []
+    for column, dtype in expected_schema.items():
+        actual = df.schema.get(column)
+        if actual is None:
+            continue
+        if not _dtype_matches(actual, dtype):
+            mismatched.append(f"{column}:{actual!s}!={dtype!s}")
+    if missing or mismatched or (extras and not allow_extra_columns):
+        problems = []
+        if missing:
+            problems.append(f"missing={missing}")
+        if mismatched:
+            problems.append(f"dtype={mismatched}")
+        if extras and not allow_extra_columns:
+            problems.append(f"extra={extras}")
+        raise ValueError("Frame does not match contract: " + "; ".join(problems))
+
+
+def validate_daily_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
+    validate_frame_schema(df, DAILY_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+
+
+def validate_intraday_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
+    validate_frame_schema(df, INTRADAY_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+
+
+def validate_moves_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
+    expected = {
+        "symbol": pl.Utf8,
+        "ref_close": pl.Float64,
+        "last_price": pl.Float64,
+        "pct_move": pl.Float64,
+        "last_volume": pl.Float64,
+        "currency": pl.Utf8,
+        "last_ts": pl.Datetime,
+        "session": pl.Utf8,
+    }
+    validate_frame_schema(df, expected, allow_extra_columns=allow_extra_columns)
+
+
+def validate_alerts_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
+    expected = {
+        "symbol": pl.Utf8,
+        "ref_close": pl.Float64,
+        "last_price": pl.Float64,
+        "pct_move": pl.Float64,
+        "last_volume": pl.Float64,
+        "currency": pl.Utf8,
+        "last_ts": pl.Datetime,
+        "session": pl.Utf8,
+    }
+    validate_frame_schema(df, expected, allow_extra_columns=allow_extra_columns)

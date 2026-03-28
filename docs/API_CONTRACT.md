@@ -42,6 +42,7 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 
 - `cli`
 - `config`
+- `contracts`
 - `data_stooq`
 - `data_yf`
 - `extended_hours_monitor`
@@ -52,7 +53,26 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 - `universe_build`
 - `workflows`
 
-The package does not currently re-export individual functions at the top level. Consumers should import from submodules.
+Additive top-level lazy re-exports are also available for commonly used public names, including:
+
+- `load_universe`
+- `load_universe_frame`
+- `build_universe`
+- `run_parquet_sanity_checks`
+- `schema_manifest`
+- `render_schema_json`
+- `render_schema_markdown`
+- `validate_daily_frame`
+- `validate_intraday_frame`
+- `validate_moves_frame`
+- `validate_alerts_frame`
+- `update_from_config`
+- `monitor_extended_hours_from_config`
+- `UniverseRow`
+- `UpdateResult`
+- `ExtendedHoursResult`
+- `MonitorExtendedHoursResult`
+- `VerifyResult`
 
 ## CLI Contract
 
@@ -61,7 +81,11 @@ Implementation source: [`src/tradinglab_data/cli.py`](../src/tradinglab_data/cli
 Global option:
 
 - `--config <path>`
-  - defaults to `configs/config.yaml`
+  - defaults by discovery order:
+    - `TRADINGLAB_DATA_CONFIG` when set
+    - source-tree `configs/config.yaml` when running from a checkout and it exists
+    - `./config.yaml`
+    - `./configs/config.yaml`
   - is not required for `schema`
   - is required in practice for `update`, `monitor-extended-hours`, and `build-universe` because those code paths load `Config`
 
@@ -155,7 +179,7 @@ Path expansion behavior:
 Missing config behavior:
 
 - `Config.load(...)` raises `FileNotFoundError`
-- the current error message explicitly tells the caller to create a config from `configs/config.yaml.example` or pass `--config`
+- the current error message tells the caller to create a config from the bundled `config.yaml.example` template, pass `--config`, or set `TRADINGLAB_DATA_CONFIG`
 
 Required path keys for the main workflows:
 
@@ -214,6 +238,7 @@ Operational keys currently consumed by workflows:
 Reference template:
 
 - [`configs/config.yaml.example`](../configs/config.yaml.example)
+- bundled wheel copy: [`src/tradinglab_data/config.yaml.example`](../src/tradinglab_data/config.yaml.example)
 
 ## Artifact Contract
 
@@ -416,6 +441,7 @@ This section records public names currently exposed by submodules. All names bel
 ### `tradinglab_data.config`
 
 - `default_config_path() -> Path`
+- `packaged_config_example_text() -> str`
 - `resolve_config_path(path) -> Path`
 - `Config`
   - fields: `raw`, `source_path`
@@ -435,6 +461,11 @@ This section records public names currently exposed by submodules. All names bel
 - `schema_manifest() -> dict[str, object]`
 - `render_schema_json() -> str`
 - `render_schema_markdown() -> str`
+- `validate_frame_schema(df, expected_schema, allow_extra_columns=True) -> None`
+- `validate_daily_frame(df, allow_extra_columns=True) -> None`
+- `validate_intraday_frame(df, allow_extra_columns=True) -> None`
+- `validate_moves_frame(df, allow_extra_columns=True) -> None`
+- `validate_alerts_frame(df, allow_extra_columns=True) -> None`
 
 ### `tradinglab_data.universe`
 
@@ -446,6 +477,7 @@ This section records public names currently exposed by submodules. All names bel
 ### `tradinglab_data.ticker_map`
 
 - `normalize_to_yahoo(symbol, exchange, country, overrides_path=None) -> str`
+- `clear_override_cache() -> None`
 
 ### `tradinglab_data.universe_build`
 
@@ -463,6 +495,7 @@ This section records public names currently exposed by submodules. All names bel
 - `read_parquet_if_exists(path) -> pl.DataFrame | None`
 - `upsert_symbol_parquet(symbol, interval, lookback_days, parquet_root) -> Path`
 - `append_update_log(log_path, symbol, error, attempt_count) -> None`
+- `clear_currency_cache() -> None`
 
 ### `tradinglab_data.data_stooq`
 
@@ -476,25 +509,39 @@ This section records public names currently exposed by submodules. All names bel
 
 - `ParquetVerifyConfig`
   - fields: `root`, `universe_dir`, `universes`, `min_parquet_files`, `max_zero_byte`, `max_missing_ratio`, `sample_read_files`, `max_drop_ratio`, `baseline_summary_path`
-- `run_parquet_sanity_checks(cfg) -> dict`
+- `run_parquet_sanity_checks(cfg) -> VerifyResult`
 - `write_verification_summary(path, summary) -> None`
+
+### `tradinglab_data.contracts`
+
+- `CoverageEntry`
+- `DailyCloseInfo`
+- `ExtendedHoursResult`
+- `MonitorExtendedHoursResult`
+- `UpdateResult`
+- `VerifyResult`
+- `SessionLabel`
+- `VerifyStatus`
+- `OHLC_COLUMNS`
+- `MOVE_FRAME_COLUMNS`
+- `ALERT_FRAME_COLUMNS`
 
 ### `tradinglab_data.extended_hours_monitor`
 
 - `fetch_extended_intraday(...) -> dict[str, pl.DataFrame]`
-- `load_daily_reference_closes(symbols, daily_root) -> dict[str, dict[str, Any]]`
+- `load_daily_reference_closes(symbols, daily_root) -> dict[str, DailyCloseInfo]`
 - `compute_moves_vs_close(intraday_df, daily_close_map) -> pl.DataFrame`
 - `detect_alerts(moves_df, threshold, min_volume=None) -> pl.DataFrame`
 - `persist_alerts(alerts, path) -> Path`
 - `summarize_gap_report(moves_df, threshold, min_volume=None, top_n=25, session_filter=\"all\") -> pl.DataFrame`
 - `render_extended_hours_report_html(moves_df, alerts_df, threshold, generated_at=None, top_n=50, session_filter=\"all\") -> str`
 - `persist_extended_hours_report_html(moves_df, alerts_df, path, threshold, top_n=50, session_filter=\"all\") -> Path`
-- `update_extended_hours_store(...) -> dict[str, Any]`
+- `update_extended_hours_store(...) -> ExtendedHoursResult`
 
 ### `tradinglab_data.workflows`
 
-- `monitor_extended_hours_from_config(cfg, symbols_override=None, top_n=25, session_filter=\"all\") -> dict[str, Any]`
-- `update_from_config(cfg, symbols_override=None) -> dict[str, Any]`
+- `monitor_extended_hours_from_config(cfg, symbols_override=None, top_n=25, session_filter=\"all\") -> MonitorExtendedHoursResult`
+- `update_from_config(cfg, symbols_override=None) -> UpdateResult`
 
 ## Behavioral Notes That Matter For Compatibility
 
@@ -504,6 +551,7 @@ This section records public names currently exposed by submodules. All names bel
 - In Stooq mode, full history can come from Stooq while recent bars can still be merged from Yahoo Finance.
 - The extended-hours workflow compares intraday last price to the latest daily regular-session close and assigns a session label of `pre`, `regular`, `post`, or `closed`.
 - Current strict full-refresh handling is suffix-based and only applies to symbols ending in `.VI`.
+- Installed package config discovery no longer assumes a source checkout; the wheel ships a bundled `config.yaml.example` template and typed marker file `py.typed`.
 
 ## Non-Goals Of This Contract
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib.resources import files
 import os
 from pathlib import Path
 from typing import Any
@@ -12,10 +13,33 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 CONFIGS_DIR = PACKAGE_ROOT / "configs"
 DEFAULT_CONFIG_BASENAME = "config.yaml"
 DEFAULT_CONFIG_PATH = CONFIGS_DIR / DEFAULT_CONFIG_BASENAME
+DEFAULT_CONFIG_ENVVAR = "TRADINGLAB_DATA_CONFIG"
+PACKAGED_CONFIG_EXAMPLE = "config.yaml.example"
+
+
+def packaged_config_example_text() -> str:
+    return files("tradinglab_data").joinpath(PACKAGED_CONFIG_EXAMPLE).read_text(encoding="utf-8")
+
+
+def _repo_configs_available() -> bool:
+    return CONFIGS_DIR.exists() and (CONFIGS_DIR / PACKAGED_CONFIG_EXAMPLE).exists()
 
 
 def default_config_path() -> Path:
-    return DEFAULT_CONFIG_PATH
+    env_path = os.getenv(DEFAULT_CONFIG_ENVVAR)
+    if env_path:
+        return Path(_expand_string(env_path))
+    if _repo_configs_available() and DEFAULT_CONFIG_PATH.exists():
+        return DEFAULT_CONFIG_PATH
+    cwd_default = Path.cwd() / DEFAULT_CONFIG_BASENAME
+    if cwd_default.exists():
+        return cwd_default
+    cwd_configs_default = Path.cwd() / "configs" / DEFAULT_CONFIG_BASENAME
+    if cwd_configs_default.exists():
+        return cwd_configs_default
+    if _repo_configs_available():
+        return DEFAULT_CONFIG_PATH
+    return cwd_default
 
 
 def _expand_string(value: str) -> str:
@@ -36,9 +60,12 @@ def resolve_config_path(path: str | Path) -> Path:
     p = Path(_expand_string(str(path)))
     candidates = [p]
     if not p.is_absolute():
-        candidates.append(PACKAGE_ROOT / p)
         if p.parent == Path("."):
-            candidates.append(CONFIGS_DIR / p.name)
+            candidates.append(Path.cwd() / "configs" / p.name)
+        if _repo_configs_available():
+            candidates.append(PACKAGE_ROOT / p)
+            if p.parent == Path("."):
+                candidates.append(CONFIGS_DIR / p.name)
     seen: set[Path] = set()
     for cand in candidates:
         resolved = cand.resolve(strict=False)
@@ -59,10 +86,10 @@ class Config:
     def load(path: str | Path) -> "Config":
         p = resolve_config_path(path)
         if not p.exists():
-            example = CONFIGS_DIR / "config.yaml.example"
             raise FileNotFoundError(
                 f"Config not found: {p}. "
-                f"Create a config from {example} or pass --config /path/to/config.yaml."
+                "Create a config from the bundled config.yaml.example template "
+                f"or pass --config /path/to/config.yaml. You can also set {DEFAULT_CONFIG_ENVVAR}."
             )
         data = yaml.safe_load(p.read_text(encoding="utf-8"))
         if not isinstance(data, dict):

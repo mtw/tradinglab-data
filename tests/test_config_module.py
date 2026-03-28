@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from tradinglab_data.config import Config, intraday_root_path, registry_root_path, ticker_overrides_path, universe_dir_path, update_log_path
+import tradinglab_data.config as config_mod
+from tradinglab_data.config import Config, default_config_path, intraday_root_path, packaged_config_example_text, registry_root_path, resolve_config_path, ticker_overrides_path, universe_dir_path, update_log_path
 
 
 def test_config_load_missing_has_clear_message():
@@ -123,3 +124,36 @@ def test_config_derived_paths(tmp_path: Path):
     assert ticker_overrides_path(cfg) == tmp_path / "meta" / "ticker_overrides.csv"
     assert intraday_root_path(cfg) == tmp_path / "parquet" / "intraday"
     assert registry_root_path(cfg) == tmp_path / "runs" / "runs_registry"
+
+
+def test_default_config_path_prefers_envvar(tmp_path: Path, monkeypatch):
+    cfg = tmp_path / "custom.yaml"
+    monkeypatch.setenv(config_mod.DEFAULT_CONFIG_ENVVAR, str(cfg))
+    assert default_config_path() == cfg
+
+
+def test_default_config_path_falls_back_to_cwd_config(tmp_path: Path, monkeypatch):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("paths:\n  parquet_root: data/parquet\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(config_mod.DEFAULT_CONFIG_ENVVAR, raising=False)
+    monkeypatch.setattr(config_mod, "CONFIGS_DIR", tmp_path / "missing-configs")
+    monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_PATH", (tmp_path / "missing-configs" / "config.yaml"))
+    assert default_config_path() == cfg
+
+
+def test_resolve_config_path_checks_cwd_configs_dir(tmp_path: Path, monkeypatch):
+    cfg_dir = tmp_path / "configs"
+    cfg_dir.mkdir()
+    cfg = cfg_dir / "config.yaml"
+    cfg.write_text("paths:\n  parquet_root: data/parquet\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config_mod, "CONFIGS_DIR", tmp_path / "missing-configs")
+    monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_PATH", (tmp_path / "missing-configs" / "config.yaml"))
+    assert resolve_config_path("config.yaml") == cfg
+
+
+def test_packaged_config_example_text_contains_paths():
+    text = packaged_config_example_text()
+    assert "paths:" in text
+    assert "parquet_root:" in text

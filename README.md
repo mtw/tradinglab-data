@@ -102,6 +102,7 @@ pip install -e .
 | `extended_hours_monitor.py` | Intraday retrieval, alert computation, intraday parquet maintenance, HTML/CSV outputs |
 | `parquet_verify.py` | Parquet sanity checks and summary helpers |
 | `schema.py` | Canonical parquet schema definitions and rendering helpers |
+| `contracts.py` | Typed result contracts and dataframe column-set constants |
 | `workflows.py` | Config-driven update and extended-hours operational workflows |
 | `cli.py` | Standalone package CLI |
 
@@ -129,8 +130,9 @@ The standalone CLI expects a YAML config with path and update settings.
 Example template:
 
 - [`configs/config.yaml.example`](configs/config.yaml.example)
+- bundled package template: [`src/tradinglab_data/config.yaml.example`](src/tradinglab_data/config.yaml.example)
 
-If a config-backed command is run without a valid config file, the CLI raises a clear error telling you to create one from the example template or pass `--config`.
+If a config-backed command is run without a valid config file, the CLI raises a clear error telling you to create one from the bundled template, pass `--config`, or set `TRADINGLAB_DATA_CONFIG`.
 
 ## Testing
 
@@ -142,12 +144,13 @@ PYTHONPATH=packages/tradinglab-data/src pytest -q packages/tradinglab-data/tests
 
 Package CI:
 
-- `.github/workflows/tradinglab-data.yml`
+- run `PYTHONPATH=src pytest -q tests`
 
 ## Release
 
 Release and repo-split notes:
 
 - [`RELEASE.md`](RELEASE.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
 
 The package is designed to be split into its own repository and later published to PyPI as `tradinglab-data`.

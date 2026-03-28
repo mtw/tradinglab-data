@@ -12,12 +12,16 @@ import polars as pl
 import yfinance as yf
 from tqdm import tqdm
 
+from ._ohlc_utils import align_for_concat, ensure_currency, needs_incremental_write
+from ._yf_utils import (
+    backoff_sleep,
+    coerce_standard_schema,
+    is_rate_limit_error,
+    normalize_yf_df_to_polars,
+    split_bulk_download,
+)
+from .contracts import DailyCloseInfo, ExtendedHoursResult
 from .data_yf import (
-    _backoff_sleep,
-    _coerce_standard_schema,
-    _is_rate_limit_error,
-    _normalize_yf_df_to_polars,
-    _split_bulk_download,
     append_update_log,
     fetch_symbol_currency,
     read_parquet_if_exists,
@@ -74,8 +78,8 @@ def _normalize_intraday_pd(df_pd) -> pl.DataFrame:
             df_pd.index = idx.tz_convert("UTC").tz_localize(None)
     except Exception:
         pass
-    df = _normalize_yf_df_to_polars(df_pd)
-    df = _coerce_standard_schema(df)
+    df = normalize_yf_df_to_polars(df_pd)
+    df = coerce_standard_schema(df)
     return _sanitize_intraday_df(df.select(["date", "open", "high", "low", "close", "adj_close", "volume"]))
 
 
@@ -114,19 +118,19 @@ def _fetch_intraday_bulk(
                     group_by="column",
                     threads=threads,
                 )
-                chunk_map = _split_bulk_download(df_pd, chunk)
+                chunk_map = split_bulk_download(df_pd, chunk)
                 out_chunk: dict[str, pl.DataFrame] = {}
                 for sym, df_one in chunk_map.items():
                     try:
-                        out_chunk[sym] = _coerce_standard_schema(df_one)
+                        out_chunk[sym] = coerce_standard_schema(df_one)
                     except Exception:
                         continue
                 results.update(out_chunk)
                 break
             except Exception as e:
                 attempt += 1
-                if _is_rate_limit_error(e) and attempt <= max_retries:
-                    _backoff_sleep(attempt, backoff_max_seconds)
+                if is_rate_limit_error(e) and attempt <= max_retries:
+                    backoff_sleep(attempt, backoff_max_seconds)
                     continue
                 if log_path is not None:
                     for sym in chunk:
@@ -195,66 +199,6 @@ def fetch_extended_intraday(
     return out
 
 
-def _ensure_currency(df: pl.DataFrame, currency: str | None) -> pl.DataFrame:
-    cur = (currency or "UNKNOWN").strip().upper() or "UNKNOWN"
-    if "currency" in df.columns:
-        return _sanitize_intraday_df(df.with_columns(
-            pl.when(pl.col("currency").cast(pl.Utf8, strict=False).is_null() | (pl.col("currency").cast(pl.Utf8, strict=False) == ""))
-            .then(pl.lit(cur))
-            .otherwise(pl.col("currency").cast(pl.Utf8, strict=False))
-            .alias("currency")
-        ))
-    return _sanitize_intraday_df(df.with_columns(pl.lit(cur).alias("currency")))
-
-
-def _align_for_concat(df_left: pl.DataFrame, df_right: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
-    cols = list(INTRADAY_SCHEMA.keys())
-    l_missing = [c for c in cols if c not in df_left.columns]
-    r_missing = [c for c in cols if c not in df_right.columns]
-    if l_missing:
-        df_left = df_left.with_columns([pl.lit(None).cast(INTRADAY_SCHEMA[c]).alias(c) for c in l_missing])
-    if r_missing:
-        df_right = df_right.with_columns([pl.lit(None).cast(INTRADAY_SCHEMA[c]).alias(c) for c in r_missing])
-    casts_left = [pl.col(c).cast(INTRADAY_SCHEMA[c], strict=False).alias(c) for c in cols]
-    casts_right = [pl.col(c).cast(INTRADAY_SCHEMA[c], strict=False).alias(c) for c in cols]
-    return (
-        _sanitize_intraday_df(df_left.with_columns(casts_left).select(cols)),
-        _sanitize_intraday_df(df_right.with_columns(casts_right).select(cols)),
-    )
-
-
-def _needs_incremental_write(df_old: pl.DataFrame | None, df_inc: pl.DataFrame | None) -> bool:
-    if df_old is None or df_old.is_empty():
-        return True
-    if df_inc is None or df_inc.is_empty():
-        return False
-    try:
-        old_last_date = df_old.select(pl.col("date").max()).item()
-        inc_last_date = df_inc.select(pl.col("date").max()).item()
-    except Exception:
-        return True
-    if old_last_date is None or inc_last_date is None:
-        return True
-    if inc_last_date > old_last_date:
-        return True
-    cols = [c for c in ["open", "high", "low", "close", "adj_close", "volume", "currency"] if c in df_old.columns and c in df_inc.columns]
-    if not cols:
-        return False
-    try:
-        old_last = df_old.filter(pl.col("date") == old_last_date).tail(1)
-        inc_last = df_inc.filter(pl.col("date") == old_last_date).tail(1)
-        if old_last.is_empty() or inc_last.is_empty():
-            return False
-        for c in cols:
-            ov = old_last.get_column(c).to_list()[0]
-            iv = inc_last.get_column(c).to_list()[0]
-            if ov != iv:
-                return True
-    except Exception:
-        return True
-    return False
-
-
 def _trim_rolling_window(df: pl.DataFrame, retention_days: int) -> pl.DataFrame:
     if df.is_empty():
         return df
@@ -285,9 +229,9 @@ def _session_label(dt_value: Any) -> str:
 def load_daily_reference_closes(
     symbols: list[str],
     daily_root: str | Path,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, DailyCloseInfo]:
     root = Path(daily_root)
-    out: dict[str, dict[str, Any]] = {}
+    out: dict[str, DailyCloseInfo] = {}
     for sym in symbols:
         path = root / f"{sym}.parquet"
         df = read_parquet_if_exists(path)
@@ -308,7 +252,7 @@ def load_daily_reference_closes(
 
 def compute_moves_vs_close(
     intraday_df: pl.DataFrame | dict[str, pl.DataFrame],
-    daily_close_map: dict[str, dict[str, Any] | float],
+    daily_close_map: dict[str, DailyCloseInfo | float],
 ) -> pl.DataFrame:
     if isinstance(intraday_df, dict):
         frames: list[pl.DataFrame] = []
@@ -633,7 +577,7 @@ def update_extended_hours_store(
     backoff_max_seconds: float = 120.0,
     threads: bool = False,
     log_path: Path | None = None,
-) -> dict[str, Any]:
+) -> ExtendedHoursResult:
     root = Path(intraday_root)
     pref_dir = root / preferred_interval
     fb_dir = root / fallback_interval
@@ -670,25 +614,39 @@ def update_extended_hours_store(
             if df_new is None or df_new.is_empty():
                 if df_old is None or df_old.is_empty():
                     continue
-                df_old_raw = _coerce_standard_schema(df_old)
-                df_old_clean = _trim_rolling_window(_ensure_currency(df_old_raw, cur), retention_days=retention_days)
+                df_old_raw = coerce_standard_schema(df_old)
+                df_old_clean = _trim_rolling_window(
+                    ensure_currency(df_old_raw, cur, postprocess=_sanitize_intraday_df),
+                    retention_days=retention_days,
+                )
                 if df_old_clean.height != df_old_raw.height:
                     df_old_clean.write_parquet(str(path))
                     written.append(sym)
                 continue
-            df_new = _trim_rolling_window(_ensure_currency(df_new, cur), retention_days=retention_days)
+            df_new = _trim_rolling_window(
+                ensure_currency(df_new, cur, postprocess=_sanitize_intraday_df),
+                retention_days=retention_days,
+            )
             if df_new.is_empty():
                 continue
             if df_old is None or df_old.is_empty():
                 df_new.write_parquet(str(path))
                 written.append(sym)
                 continue
-            df_old_raw = _coerce_standard_schema(df_old)
+            df_old_raw = coerce_standard_schema(df_old)
             old_rows_before = df_old_raw.height
-            df_old = _trim_rolling_window(_ensure_currency(df_old_raw, cur), retention_days=retention_days)
+            df_old = _trim_rolling_window(
+                ensure_currency(df_old_raw, cur, postprocess=_sanitize_intraday_df),
+                retention_days=retention_days,
+            )
             old_sanitized = df_old.height != old_rows_before
-            df_old, df_new = _align_for_concat(df_old, df_new)
-            if not old_sanitized and not _needs_incremental_write(df_old, df_new):
+            df_old, df_new = align_for_concat(
+                df_old,
+                df_new,
+                schema=INTRADAY_SCHEMA,
+                postprocess=_sanitize_intraday_df,
+            )
+            if not old_sanitized and not needs_incremental_write(df_old, df_new):
                 written.append(sym)
                 continue
             combined = (

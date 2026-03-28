@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from tradinglab_data.schema import render_schema_json, render_schema_markdown, schema_manifest
+import polars as pl
+import pytest
+
+from tradinglab_data.schema import render_schema_json, render_schema_markdown, schema_manifest, validate_daily_frame, validate_moves_frame
 
 
 def test_schema_manifest_has_daily_and_intraday():
@@ -19,3 +22,26 @@ def test_render_schema_markdown_contains_header():
 def test_render_schema_json_contains_adj_close():
     text = render_schema_json()
     assert '"adj_close"' in text
+
+
+def test_validate_daily_frame_accepts_canonical_schema():
+    df = pl.DataFrame(
+        {
+            "date": [None],
+            "open": [1.0],
+            "high": [1.1],
+            "low": [0.9],
+            "close": [1.0],
+            "adj_close": [1.0],
+            "volume": [100.0],
+            "currency": ["USD"],
+        },
+        schema_overrides={"date": pl.Datetime},
+    )
+    validate_daily_frame(df)
+
+
+def test_validate_moves_frame_rejects_missing_columns():
+    df = pl.DataFrame({"symbol": ["AAPL"], "pct_move": [2.0]})
+    with pytest.raises(ValueError, match="missing="):
+        validate_moves_frame(df)

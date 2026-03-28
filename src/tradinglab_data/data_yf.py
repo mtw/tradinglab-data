@@ -1,36 +1,26 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-import random
 import time
-import re
 
 import yfinance as yf
 import polars as pl
 from tqdm import tqdm
 
+from ._yf_utils import (
+    STANDARD_PRICE_SCHEMA,
+    backoff_sleep as _backoff_sleep,
+    coerce_standard_schema as _coerce_standard_schema,
+    is_rate_limit_error as _is_rate_limit_error,
+    normalize_yf_df_to_polars as _normalize_yf_df_to_polars,
+    share_class_fallback as _share_class_fallback,
+    split_bulk_download as _split_bulk_download,
+    yf_date_window as _yf_date_window,
+)
+
 _CURRENCY_CACHE: dict[str, str | None] = {}
-
-
-_STANDARD_SCHEMA: dict[str, pl.DataType] = {
-    "date": pl.Datetime,
-    "open": pl.Float64,
-    "high": pl.Float64,
-    "low": pl.Float64,
-    "close": pl.Float64,
-    "adj_close": pl.Float64,
-    "volume": pl.Float64,
-}
-
-
-def _yf_date_window(lookback_days: int) -> tuple[str, str]:
-    # Yahoo end-date is effectively exclusive for history requests.
-    # Shift end by +1 day to reduce "missing latest bar" issues near timezone boundaries.
-    end = datetime.now(timezone.utc) + timedelta(days=1)
-    start = end - timedelta(days=lookback_days)
-    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
 
 @dataclass(frozen=True)
@@ -38,91 +28,6 @@ class YFDownloadSpec:
     symbol: str
     interval: str = "1d"
     lookback_days: int = 2000
-
-
-def _normalize_yf_df_to_polars(df_pd) -> pl.DataFrame:
-    # 1) Flatten MultiIndex columns if present (can happen depending on yfinance/Yahoo response)
-    try:
-        import pandas as pd  # yfinance returns pandas
-        if isinstance(df_pd.columns, pd.MultiIndex):
-            df_pd = df_pd.copy()
-            df_pd.columns = [c[0] for c in df_pd.columns]
-    except Exception:
-        pass
-
-    # 2) Bring index into a column
-    df_pd = df_pd.copy()
-    df_pd.reset_index(inplace=True)
-
-    # 3) Identify the datetime column robustly
-    # Common cases: "Date", "Datetime", or "index" (when index name is None)
-    date_col = None
-    for cand in ["Date", "Datetime", "date", "datetime", "index"]:
-        if cand in df_pd.columns:
-            date_col = cand
-            break
-
-    # Fallback: first column that looks like datetime
-    if date_col is None:
-        for c in df_pd.columns:
-            if str(df_pd[c].dtype).startswith("datetime"):
-                date_col = c
-                break
-
-    if date_col is None:
-        raise ValueError(f"Could not identify a datetime column. Columns: {list(df_pd.columns)}")
-
-    # 4) Rename to canonical names
-    colmap = {
-        date_col: "date",
-        "Open": "open",
-        "High": "high",
-        "Low": "low",
-        "Close": "close",
-        "Adj Close": "adj_close",
-        "Volume": "volume",
-    }
-    df_pd.rename(columns={k: v for k, v in colmap.items() if k in df_pd.columns}, inplace=True)
-
-    # 4) Ensure unique column names to satisfy Polars
-    try:
-        df_pd = df_pd.loc[:, ~df_pd.columns.duplicated()]
-    except Exception:
-        pass
-
-    df = pl.from_pandas(df_pd)
-
-    # 5) Ensure date is datetime
-    df = df.with_columns(pl.col("date").cast(pl.Datetime))
-
-    # 6) Keep standard columns only
-    keep = [c for c in ["date", "open", "high", "low", "close", "adj_close", "volume"] if c in df.columns]
-    df = df.select(keep).sort("date")
-
-    return _coerce_standard_schema(df)
-
-
-def _coerce_standard_schema(df: pl.DataFrame) -> pl.DataFrame:
-    out = df
-    for c, dt in _STANDARD_SCHEMA.items():
-        if c not in out.columns:
-            out = out.with_columns(pl.lit(None).cast(dt).alias(c))
-    casts = []
-    for c, dt in _STANDARD_SCHEMA.items():
-        if c in out.columns:
-            casts.append(pl.col(c).cast(dt, strict=False).alias(c))
-    out = out.with_columns(casts)
-    keep = [c for c in ["date", "open", "high", "low", "close", "adj_close", "volume"] if c in out.columns]
-    return out.select(keep).sort("date")
-
-
-def _share_class_fallback(symbol: str) -> str | None:
-    s = (symbol or "").strip()
-    m = re.match(r"^([A-Z]+)\.([A-Z])$", s)
-    if not m:
-        return None
-    base, cls = m.group(1), m.group(2)
-    return f"{base}-{cls}"
 
 
 def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
@@ -151,7 +56,7 @@ def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
                 group_by="column",
             )
     if df_pd is None or len(df_pd) == 0:
-        return pl.DataFrame(schema=_STANDARD_SCHEMA)
+        return pl.DataFrame(schema=STANDARD_PRICE_SCHEMA)
 
     return _normalize_yf_df_to_polars(df_pd)
 
@@ -185,69 +90,6 @@ def fetch_symbol_currency(symbol: str) -> str | None:
         currency = None
     _CURRENCY_CACHE[symbol] = currency
     return currency
-
-
-def _is_rate_limit_error(exc: Exception) -> bool:
-    name = exc.__class__.__name__.lower()
-    msg = str(exc).lower()
-    if "ratelimit" in name or "rate limit" in msg:
-        return True
-    if "too many requests" in msg or "429" in msg:
-        return True
-    return False
-
-
-def _backoff_sleep(attempt: int, backoff_max_seconds: float) -> float:
-    base = 5.0
-    delay = min(backoff_max_seconds, base * (2 ** max(0, attempt - 1)))
-    jitter = random.uniform(0, 1.0)
-    total = delay + jitter
-    time.sleep(total)
-    return total
-
-
-def _split_bulk_download(df_pd, symbols: list[str]) -> dict[str, pl.DataFrame]:
-    if df_pd is None or len(df_pd) == 0:
-        return {}
-
-    out: dict[str, pl.DataFrame] = {}
-    try:
-        import pandas as pd
-        if isinstance(df_pd.columns, pd.MultiIndex):
-            # yfinance layouts vary by version/options:
-            #   A) level0 = symbol, level1 = field
-            #   B) level0 = field,  level1 = symbol
-            level0 = set(map(str, df_pd.columns.get_level_values(0)))
-            level1 = set(map(str, df_pd.columns.get_level_values(1)))
-
-            # Layout A: symbol on level0
-            if any(s in level0 for s in symbols):
-                for sym in symbols:
-                    if sym in level0:
-                        sym_df = df_pd[sym]
-                        out[sym] = _normalize_yf_df_to_polars(sym_df)
-                if out:
-                    return out
-
-            # Layout B: symbol on level1
-            if any(s in level1 for s in symbols):
-                for sym in symbols:
-                    if sym in level1:
-                        try:
-                            sym_df = df_pd.xs(sym, axis=1, level=1)
-                        except Exception:
-                            continue
-                        out[sym] = _normalize_yf_df_to_polars(sym_df)
-                if out:
-                    return out
-    except Exception:
-        pass
-
-    # Fallback for non-MultiIndex (usually single-symbol response).
-    if len(symbols) == 1:
-        sym = symbols[0]
-        out[sym] = _normalize_yf_df_to_polars(df_pd)
-    return out
 
 
 def fetch_yfinance_history_bulk(
@@ -382,3 +224,7 @@ def append_update_log(log_path: Path, symbol: str, error: str, attempt_count: in
         if not exists:
             writer.writerow(["timestamp", "symbol", "error", "attempt_count"])
         writer.writerow([datetime.now(timezone.utc).isoformat(), symbol, error, attempt_count])
+
+
+def clear_currency_cache() -> None:
+    _CURRENCY_CACHE.clear()

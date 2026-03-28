@@ -93,7 +93,7 @@ def _parse_stooq_csv_text(text: str) -> pl.DataFrame:
                 "low": pl.Float64,
                 "close": pl.Float64,
                 "adj_close": pl.Float64,
-                "volume": pl.Int64,
+                "volume": pl.Float64,
             }
         )
 
@@ -107,7 +107,7 @@ def _parse_stooq_csv_text(text: str) -> pl.DataFrame:
                 "low": pl.Float64,
                 "close": pl.Float64,
                 "adj_close": pl.Float64,
-                "volume": pl.Int64,
+                "volume": pl.Float64,
             }
         )
 
@@ -138,7 +138,7 @@ def _parse_stooq_csv_text(text: str) -> pl.DataFrame:
                 "low": pl.Float64,
                 "close": pl.Float64,
                 "adj_close": pl.Float64,
-                "volume": pl.Int64,
+                "volume": pl.Float64,
             }
         )
 
@@ -153,7 +153,7 @@ def _parse_stooq_csv_text(text: str) -> pl.DataFrame:
             pl.col("high").cast(pl.Float64, strict=False).alias("high"),
             pl.col("low").cast(pl.Float64, strict=False).alias("low"),
             pl.col("close").cast(pl.Float64, strict=False).alias("close"),
-            pl.col("volume").cast(pl.Int64, strict=False).fill_null(0).alias("volume"),
+            pl.col("volume").cast(pl.Float64, strict=False).fill_null(0.0).alias("volume"),
         )
         .drop_nulls(subset=["date", "open", "high", "low", "close"])
         .with_columns(pl.col("close").alias("adj_close"))
@@ -173,7 +173,7 @@ def fetch_stooq_history(spec: StooqDownloadSpec) -> pl.DataFrame:
                 "low": pl.Float64,
                 "close": pl.Float64,
                 "adj_close": pl.Float64,
-                "volume": pl.Int64,
+                "volume": pl.Float64,
             }
         )
 
@@ -208,6 +208,6 @@ def fetch_stooq_history(spec: StooqDownloadSpec) -> pl.DataFrame:
             "low": pl.Float64,
             "close": pl.Float64,
             "adj_close": pl.Float64,
-            "volume": pl.Int64,
+            "volume": pl.Float64,
         }
     )

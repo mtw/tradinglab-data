@@ -23,4 +23,4 @@ def test_parse_stooq_csv_text_normalizes_to_tradinglab_schema():
     row = df.to_dicts()[0]
     assert row["open"] == 100.0
     assert row["close"] == 105.0
-    assert row["volume"] == 12345
+    assert row["volume"] == 12345.0
