@@ -12,6 +12,7 @@ def test_schema_manifest_has_daily_and_intraday():
     assert "intraday" in manifest
     assert "date" in manifest["daily"]
     assert manifest["artifact_schema_version"] == "v0.1.0"
+    assert "package_version" in manifest
 
 
 def test_render_schema_markdown_contains_header():
@@ -23,7 +24,7 @@ def test_render_schema_markdown_contains_header():
 def test_render_schema_json_contains_adj_close():
     text = render_schema_json()
     assert '"adj_close"' in text
-    assert '"api_contract_version"' in text
+    assert '"package_version"' in text
     assert '"artifact_schema_version"' in text
 
 
@@ -84,16 +85,15 @@ def test_validate_alerts_frame_rejects_wrong_dtype():
         validate_alerts_frame(df)
 
 
-def test_schema_manifest_contains_api_contract_version():
+def test_schema_manifest_contains_artifact_schema_version():
     manifest = schema_manifest()
-    assert manifest["api_contract_version"] == "v0.3.0"
+    assert manifest["artifact_schema_version"] == "v0.1.0"
 
 
-def test_compatibility_manifest_separates_package_api_and_artifact_versions():
+def test_compatibility_manifest_separates_package_and_artifact_versions():
     manifest = compatibility_manifest()
     assert manifest["package_name"] == "tradinglab-data"
     assert manifest["python_package_name"] == "tradinglab_data"
-    assert manifest["api_contract_version"] == "v0.3.0"
     assert manifest["artifact_schema_version"] == "v0.1.0"
     assert "daily_parquet" in manifest["artifact_families"]
     assert manifest["artifact_families"]["daily_parquet"]["category"] == "parquet"

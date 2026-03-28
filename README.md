@@ -135,8 +135,6 @@ Current compatibility signals:
 
 - package version
   - `0.1.0`
-- API contract version
-  - `v0.3.0`
 - artifact schema version
   - `v0.1.0`
 
@@ -147,12 +145,8 @@ Machine-readable manifest:
 
 Contract history:
 
-- `v0.1.0`
-  - initial formalized contract baseline
-- `v0.2.0`
-  - adds parquet store integrity report workflow and typed report contract
-- `v0.3.0`
-  - separates Python/CLI contract versioning from artifact schema versioning and adds a unified compatibility manifest
+- package version is the dependency compatibility signal for Python/CLI consumers
+- `ARTIFACT_SCHEMA_VERSION` tracks parquet/report compatibility independently from package release cadence
 
 Operational boundary and ownership rules:
 

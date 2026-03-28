@@ -1,90 +1,79 @@
-# API Contract
+# Compatibility Contract
 
 ## Purpose
 
-This document records the current externally relevant contract of `tradinglab-data` as implemented in this repository today.
+This document records the compatibility surface of `tradinglab-data` for independent consumers.
 
-It is a compatibility snapshot for upcoming review and refactoring work. If code changes must preserve existing consumers, this document is the baseline unless a later migration deliberately updates it.
+The package now uses a simpler model:
 
-This document is not the only compatibility mechanism. In practice, consumers should combine:
+- package version is the official dependency compatibility signal
+- `ARTIFACT_SCHEMA_VERSION` is the separate compatibility signal for on-disk parquet/report outputs
 
-- package version ranges
-- typed public Python APIs
-- artifact schema version checks
-- machine-readable compatibility manifests
-- downstream compatibility tests
+Consumers should not depend on a second standalone API-version number.
 
 Current package version in [`pyproject.toml`](../pyproject.toml): `0.1.0`
 
-## Version
+## Compatibility Model
 
-Compatibility signals:
-
-- package version
-  - current package version in [`pyproject.toml`](../pyproject.toml): `0.1.0`
-- API contract version
-  - `v0.3.0`
-- artifact schema version
-  - `v0.1.0`
-
-These versions answer different questions:
+Use these signals for different needs:
 
 - package version
-  - install/runtime compatibility for dependency managers
-- API contract version
-  - consumer-facing Python API and CLI compatibility
+  - use this for dependency pins and Python/CLI compatibility
+  - example: `tradinglab-data>=0.1,<0.2`
 - artifact schema version
-  - on-disk data artifact compatibility for parquet and report outputs
-
-Versioning rules:
-
-- package releases follow package versioning
-- `API_CONTRACT_VERSION` changes when the documented Python/CLI compatibility surface changes
-- `ARTIFACT_SCHEMA_VERSION` changes when produced artifact schemas or compatibility expectations change
-- a package release may keep the same API or artifact contract versions if those external surfaces are unchanged
+  - use this when consuming parquet files or generated reports across package releases
+  - current value: `v0.1.0`
 
 Programmatic surface:
 
-- `tradinglab_data.API_CONTRACT_VERSION`
 - `tradinglab_data.ARTIFACT_SCHEMA_VERSION`
-- `tradinglab_data.contracts.API_CONTRACT_VERSION`
 - `tradinglab_data.contracts.ARTIFACT_SCHEMA_VERSION`
 - `tradinglab_data.compatibility_manifest()`
 - `tradinglab_data.schema.compatibility_manifest()`
-- `tradinglab_data.schema.schema_manifest()["api_contract_version"]`
 - `tradinglab_data.schema.schema_manifest()["artifact_schema_version"]`
-
-Contract history:
-
-| API Contract Version | Artifact Schema Version | Package Version | Notes |
-|---|---|---|---|
-| `v0.1.0` | implicit | `0.1.0` | Initial formalized package contract baseline |
-| `v0.2.0` | implicit | `0.1.0` | Adds parquet store integrity reporting command, artifact contract, and typed report shapes |
-| `v0.3.0` | `v0.1.0` | `0.1.0` | Separates Python/CLI contract versioning from artifact schema versioning and adds a compatibility manifest |
 
 Recommended consumer model:
 
-- use package dependency ranges for install compatibility, for example `tradinglab-data>=0.1,<0.2`
-- use `API_CONTRACT_VERSION` when depending on the Python API or CLI surface
-- use `ARTIFACT_SCHEMA_VERSION` when depending on parquet/report outputs or downstream data loaders
-- add consumer-driven compatibility tests in downstream packages where possible
+- depend on package version ranges for installed-package compatibility
+- inspect `ARTIFACT_SCHEMA_VERSION` when validating data-store compatibility
+- add downstream compatibility tests when another package depends on this one
 
 ## Stability Boundary
 
 The following are treated as part of the external contract:
 
-- CLI command names, required arguments, and primary output locations
+- package versioned Python and CLI behavior
 - YAML config keys consumed by CLI and workflow entrypoints
-- On-disk artifact locations, file naming, and schemas
-- Public Python names that do not start with `_`
-- declared typed result contracts and explicit compatibility metadata
-- Error behavior that downstream automation is likely to depend on
+- on-disk artifact locations, file naming, and schemas
+- public Python names that do not start with `_`
+- declared typed result contracts and manifest metadata
+- error behavior that downstream automation is likely to depend on
 
 The following are not part of the external contract:
 
-- Functions, constants, and helpers whose names start with `_`
-- Internal fetch sequencing, retry strategy, and progress output details
+- functions, constants, and helpers whose names start with `_`
+- internal fetch sequencing, retry strategy, and progress output details
 - HTML report styling and presentation details, as long as the artifact path and basic purpose remain the same
+
+## Machine-Readable Manifest
+
+Primary manifest:
+
+- `tradinglab_data.compatibility_manifest()`
+
+Current top-level keys:
+
+- `package_name`
+- `python_package_name`
+- `package_version`
+- `artifact_schema_version`
+- `artifact_families`
+
+`schema_manifest()` extends that manifest with:
+
+- `daily`
+- `intraday`
+- `notes`
 
 ## Package Surface
 
@@ -118,6 +107,8 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 
 Additive top-level lazy re-exports are also available for commonly used public names, including:
 
+- `ARTIFACT_SCHEMA_VERSION`
+- `compatibility_manifest`
 - `load_universe`
 - `load_universe_frame`
 - `build_universe`
@@ -126,7 +117,6 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `render_schema_json`
 - `render_schema_markdown`
 - `generate_parquet_store_report`
-- `compatibility_manifest`
 - `validate_daily_frame`
 - `validate_intraday_frame`
 - `validate_moves_frame`
@@ -138,14 +128,12 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `ExtendedHoursResult`
 - `MonitorExtendedHoursResult`
 - `VerifyResult`
-- `API_CONTRACT_VERSION`
-- `ARTIFACT_SCHEMA_VERSION`
-- `CompatibilityManifest`
-- `ArtifactFamilyEntry`
 - `StoreIntegrityReport`
 - `StoreIntegritySection`
 - `StoreIntegrityFileIssue`
 - `StoreHistoryEntry`
+- `CompatibilityManifest`
+- `ArtifactFamilyEntry`
 
 ## CLI Contract
 
@@ -562,6 +550,8 @@ JSON report top-level keys:
 
 This section records public names currently exposed by submodules. All names below are public in the Python sense because they do not start with `_`.
 
+Python API/CLI compatibility follows the package version rather than a second API-version number.
+
 ### `tradinglab_data.config`
 
 - `default_config_path() -> Path`
@@ -608,7 +598,7 @@ This section records public names currently exposed by submodules. All names bel
 
 - `UniverseRow`
   - fields: `symbol`, `name`, `exchange`, `country`, `source`, `active`, `isin`, `index_memberships`, `needs_mapping`
-- `build_universe(indices, out_path, active_only=True, overrides_dir=\"\", ticker_overrides_path=None) -> pl.DataFrame`
+- `build_universe(indices, out_path, active_only=True, overrides_dir="", ticker_overrides_path=None) -> pl.DataFrame`
 
 ### `tradinglab_data.data_yf`
 
@@ -646,7 +636,6 @@ This section records public names currently exposed by submodules. All names bel
 
 - `PACKAGE_NAME`
 - `PYTHON_PACKAGE_NAME`
-- `API_CONTRACT_VERSION`
 - `ARTIFACT_SCHEMA_VERSION`
 - `ArtifactFamilyEntry`
 - `CompatibilityManifest`
@@ -678,14 +667,14 @@ Typed result note:
 - `compute_moves_vs_close(intraday_df, daily_close_map) -> pl.DataFrame`
 - `detect_alerts(moves_df, threshold, min_volume=None) -> pl.DataFrame`
 - `persist_alerts(alerts, path) -> Path`
-- `summarize_gap_report(moves_df, threshold, min_volume=None, top_n=25, session_filter=\"all\") -> pl.DataFrame`
-- `render_extended_hours_report_html(moves_df, alerts_df, threshold, generated_at=None, top_n=50, session_filter=\"all\") -> str`
-- `persist_extended_hours_report_html(moves_df, alerts_df, path, threshold, top_n=50, session_filter=\"all\") -> Path`
+- `summarize_gap_report(moves_df, threshold, min_volume=None, top_n=25, session_filter="all") -> pl.DataFrame`
+- `render_extended_hours_report_html(moves_df, alerts_df, threshold, generated_at=None, top_n=50, session_filter="all") -> str`
+- `persist_extended_hours_report_html(moves_df, alerts_df, path, threshold, top_n=50, session_filter="all") -> Path`
 - `update_extended_hours_store(...) -> ExtendedHoursResult`
 
 ### `tradinglab_data.workflows`
 
-- `monitor_extended_hours_from_config(cfg, symbols_override=None, top_n=25, session_filter=\"all\") -> MonitorExtendedHoursResult`
+- `monitor_extended_hours_from_config(cfg, symbols_override=None, top_n=25, session_filter="all") -> MonitorExtendedHoursResult`
 - `update_from_config(cfg, symbols_override=None) -> UpdateResult`
 
 ## Behavioral Notes That Matter For Compatibility

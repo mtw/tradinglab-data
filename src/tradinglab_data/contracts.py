@@ -7,7 +7,6 @@ import polars as pl
 
 PACKAGE_NAME = "tradinglab-data"
 PYTHON_PACKAGE_NAME = "tradinglab_data"
-API_CONTRACT_VERSION = "v0.3.0"
 ARTIFACT_SCHEMA_VERSION = "v0.1.0"
 
 SessionLabel = Literal["pre", "regular", "post", "closed", "unknown"]
@@ -57,7 +56,6 @@ class CompatibilityManifest(TypedDict):
     package_name: str
     python_package_name: str
     package_version: str | None
-    api_contract_version: str
     artifact_schema_version: str
     artifact_families: dict[str, ArtifactFamilyEntry]
 

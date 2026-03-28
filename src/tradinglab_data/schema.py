@@ -5,7 +5,7 @@ import json
 
 import polars as pl
 
-from .contracts import API_CONTRACT_VERSION, ARTIFACT_SCHEMA_VERSION, CompatibilityManifest, PACKAGE_NAME, PYTHON_PACKAGE_NAME
+from .contracts import ARTIFACT_SCHEMA_VERSION, CompatibilityManifest, PACKAGE_NAME, PYTHON_PACKAGE_NAME
 
 
 OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = {
@@ -59,7 +59,6 @@ def compatibility_manifest() -> CompatibilityManifest:
         "package_name": PACKAGE_NAME,
         "python_package_name": PYTHON_PACKAGE_NAME,
         "package_version": _package_version(),
-        "api_contract_version": API_CONTRACT_VERSION,
         "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
         "artifact_families": {
             "daily_parquet": {

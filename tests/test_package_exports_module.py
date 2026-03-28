@@ -19,7 +19,6 @@ def test_top_level_exports_include_public_helpers():
     assert pkg.StoreIntegritySection is not None
     assert pkg.run_parquet_sanity_checks is not None
     assert pkg.validate_daily_frame is not None
-    assert pkg.API_CONTRACT_VERSION == "v0.3.0"
     assert pkg.ARTIFACT_SCHEMA_VERSION == "v0.1.0"
 
 
@@ -58,10 +57,9 @@ def test_lazy_schema_validator_export_runs():
 def test_store_report_exports_move_with_contract_version():
     assert pkg.generate_parquet_store_report.__name__ == "generate_parquet_store_report"
     assert pkg.StoreIntegrityReport.__name__ == "StoreIntegrityReport"
-    assert pkg.API_CONTRACT_VERSION.startswith("v0.")
+    assert pkg.ARTIFACT_SCHEMA_VERSION.startswith("v0.")
 
 
 def test_compatibility_manifest_export_contains_artifact_version():
     manifest = pkg.compatibility_manifest()
-    assert manifest["api_contract_version"] == pkg.API_CONTRACT_VERSION
     assert manifest["artifact_schema_version"] == pkg.ARTIFACT_SCHEMA_VERSION
