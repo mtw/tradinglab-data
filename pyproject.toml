@@ -8,6 +8,7 @@ authors = [
   { name = "Michael T. Wolfinger", email = "michael@wolfinger.eu" }
 ]
 license = { text = "MIT" }
+license-files = []
 keywords = ["market-data", "parquet", "polars", "trading", "finance"]
 classifiers = [
   "License :: OSI Approved :: MIT License",

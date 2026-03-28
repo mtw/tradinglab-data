@@ -413,16 +413,12 @@ def build_universe(
             symbol_for_norm = str(isin).strip()
             needs_mapping = 1
 
-        try:
-            yahoo = normalize_to_yahoo(
-                symbol_for_norm,
-                row.get("exchange"),
-                row.get("country"),
-                overrides_path=ticker_overrides_path,
-            )
-        except TypeError:
-            # Keep test doubles and legacy callsites working when they still mock the 3-arg signature.
-            yahoo = normalize_to_yahoo(symbol_for_norm, row.get("exchange"), row.get("country"))
+        yahoo = normalize_to_yahoo(
+            symbol_for_norm,
+            row.get("exchange"),
+            row.get("country"),
+            overrides_path=ticker_overrides_path,
+        )
         if yahoo == "":
             needs_mapping = 1
 
