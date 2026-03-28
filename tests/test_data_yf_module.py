@@ -113,3 +113,43 @@ def test_upsert_symbol_parquet_uses_recent_age_for_incremental_fetch(monkeypatch
 
     assert out_path == root / "AAA.parquet"
     assert seen_lookbacks == [14]
+
+
+def test_upsert_symbol_parquet_expands_incremental_window_for_stale_history(monkeypatch, tmp_path: Path):
+    root = tmp_path / "daily"
+    root.mkdir(parents=True, exist_ok=True)
+    last_dt = datetime.now() - timedelta(days=120)
+    pl.DataFrame(
+        {
+            "date": [last_dt],
+            "open": [1.0],
+            "high": [1.2],
+            "low": [0.9],
+            "close": [1.1],
+            "adj_close": [1.1],
+            "volume": [100.0],
+        }
+    ).write_parquet(root / "AAA.parquet")
+
+    seen_lookbacks: list[int] = []
+
+    def fake_fetch(spec: data_yf.YFDownloadSpec) -> pl.DataFrame:
+        seen_lookbacks.append(spec.lookback_days)
+        return pl.DataFrame(
+            {
+                "date": [datetime.now()],
+                "open": [1.1],
+                "high": [1.3],
+                "low": [1.0],
+                "close": [1.2],
+                "adj_close": [1.2],
+                "volume": [110.0],
+            }
+        )
+
+    monkeypatch.setattr(data_yf, "fetch_yfinance_history", fake_fetch)
+
+    data_yf.upsert_symbol_parquet("AAA", "1d", 2000, root)
+
+    assert len(seen_lookbacks) == 1
+    assert seen_lookbacks[0] >= 125

@@ -13,6 +13,8 @@ def test_top_level_exports_include_public_helpers():
     assert pkg.load_universe is not None
     assert pkg.build_universe is not None
     assert pkg.generate_parquet_store_report is not None
+    assert pkg.StoreIntegrityReport is not None
+    assert pkg.StoreIntegritySection is not None
     assert pkg.run_parquet_sanity_checks is not None
     assert pkg.validate_daily_frame is not None
     assert pkg.API_CONTRACT_VERSION == "v0.2.0"
@@ -48,3 +50,9 @@ def test_lazy_schema_validator_export_runs():
         schema_overrides={"date": pl.Datetime},
     )
     pkg.validate_daily_frame(df)
+
+
+def test_store_report_exports_move_with_contract_version():
+    assert pkg.generate_parquet_store_report.__name__ == "generate_parquet_store_report"
+    assert pkg.StoreIntegrityReport.__name__ == "StoreIntegrityReport"
+    assert pkg.API_CONTRACT_VERSION.startswith("v0.")

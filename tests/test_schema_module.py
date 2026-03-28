@@ -3,7 +3,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from tradinglab_data.schema import render_schema_json, render_schema_markdown, schema_manifest, validate_daily_frame, validate_moves_frame
+from tradinglab_data.schema import render_schema_json, render_schema_markdown, schema_manifest, validate_alerts_frame, validate_daily_frame, validate_moves_frame
 
 
 def test_schema_manifest_has_daily_and_intraday():
@@ -46,6 +46,40 @@ def test_validate_moves_frame_rejects_missing_columns():
     df = pl.DataFrame({"symbol": ["AAPL"], "pct_move": [2.0]})
     with pytest.raises(ValueError, match="missing="):
         validate_moves_frame(df)
+
+
+def test_validate_daily_frame_rejects_wrong_dtype():
+    df = pl.DataFrame(
+        {
+            "date": ["2026-03-27"],
+            "open": [1.0],
+            "high": [1.1],
+            "low": [0.9],
+            "close": [1.0],
+            "adj_close": [1.0],
+            "volume": [100.0],
+            "currency": ["USD"],
+        }
+    )
+    with pytest.raises(ValueError, match="dtype="):
+        validate_daily_frame(df)
+
+
+def test_validate_alerts_frame_rejects_wrong_dtype():
+    df = pl.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "ref_close": [1.0],
+            "last_price": [1.1],
+            "pct_move": [10.0],
+            "last_volume": [100.0],
+            "currency": ["USD"],
+            "last_ts": ["2026-03-27T08:00:00"],
+            "session": ["pre"],
+        }
+    )
+    with pytest.raises(ValueError, match="dtype="):
+        validate_alerts_frame(df)
 
 
 def test_schema_manifest_contains_api_contract_version():

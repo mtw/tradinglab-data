@@ -119,3 +119,51 @@ def test_generate_parquet_store_report_json_only(tmp_path: Path):
 
     assert report["json_path"].endswith("parquet_store_report.json")
     assert report["markdown_path"] == ""
+
+
+def test_generate_parquet_store_report_flags_corrupted_parquet_file(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    cfg = Config.load(config_path)
+    bad_path = tmp_path / "daily" / "BROKEN.parquet"
+    bad_path.parent.mkdir(parents=True, exist_ok=True)
+    bad_path.write_text("not a parquet file", encoding="utf-8")
+
+    report = generate_parquet_store_report(cfg)
+
+    broken = next(item for item in report["dirty_files"] if item["symbol"] == "BROKEN")
+    assert "read_error" in broken["dirty_reasons"]
+    assert broken["read_error"] is not None
+
+
+def test_generate_parquet_store_report_flags_zero_byte_file(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    cfg = Config.load(config_path)
+    zero_path = tmp_path / "daily" / "ZERO.parquet"
+    zero_path.parent.mkdir(parents=True, exist_ok=True)
+    zero_path.write_bytes(b"")
+
+    report = generate_parquet_store_report(cfg)
+
+    zero = next(item for item in report["dirty_files"] if item["symbol"] == "ZERO")
+    assert "zero_byte" in zero["dirty_reasons"]
+    assert "read_error" in zero["dirty_reasons"]
+
+
+def test_render_store_integrity_report_markdown_has_stable_sections(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    cfg = Config.load(config_path)
+    _write_daily_parquet(
+        tmp_path / "daily" / "AAA.parquet",
+        dates=["2026-03-25"],
+        currency=["USD"],
+    )
+
+    report = generate_parquet_store_report(cfg, write_json=False, write_markdown=False)
+    markdown = render_store_integrity_report_markdown(report)
+
+    assert markdown.startswith("# Parquet Store Integrity Report\n")
+    assert "## Section Summary" in markdown
+    assert "| Section | Files | Dirty | Rows | Earliest | Latest | Currencies |" in markdown
+    assert "## Section Details" in markdown
+    assert "## Dirty Files" in markdown
+    assert "## Daily Parquet Sanity" in markdown
