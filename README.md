@@ -155,6 +155,6 @@ Package CI:
 Release and repo-split notes:
 
 - [`RELEASE.md`](RELEASE.md)
-- [`changelog.md`](changelog.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
 
 The package is designed to be split into its own repository and later published to PyPI as `tradinglab-data`.
