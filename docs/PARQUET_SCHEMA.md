@@ -1,5 +1,12 @@
 # TradingLab Data Parquet Schema
 
+Artifact schema version: `v0.1.0`
+
+Machine-readable sources:
+
+- `tradinglab_data.compatibility_manifest()["artifact_schema_version"]`
+- `tradinglab_data.schema_manifest()["artifact_schema_version"]`
+
 ## Daily
 
 | Column | Type |

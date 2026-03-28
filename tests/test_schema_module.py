@@ -3,7 +3,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from tradinglab_data.schema import render_schema_json, render_schema_markdown, schema_manifest, validate_alerts_frame, validate_daily_frame, validate_moves_frame
+from tradinglab_data.schema import compatibility_manifest, render_schema_json, render_schema_markdown, schema_manifest, validate_alerts_frame, validate_daily_frame, validate_moves_frame
 
 
 def test_schema_manifest_has_daily_and_intraday():
@@ -11,6 +11,7 @@ def test_schema_manifest_has_daily_and_intraday():
     assert "daily" in manifest
     assert "intraday" in manifest
     assert "date" in manifest["daily"]
+    assert manifest["artifact_schema_version"] == "v0.1.0"
 
 
 def test_render_schema_markdown_contains_header():
@@ -23,6 +24,7 @@ def test_render_schema_json_contains_adj_close():
     text = render_schema_json()
     assert '"adj_close"' in text
     assert '"api_contract_version"' in text
+    assert '"artifact_schema_version"' in text
 
 
 def test_validate_daily_frame_accepts_canonical_schema():
@@ -84,4 +86,15 @@ def test_validate_alerts_frame_rejects_wrong_dtype():
 
 def test_schema_manifest_contains_api_contract_version():
     manifest = schema_manifest()
-    assert manifest["api_contract_version"] == "v0.2.0"
+    assert manifest["api_contract_version"] == "v0.3.0"
+
+
+def test_compatibility_manifest_separates_package_api_and_artifact_versions():
+    manifest = compatibility_manifest()
+    assert manifest["package_name"] == "tradinglab-data"
+    assert manifest["python_package_name"] == "tradinglab_data"
+    assert manifest["api_contract_version"] == "v0.3.0"
+    assert manifest["artifact_schema_version"] == "v0.1.0"
+    assert "daily_parquet" in manifest["artifact_families"]
+    assert manifest["artifact_families"]["daily_parquet"]["category"] == "parquet"
+    assert manifest["artifact_families"]["parquet_store_report_markdown"]["category"] == "markdown"

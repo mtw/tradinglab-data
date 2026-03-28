@@ -6,35 +6,68 @@ This document records the current externally relevant contract of `tradinglab-da
 
 It is a compatibility snapshot for upcoming review and refactoring work. If code changes must preserve existing consumers, this document is the baseline unless a later migration deliberately updates it.
 
+This document is not the only compatibility mechanism. In practice, consumers should combine:
+
+- package version ranges
+- typed public Python APIs
+- artifact schema version checks
+- machine-readable compatibility manifests
+- downstream compatibility tests
+
 Current package version in [`pyproject.toml`](../pyproject.toml): `0.1.0`
 
 ## Version
 
-API contract version:
+Compatibility signals:
 
-- `v0.2.0`
+- package version
+  - current package version in [`pyproject.toml`](../pyproject.toml): `0.1.0`
+- API contract version
+  - `v0.3.0`
+- artifact schema version
+  - `v0.1.0`
 
-This version identifies the documented consumer-facing compatibility surface of the package.
+These versions answer different questions:
 
-Contract versioning rule:
+- package version
+  - install/runtime compatibility for dependency managers
+- API contract version
+  - consumer-facing Python API and CLI compatibility
+- artifact schema version
+  - on-disk data artifact compatibility for parquet and report outputs
 
-- start aligned with the package version at first publication
-- increment whenever the documented compatibility surface changes
-- a package release may keep the same contract version if the external contract is unchanged
-- incompatible contract changes must update the contract version and include migration notes
+Versioning rules:
+
+- package releases follow package versioning
+- `API_CONTRACT_VERSION` changes when the documented Python/CLI compatibility surface changes
+- `ARTIFACT_SCHEMA_VERSION` changes when produced artifact schemas or compatibility expectations change
+- a package release may keep the same API or artifact contract versions if those external surfaces are unchanged
 
 Programmatic surface:
 
 - `tradinglab_data.API_CONTRACT_VERSION`
+- `tradinglab_data.ARTIFACT_SCHEMA_VERSION`
 - `tradinglab_data.contracts.API_CONTRACT_VERSION`
+- `tradinglab_data.contracts.ARTIFACT_SCHEMA_VERSION`
+- `tradinglab_data.compatibility_manifest()`
+- `tradinglab_data.schema.compatibility_manifest()`
 - `tradinglab_data.schema.schema_manifest()["api_contract_version"]`
+- `tradinglab_data.schema.schema_manifest()["artifact_schema_version"]`
 
 Contract history:
 
-| Contract Version | Package Version | Notes |
-|---|---|---|
-| `v0.1.0` | `0.1.0` | Initial formalized package contract baseline |
-| `v0.2.0` | `0.1.0` | Adds parquet store integrity reporting command, artifact contract, and typed report shapes |
+| API Contract Version | Artifact Schema Version | Package Version | Notes |
+|---|---|---|---|
+| `v0.1.0` | implicit | `0.1.0` | Initial formalized package contract baseline |
+| `v0.2.0` | implicit | `0.1.0` | Adds parquet store integrity reporting command, artifact contract, and typed report shapes |
+| `v0.3.0` | `v0.1.0` | `0.1.0` | Separates Python/CLI contract versioning from artifact schema versioning and adds a compatibility manifest |
+
+Recommended consumer model:
+
+- use package dependency ranges for install compatibility, for example `tradinglab-data>=0.1,<0.2`
+- use `API_CONTRACT_VERSION` when depending on the Python API or CLI surface
+- use `ARTIFACT_SCHEMA_VERSION` when depending on parquet/report outputs or downstream data loaders
+- add consumer-driven compatibility tests in downstream packages where possible
 
 ## Stability Boundary
 
@@ -44,7 +77,7 @@ The following are treated as part of the external contract:
 - YAML config keys consumed by CLI and workflow entrypoints
 - On-disk artifact locations, file naming, and schemas
 - Public Python names that do not start with `_`
-- declared typed result contracts and explicit contract-version metadata
+- declared typed result contracts and explicit compatibility metadata
 - Error behavior that downstream automation is likely to depend on
 
 The following are not part of the external contract:
@@ -93,6 +126,7 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `render_schema_json`
 - `render_schema_markdown`
 - `generate_parquet_store_report`
+- `compatibility_manifest`
 - `validate_daily_frame`
 - `validate_intraday_frame`
 - `validate_moves_frame`
@@ -105,6 +139,9 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `MonitorExtendedHoursResult`
 - `VerifyResult`
 - `API_CONTRACT_VERSION`
+- `ARTIFACT_SCHEMA_VERSION`
+- `CompatibilityManifest`
+- `ArtifactFamilyEntry`
 - `StoreIntegrityReport`
 - `StoreIntegritySection`
 - `StoreIntegrityFileIssue`
@@ -294,6 +331,16 @@ Reference template:
 - bundled wheel copy: [`src/tradinglab_data/config.yaml.example`](../src/tradinglab_data/config.yaml.example)
 
 ## Artifact Contract
+
+Artifact schema version for the produced data-store and report families:
+
+- `v0.1.0`
+
+Machine-readable sources:
+
+- `tradinglab_data.ARTIFACT_SCHEMA_VERSION`
+- `tradinglab_data.compatibility_manifest()["artifact_schema_version"]`
+- `tradinglab_data.schema.schema_manifest()["artifact_schema_version"]`
 
 ### Daily Parquet Store
 
@@ -535,6 +582,7 @@ This section records public names currently exposed by submodules. All names bel
 
 ### `tradinglab_data.schema`
 
+- `compatibility_manifest() -> CompatibilityManifest`
 - `schema_manifest() -> dict[str, object]`
 - `render_schema_json() -> str`
 - `render_schema_markdown() -> str`
@@ -596,7 +644,12 @@ This section records public names currently exposed by submodules. All names bel
 
 ### `tradinglab_data.contracts`
 
+- `PACKAGE_NAME`
+- `PYTHON_PACKAGE_NAME`
 - `API_CONTRACT_VERSION`
+- `ARTIFACT_SCHEMA_VERSION`
+- `ArtifactFamilyEntry`
+- `CompatibilityManifest`
 - `CoverageEntry`
 - `DailyCloseInfo`
 - `ExtendedHoursResult`

@@ -131,9 +131,19 @@ Exact schema and constraints:
 - [`docs/PARQUET_SCHEMA.md`](docs/PARQUET_SCHEMA.md)
 - [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
 
-Current formal API contract version:
+Current compatibility signals:
 
-- `v0.2.0`
+- package version
+  - `0.1.0`
+- API contract version
+  - `v0.3.0`
+- artifact schema version
+  - `v0.1.0`
+
+Machine-readable manifest:
+
+- `tradinglab_data.compatibility_manifest()`
+- `tradinglab_data.schema_manifest()`
 
 Contract history:
 
@@ -141,6 +151,8 @@ Contract history:
   - initial formalized contract baseline
 - `v0.2.0`
   - adds parquet store integrity report workflow and typed report contract
+- `v0.3.0`
+  - separates Python/CLI contract versioning from artifact schema versioning and adds a unified compatibility manifest
 
 Operational boundary and ownership rules:
 

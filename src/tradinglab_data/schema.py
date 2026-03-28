@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version
 import json
 
 import polars as pl
 
-from .contracts import API_CONTRACT_VERSION
+from .contracts import API_CONTRACT_VERSION, ARTIFACT_SCHEMA_VERSION, CompatibilityManifest, PACKAGE_NAME, PYTHON_PACKAGE_NAME
 
 
 OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = {
@@ -46,13 +47,71 @@ SCHEMA_NOTES = {
 }
 
 
-def schema_manifest() -> dict[str, object]:
+def _package_version() -> str | None:
+    try:
+        return version(PACKAGE_NAME)
+    except PackageNotFoundError:
+        return None
+
+
+def compatibility_manifest() -> CompatibilityManifest:
     return {
+        "package_name": PACKAGE_NAME,
+        "python_package_name": PYTHON_PACKAGE_NAME,
+        "package_version": _package_version(),
         "api_contract_version": API_CONTRACT_VERSION,
-        "daily": {k: str(v) for k, v in DAILY_PARQUET_SCHEMA.items()},
-        "intraday": {k: str(v) for k, v in INTRADAY_PARQUET_SCHEMA.items()},
-        "notes": SCHEMA_NOTES,
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "artifact_families": {
+            "daily_parquet": {
+                "category": "parquet",
+                "path_pattern": "<paths.parquet_root>/<SYMBOL>.parquet",
+                "schema_name": "daily_ohlc",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "intraday_parquet": {
+                "category": "parquet",
+                "path_pattern": "<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet",
+                "schema_name": "intraday_ohlc",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "extended_hours_alerts_csv": {
+                "category": "csv",
+                "path_pattern": "<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_alerts.csv",
+                "schema_name": "extended_hours_alerts",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "extended_hours_report_html": {
+                "category": "html",
+                "path_pattern": "<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_report.html",
+                "schema_name": None,
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "parquet_store_report_json": {
+                "category": "json",
+                "path_pattern": "<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.json",
+                "schema_name": "store_integrity_report",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "parquet_store_report_markdown": {
+                "category": "markdown",
+                "path_pattern": "<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.md",
+                "schema_name": None,
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+        },
     }
+
+
+def schema_manifest() -> dict[str, object]:
+    manifest = compatibility_manifest()
+    manifest.update(
+        {
+            "daily": {k: str(v) for k, v in DAILY_PARQUET_SCHEMA.items()},
+            "intraday": {k: str(v) for k, v in INTRADAY_PARQUET_SCHEMA.items()},
+            "notes": SCHEMA_NOTES,
+        }
+    )
+    return manifest
 
 
 def render_schema_json() -> str:
