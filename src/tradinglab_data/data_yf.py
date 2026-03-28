@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -219,7 +220,6 @@ def upsert_symbol_parquet(
 
 def append_update_log(log_path: Path, symbol: str, error: str, attempt_count: int) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    import csv
 
     exists = log_path.exists()
     with log_path.open("a", encoding="utf-8", newline="") as f:

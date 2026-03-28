@@ -20,6 +20,7 @@
 - promoted intraday interval updates to a module-level `_update_intraday_interval()` helper
 - made package config discovery wheel-safe and portable outside of a source checkout
 - clarified the public package surface, exported typed/public helpers lazily, and documented the current compatibility model
+- updated the schema markdown title from `TradingLab Data Parquet Schema` to `Data Parquet Schema`
 
 ### Fixed
 
