@@ -9,12 +9,37 @@ from typing import Any
 import yaml
 
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[2]
-CONFIGS_DIR = PACKAGE_ROOT / "configs"
 DEFAULT_CONFIG_BASENAME = "config.yaml"
-DEFAULT_CONFIG_PATH = CONFIGS_DIR / DEFAULT_CONFIG_BASENAME
 DEFAULT_CONFIG_ENVVAR = "TRADINGLAB_DATA_CONFIG"
 PACKAGED_CONFIG_EXAMPLE = "config.yaml.example"
+
+
+def _discover_repo_root() -> Path | None:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "configs" / PACKAGED_CONFIG_EXAMPLE).exists():
+            return parent
+    return None
+
+
+def _repo_configs_dir() -> Path | None:
+    root = _discover_repo_root()
+    if root is None:
+        return None
+    return root / "configs"
+
+
+def _repo_default_config_path() -> Path | None:
+    configs_dir = _repo_configs_dir()
+    if configs_dir is None:
+        return None
+    return configs_dir / DEFAULT_CONFIG_BASENAME
+
+
+# Legacy compatibility aliases. Repo-discovery behavior uses the helper functions above.
+PACKAGE_ROOT = _discover_repo_root()
+CONFIGS_DIR = _repo_configs_dir()
+DEFAULT_CONFIG_PATH = _repo_default_config_path()
 
 
 def packaged_config_example_text() -> str:
@@ -22,23 +47,25 @@ def packaged_config_example_text() -> str:
 
 
 def _repo_configs_available() -> bool:
-    return CONFIGS_DIR.exists() and (CONFIGS_DIR / PACKAGED_CONFIG_EXAMPLE).exists()
+    configs_dir = _repo_configs_dir()
+    return configs_dir is not None and configs_dir.exists() and (configs_dir / PACKAGED_CONFIG_EXAMPLE).exists()
 
 
 def default_config_path() -> Path:
     env_path = os.getenv(DEFAULT_CONFIG_ENVVAR)
     if env_path:
         return Path(_expand_string(env_path))
-    if _repo_configs_available() and DEFAULT_CONFIG_PATH.exists():
-        return DEFAULT_CONFIG_PATH
+    repo_default = _repo_default_config_path()
+    if repo_default is not None and repo_default.exists():
+        return repo_default
     cwd_default = Path.cwd() / DEFAULT_CONFIG_BASENAME
     if cwd_default.exists():
         return cwd_default
     cwd_configs_default = Path.cwd() / "configs" / DEFAULT_CONFIG_BASENAME
     if cwd_configs_default.exists():
         return cwd_configs_default
-    if _repo_configs_available():
-        return DEFAULT_CONFIG_PATH
+    if repo_default is not None:
+        return repo_default
     return cwd_default
 
 
@@ -62,10 +89,12 @@ def resolve_config_path(path: str | Path) -> Path:
     if not p.is_absolute():
         if p.parent == Path("."):
             candidates.append(Path.cwd() / "configs" / p.name)
-        if _repo_configs_available():
-            candidates.append(PACKAGE_ROOT / p)
-            if p.parent == Path("."):
-                candidates.append(CONFIGS_DIR / p.name)
+        repo_root = _discover_repo_root()
+        repo_configs_dir = _repo_configs_dir()
+        if repo_root is not None:
+            candidates.append(repo_root / p)
+        if repo_configs_dir is not None and p.parent == Path("."):
+            candidates.append(repo_configs_dir / p.name)
     seen: set[Path] = set()
     for cand in candidates:
         resolved = cand.resolve(strict=False)

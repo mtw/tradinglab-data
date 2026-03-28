@@ -186,3 +186,43 @@ def test_update_extended_hours_store_sanitizes_existing_null_rows_without_new_da
     repaired = pl.read_parquet(str(bad_path)).sort("date")
     assert repaired.height == 1
     assert out["preferred_written"] == 1
+
+
+def test_update_intraday_interval_is_testable_in_isolation(tmp_path: Path):
+    now = datetime.now().replace(microsecond=0)
+    out_dir = tmp_path / "intraday" / "5m"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fetched = pl.DataFrame(
+        {
+            "date": [now - timedelta(minutes=5), now],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.5, 101.5],
+            "adj_close": [100.5, 101.5],
+            "volume": [100.0, 200.0],
+        }
+    )
+
+    written = eh._update_intraday_interval(
+        ["AAA"],
+        "5m",
+        "10d",
+        out_dir,
+        retention_days=10,
+        prepost=True,
+        chunk_size=20,
+        sleep_seconds=0.0,
+        max_retries=1,
+        backoff_max_seconds=1.0,
+        threads=False,
+        log_path=None,
+        fetch_intraday_fn=lambda **kwargs: {"AAA": fetched},
+        read_frame_fn=lambda path: None,
+        fetch_currency_fn=lambda symbol: "USD",
+    )
+
+    stored = pl.read_parquet(out_dir / "AAA.parquet").sort("date")
+    assert written == ["AAA"]
+    assert stored.height == 2
+    assert stored.get_column("currency").to_list() == ["USD", "USD"]

@@ -137,8 +137,7 @@ def test_default_config_path_falls_back_to_cwd_config(tmp_path: Path, monkeypatc
     cfg.write_text("paths:\n  parquet_root: data/parquet\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv(config_mod.DEFAULT_CONFIG_ENVVAR, raising=False)
-    monkeypatch.setattr(config_mod, "CONFIGS_DIR", tmp_path / "missing-configs")
-    monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_PATH", (tmp_path / "missing-configs" / "config.yaml"))
+    monkeypatch.setattr(config_mod, "_repo_default_config_path", lambda: None)
     assert default_config_path() == cfg
 
 
@@ -150,8 +149,7 @@ def test_default_config_path_falls_back_to_repo_config_when_env_and_cwd_missing(
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
     monkeypatch.delenv(config_mod.DEFAULT_CONFIG_ENVVAR, raising=False)
-    monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_PATH", repo_cfg)
-    monkeypatch.setattr(config_mod, "_repo_configs_available", lambda: True)
+    monkeypatch.setattr(config_mod, "_repo_default_config_path", lambda: repo_cfg)
     assert default_config_path() == repo_cfg
 
 
@@ -161,8 +159,8 @@ def test_resolve_config_path_checks_cwd_configs_dir(tmp_path: Path, monkeypatch)
     cfg = cfg_dir / "config.yaml"
     cfg.write_text("paths:\n  parquet_root: data/parquet\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(config_mod, "CONFIGS_DIR", tmp_path / "missing-configs")
-    monkeypatch.setattr(config_mod, "DEFAULT_CONFIG_PATH", (tmp_path / "missing-configs" / "config.yaml"))
+    monkeypatch.setattr(config_mod, "_discover_repo_root", lambda: None)
+    monkeypatch.setattr(config_mod, "_repo_configs_dir", lambda: None)
     assert resolve_config_path("config.yaml") == cfg
 
 
@@ -173,9 +171,8 @@ def test_resolve_config_path_checks_repo_candidate_when_present(tmp_path: Path, 
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     monkeypatch.chdir(cwd)
-    monkeypatch.setattr(config_mod, "PACKAGE_ROOT", tmp_path)
-    monkeypatch.setattr(config_mod, "CONFIGS_DIR", tmp_path / "configs")
-    monkeypatch.setattr(config_mod, "_repo_configs_available", lambda: True)
+    monkeypatch.setattr(config_mod, "_discover_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(config_mod, "_repo_configs_dir", lambda: tmp_path / "configs")
     assert resolve_config_path("config.yaml") == repo_cfg
 
 

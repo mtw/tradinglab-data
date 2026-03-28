@@ -560,6 +560,97 @@ def persist_extended_hours_report_html(
     return out
 
 
+def _update_intraday_interval(
+    target_symbols: list[str],
+    interval: str,
+    period: str,
+    out_dir: Path,
+    *,
+    retention_days: int,
+    prepost: bool,
+    chunk_size: int,
+    sleep_seconds: float,
+    max_retries: int,
+    backoff_max_seconds: float,
+    threads: bool,
+    log_path: Path | None,
+    fetch_intraday_fn=None,
+    read_frame_fn=None,
+    fetch_currency_fn=None,
+) -> list[str]:
+    if fetch_intraday_fn is None:
+        fetch_intraday_fn = fetch_extended_intraday
+    if read_frame_fn is None:
+        read_frame_fn = read_parquet_if_exists
+    if fetch_currency_fn is None:
+        fetch_currency_fn = fetch_symbol_currency
+    fetched = fetch_intraday_fn(
+        symbols=target_symbols,
+        interval=interval,
+        period=period,
+        prepost=prepost,
+        chunk_size=chunk_size,
+        sleep_seconds=sleep_seconds,
+        max_retries=max_retries,
+        backoff_max_seconds=backoff_max_seconds,
+        threads=threads,
+        log_path=log_path,
+    )
+    written: list[str] = []
+    for sym in target_symbols:
+        df_new = fetched.get(sym)
+        path = out_dir / f"{sym}.parquet"
+        df_old = read_frame_fn(path)
+        cur = fetch_currency_fn(sym) or "UNKNOWN"
+        if df_new is None or df_new.is_empty():
+            if df_old is None or df_old.is_empty():
+                continue
+            df_old_raw = coerce_standard_schema(df_old)
+            df_old_clean = _trim_rolling_window(
+                ensure_currency(df_old_raw, cur, postprocess=_sanitize_intraday_df),
+                retention_days=retention_days,
+            )
+            if df_old_clean.height != df_old_raw.height:
+                df_old_clean.write_parquet(str(path))
+                written.append(sym)
+            continue
+        df_new = _trim_rolling_window(
+            ensure_currency(df_new, cur, postprocess=_sanitize_intraday_df),
+            retention_days=retention_days,
+        )
+        if df_new.is_empty():
+            continue
+        if df_old is None or df_old.is_empty():
+            df_new.write_parquet(str(path))
+            written.append(sym)
+            continue
+        df_old_raw = coerce_standard_schema(df_old)
+        old_rows_before = df_old_raw.height
+        df_old = _trim_rolling_window(
+            ensure_currency(df_old_raw, cur, postprocess=_sanitize_intraday_df),
+            retention_days=retention_days,
+        )
+        old_sanitized = df_old.height != old_rows_before
+        df_old, df_new = align_for_concat(
+            df_old,
+            df_new,
+            schema=INTRADAY_SCHEMA,
+            postprocess=_sanitize_intraday_df,
+        )
+        if not old_sanitized and not needs_incremental_write(df_old, df_new):
+            written.append(sym)
+            continue
+        combined = (
+            pl.concat([df_old, df_new], how="vertical")
+            .unique(subset=["date"], keep="last")
+            .sort("date")
+        )
+        combined = _trim_rolling_window(combined, retention_days=retention_days)
+        combined.write_parquet(str(path))
+        written.append(sym)
+    return written
+
+
 def update_extended_hours_store(
     symbols: list[str],
     intraday_root: str | Path,
@@ -592,75 +683,34 @@ def update_extended_hours_store(
         else:
             pref_missing.append(sym)
 
-    def _update_interval(target_symbols: list[str], interval: str, period: str, out_dir: Path) -> list[str]:
-        fetched = fetch_extended_intraday(
-            symbols=target_symbols,
-            interval=interval,
-            period=period,
-            prepost=prepost,
-            chunk_size=chunk_size,
-            sleep_seconds=sleep_seconds,
-            max_retries=max_retries,
-            backoff_max_seconds=backoff_max_seconds,
-            threads=threads,
-            log_path=log_path,
-        )
-        written: list[str] = []
-        for sym in target_symbols:
-            df_new = fetched.get(sym)
-            path = out_dir / f"{sym}.parquet"
-            df_old = read_parquet_if_exists(path)
-            cur = fetch_symbol_currency(sym) or "UNKNOWN"
-            if df_new is None or df_new.is_empty():
-                if df_old is None or df_old.is_empty():
-                    continue
-                df_old_raw = coerce_standard_schema(df_old)
-                df_old_clean = _trim_rolling_window(
-                    ensure_currency(df_old_raw, cur, postprocess=_sanitize_intraday_df),
-                    retention_days=retention_days,
-                )
-                if df_old_clean.height != df_old_raw.height:
-                    df_old_clean.write_parquet(str(path))
-                    written.append(sym)
-                continue
-            df_new = _trim_rolling_window(
-                ensure_currency(df_new, cur, postprocess=_sanitize_intraday_df),
-                retention_days=retention_days,
-            )
-            if df_new.is_empty():
-                continue
-            if df_old is None or df_old.is_empty():
-                df_new.write_parquet(str(path))
-                written.append(sym)
-                continue
-            df_old_raw = coerce_standard_schema(df_old)
-            old_rows_before = df_old_raw.height
-            df_old = _trim_rolling_window(
-                ensure_currency(df_old_raw, cur, postprocess=_sanitize_intraday_df),
-                retention_days=retention_days,
-            )
-            old_sanitized = df_old.height != old_rows_before
-            df_old, df_new = align_for_concat(
-                df_old,
-                df_new,
-                schema=INTRADAY_SCHEMA,
-                postprocess=_sanitize_intraday_df,
-            )
-            if not old_sanitized and not needs_incremental_write(df_old, df_new):
-                written.append(sym)
-                continue
-            combined = (
-                pl.concat([df_old, df_new], how="vertical")
-                .unique(subset=["date"], keep="last")
-                .sort("date")
-            )
-            combined = _trim_rolling_window(combined, retention_days=retention_days)
-            combined.write_parquet(str(path))
-            written.append(sym)
-        return written
-
-    pref_written_missing = _update_interval(pref_missing, preferred_interval, MAX_PERIOD_BY_INTERVAL[preferred_interval], pref_dir)
-    pref_written_existing = _update_interval(pref_existing, preferred_interval, UPDATE_PERIOD_BY_INTERVAL[preferred_interval], pref_dir)
+    pref_written_missing = _update_intraday_interval(
+        pref_missing,
+        preferred_interval,
+        MAX_PERIOD_BY_INTERVAL[preferred_interval],
+        pref_dir,
+        retention_days=retention_days,
+        prepost=prepost,
+        chunk_size=chunk_size,
+        sleep_seconds=sleep_seconds,
+        max_retries=max_retries,
+        backoff_max_seconds=backoff_max_seconds,
+        threads=threads,
+        log_path=log_path,
+    )
+    pref_written_existing = _update_intraday_interval(
+        pref_existing,
+        preferred_interval,
+        UPDATE_PERIOD_BY_INTERVAL[preferred_interval],
+        pref_dir,
+        retention_days=retention_days,
+        prepost=prepost,
+        chunk_size=chunk_size,
+        sleep_seconds=sleep_seconds,
+        max_retries=max_retries,
+        backoff_max_seconds=backoff_max_seconds,
+        threads=threads,
+        log_path=log_path,
+    )
     unresolved = [s for s in symbols if s not in set(pref_written_missing) | set(pref_written_existing)]
 
     fb_missing: list[str] = []
@@ -670,8 +720,34 @@ def update_extended_hours_store(
             fb_existing.append(sym)
         else:
             fb_missing.append(sym)
-    fb_written_missing = _update_interval(fb_missing, fallback_interval, MAX_PERIOD_BY_INTERVAL[fallback_interval], fb_dir)
-    fb_written_existing = _update_interval(fb_existing, fallback_interval, UPDATE_PERIOD_BY_INTERVAL[fallback_interval], fb_dir)
+    fb_written_missing = _update_intraday_interval(
+        fb_missing,
+        fallback_interval,
+        MAX_PERIOD_BY_INTERVAL[fallback_interval],
+        fb_dir,
+        retention_days=retention_days,
+        prepost=prepost,
+        chunk_size=chunk_size,
+        sleep_seconds=sleep_seconds,
+        max_retries=max_retries,
+        backoff_max_seconds=backoff_max_seconds,
+        threads=threads,
+        log_path=log_path,
+    )
+    fb_written_existing = _update_intraday_interval(
+        fb_existing,
+        fallback_interval,
+        UPDATE_PERIOD_BY_INTERVAL[fallback_interval],
+        fb_dir,
+        retention_days=retention_days,
+        prepost=prepost,
+        chunk_size=chunk_size,
+        sleep_seconds=sleep_seconds,
+        max_retries=max_retries,
+        backoff_max_seconds=backoff_max_seconds,
+        threads=threads,
+        log_path=log_path,
+    )
 
     latest_frames: dict[str, pl.DataFrame] = {}
     for sym in symbols:
