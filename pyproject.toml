@@ -4,10 +4,10 @@ version = "0.1.0"
 description = "Market data maintenance package for TradingLab parquet and universe artifacts"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
 authors = [
   { name = "Michael T. Wolfinger", email = "michael@wolfinger.eu" }
 ]
+license-files = []
 keywords = ["market-data", "parquet", "polars", "trading", "finance"]
 classifiers = [
   "License :: OSI Approved :: MIT License",

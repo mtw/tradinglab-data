@@ -7,16 +7,21 @@ This handoff assumes `tradinglab-data` is a standalone repository with its own c
 ### Daily Update
 
 ```bash
-tradinglab-data update --config ./configs/config.yaml
+tradinglab-data --config ./configs/config.yaml update
 ```
 
 ### Extended-Hours Monitoring
 
 ```bash
-tradinglab-data monitor-extended-hours \
-  --config ./configs/config.yaml \
+tradinglab-data --config ./configs/config.yaml monitor-extended-hours \
   --session pre \
   --top-n 25
+```
+
+### Store Integrity Report
+
+```bash
+tradinglab-data --config ./configs/config.yaml report-parquet-store
 ```
 
 ### Universe Rebuild

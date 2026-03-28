@@ -37,7 +37,6 @@ Splitting data maintenance from TradingLab has three purposes:
 Standalone package install:
 
 ```bash
-cd packages/tradinglab-data
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[test]"
@@ -48,16 +47,21 @@ Run a few core commands:
 ```bash
 tradinglab-data schema --format markdown
 tradinglab-data build-universe --indices sp500 djia dax mdax atx --out <paths.universe_csv>
-tradinglab-data update --config configs/config.yaml
-tradinglab-data monitor-extended-hours --config configs/config.yaml --session pre --top-n 25
-tradinglab-data report-parquet-store --config configs/config.yaml
+tradinglab-data --config configs/config.yaml update
+tradinglab-data --config configs/config.yaml monitor-extended-hours --session pre --top-n 25
+tradinglab-data --config configs/config.yaml report-parquet-store
 ```
 
-Monorepo usage together with TradingLab:
+Install from PyPI:
 
 ```bash
-pip install -e ./packages/tradinglab-data
-pip install -e .
+pip install tradinglab-data
+```
+
+Use from another local checkout:
+
+```bash
+pip install -e /path/to/tradinglab-data
 ```
 
 ## Primary Commands
@@ -159,7 +163,7 @@ If a config-backed command is run without a valid config file, the CLI raises a 
 Run the package test suite directly:
 
 ```bash
-PYTHONPATH=packages/tradinglab-data/src pytest -q packages/tradinglab-data/tests
+PYTHONPATH=src pytest -q tests
 ```
 
 For this standalone repo:
@@ -186,4 +190,4 @@ Release and repo-split notes:
 - [`RELEASE.md`](RELEASE.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
 
-The package is designed to be split into its own repository and later published to PyPI as `tradinglab-data`.
+This repository is the standalone package and is intended to be published to PyPI as `tradinglab-data`.

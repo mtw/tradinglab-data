@@ -5,7 +5,7 @@
 Primary command:
 
 ```bash
-tradinglab-data update --config /path/to/config.yaml
+tradinglab-data --config /path/to/config.yaml update
 ```
 
 High-level behavior:
@@ -32,7 +32,7 @@ Outputs:
 Primary command:
 
 ```bash
-tradinglab-data monitor-extended-hours --config /path/to/config.yaml --session pre --top-n 25
+tradinglab-data --config /path/to/config.yaml monitor-extended-hours --session pre --top-n 25
 ```
 
 High-level behavior:
@@ -85,7 +85,7 @@ Use this when:
 Primary command:
 
 ```bash
-tradinglab-data report-parquet-store --config /path/to/config.yaml
+tradinglab-data --config /path/to/config.yaml report-parquet-store
 ```
 
 High-level behavior:
