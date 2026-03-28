@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import polars as pl
@@ -99,6 +100,10 @@ def test_generate_parquet_store_report_detects_dirty_files(tmp_path: Path):
     markdown = render_store_integrity_report_markdown(report)
     assert "Dirty Files" in markdown
     assert "intraday:5m" in markdown
+
+    json_report = json.loads(Path(report["json_path"]).read_text(encoding="utf-8"))
+    assert json_report["json_path"].endswith("parquet_store_report.json")
+    assert json_report["markdown_path"].endswith("parquet_store_report.md")
 
 
 def test_generate_parquet_store_report_json_only(tmp_path: Path):

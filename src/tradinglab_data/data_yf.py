@@ -195,7 +195,10 @@ def upsert_symbol_parquet(
     last_dt = existing.select(pl.col("date").max()).item()
     # pull a bit earlier to be safe re: revisions/holes
     lookback_buffer = 14
-    fetch_days = max(lookback_buffer, 60)
+    fetch_days = 60
+    if isinstance(last_dt, datetime):
+        now = datetime.now(last_dt.tzinfo) if last_dt.tzinfo is not None else datetime.now()
+        fetch_days = max(lookback_buffer, max(0, (now - last_dt).days) + 5)
 
     df_inc = fetch_yfinance_history(YFDownloadSpec(symbol=symbol, interval=interval, lookback_days=fetch_days))
     if df_inc.is_empty():

@@ -13,6 +13,8 @@ def test_run_parquet_sanity_checks_missing_root(tmp_path: Path):
     assert summary["ok"] is False
     assert summary["status"] == "fail"
     assert any(str(e).startswith("parquet_root_missing:") for e in summary["errors"])
+    assert "config" in summary
+    assert summary["config"]["sample_read_files"] == 30
 
 
 def test_run_parquet_sanity_checks_success_and_baseline_drop(tmp_path: Path):

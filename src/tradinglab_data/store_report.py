@@ -392,7 +392,6 @@ def generate_parquet_store_report(
 
     if write_json:
         report["json_path"] = str(json_path)
-        json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     if write_markdown:
         report["markdown_path"] = str(markdown_path)
         markdown_path.write_text(render_store_integrity_report_markdown(report), encoding="utf-8")

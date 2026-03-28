@@ -21,6 +21,16 @@ OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = {
 
 DAILY_PARQUET_SCHEMA: dict[str, pl.DataType] = dict(OHLC_PARQUET_SCHEMA)
 INTRADAY_PARQUET_SCHEMA: dict[str, pl.DataType] = dict(OHLC_PARQUET_SCHEMA)
+MOVE_ALERT_FRAME_SCHEMA: dict[str, pl.DataType] = {
+    "symbol": pl.Utf8,
+    "ref_close": pl.Float64,
+    "last_price": pl.Float64,
+    "pct_move": pl.Float64,
+    "last_volume": pl.Float64,
+    "currency": pl.Utf8,
+    "last_ts": pl.Datetime,
+    "session": pl.Utf8,
+}
 
 
 SCHEMA_NOTES = {
@@ -113,28 +123,8 @@ def validate_intraday_frame(df: pl.DataFrame, *, allow_extra_columns: bool = Tru
 
 
 def validate_moves_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    expected = {
-        "symbol": pl.Utf8,
-        "ref_close": pl.Float64,
-        "last_price": pl.Float64,
-        "pct_move": pl.Float64,
-        "last_volume": pl.Float64,
-        "currency": pl.Utf8,
-        "last_ts": pl.Datetime,
-        "session": pl.Utf8,
-    }
-    validate_frame_schema(df, expected, allow_extra_columns=allow_extra_columns)
+    validate_frame_schema(df, MOVE_ALERT_FRAME_SCHEMA, allow_extra_columns=allow_extra_columns)
 
 
 def validate_alerts_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    expected = {
-        "symbol": pl.Utf8,
-        "ref_close": pl.Float64,
-        "last_price": pl.Float64,
-        "pct_move": pl.Float64,
-        "last_volume": pl.Float64,
-        "currency": pl.Utf8,
-        "last_ts": pl.Datetime,
-        "session": pl.Utf8,
-    }
-    validate_frame_schema(df, expected, allow_extra_columns=allow_extra_columns)
+    validate_frame_schema(df, MOVE_ALERT_FRAME_SCHEMA, allow_extra_columns=allow_extra_columns)

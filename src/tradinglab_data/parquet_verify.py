@@ -66,6 +66,14 @@ def run_parquet_sanity_checks(cfg: ParquetVerifyConfig) -> VerifyResult:
             "sample_read_failures": [],
             "coverage": {},
             "prev_file_count": None,
+            "config": {
+                "min_parquet_files": int(cfg.min_parquet_files),
+                "max_zero_byte": int(cfg.max_zero_byte),
+                "max_missing_ratio": float(cfg.max_missing_ratio),
+                "sample_read_files": int(cfg.sample_read_files),
+                "max_drop_ratio": float(cfg.max_drop_ratio),
+                "baseline_summary_path": str(cfg.baseline_summary_path) if cfg.baseline_summary_path else "",
+            },
         }
 
     files = sorted(root.glob("*.parquet"))

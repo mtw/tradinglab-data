@@ -291,7 +291,7 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
     recent_provider = str(cfg.get("update", "recent_provider", default="yfinance")).strip().lower()
     recent_days = int(cfg.get("update", "recent_days", default=5))
     incremental_days = int(cfg.get("update", "incremental_days", default=60))
-    assert_postwrite_integrity = bool(cfg.get("update", "assert_postwrite_integrity", default=True))
+    postwrite_integrity_enabled = bool(cfg.get("update", "assert_postwrite_integrity", default=True))
     stooq_refresh_all = bool(cfg.get("update", "stooq_refresh_all", default=False))
     runs_root = runs_root_path(cfg)
     intraday_enabled = bool(cfg.get("extended_hours", "enabled", default=True))
@@ -349,7 +349,7 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
                 assert_postwrite_integrity(
                     out_path,
                     sym,
-                    enabled=assert_postwrite_integrity,
+                    enabled=postwrite_integrity_enabled,
                     read_frame=read_parquet_if_exists,
                     append_log=append_update_log,
                     log_path=log_path,
@@ -386,7 +386,7 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
                     assert_postwrite_integrity(
                         path,
                         sym,
-                        enabled=assert_postwrite_integrity,
+                        enabled=postwrite_integrity_enabled,
                         read_frame=read_parquet_if_exists,
                         append_log=append_update_log,
                         log_path=log_path,
@@ -432,7 +432,7 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
         assert_postwrite_integrity(
             out_path,
             sym,
-            enabled=assert_postwrite_integrity,
+            enabled=postwrite_integrity_enabled,
             read_frame=read_parquet_if_exists,
             append_log=append_update_log,
             log_path=log_path,
@@ -460,7 +460,7 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
                 assert_postwrite_integrity(
                     path,
                     sym,
-                    enabled=assert_postwrite_integrity,
+                    enabled=postwrite_integrity_enabled,
                     read_frame=read_parquet_if_exists,
                     append_log=append_update_log,
                     log_path=log_path,
@@ -484,7 +484,7 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
             assert_postwrite_integrity(
                 path,
                 sym,
-                enabled=assert_postwrite_integrity,
+                enabled=postwrite_integrity_enabled,
                 read_frame=read_parquet_if_exists,
                 append_log=append_update_log,
                 log_path=log_path,
@@ -513,7 +513,7 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
                 assert_postwrite_integrity(
                     out_path,
                     sym,
-                    enabled=assert_postwrite_integrity,
+                    enabled=postwrite_integrity_enabled,
                     read_frame=read_parquet_if_exists,
                     append_log=append_update_log,
                     log_path=log_path,

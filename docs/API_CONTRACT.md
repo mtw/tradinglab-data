@@ -613,6 +613,11 @@ This section records public names currently exposed by submodules. All names bel
 - `MOVE_FRAME_COLUMNS`
 - `ALERT_FRAME_COLUMNS`
 
+Typed result note:
+
+- `ExtendedHoursResult` and `MonitorExtendedHoursResult` include live `polars.DataFrame` objects in `moves_df` and `alerts_df`
+- these result objects are part of the in-process Python API contract, not a JSON wire contract
+
 ### `tradinglab_data.extended_hours_monitor`
 
 - `fetch_extended_intraday(...) -> dict[str, pl.DataFrame]`

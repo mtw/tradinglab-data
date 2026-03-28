@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
+import polars as pl
 
 import tradinglab_data.data_yf as data_yf
 
@@ -72,3 +73,43 @@ def test_append_update_log_writes_csv(tmp_path: Path):
     text = log.read_text(encoding="utf-8")
     assert "timestamp,symbol,error,attempt_count" in text
     assert "AAPL,x,1" in text
+
+
+def test_upsert_symbol_parquet_uses_recent_age_for_incremental_fetch(monkeypatch, tmp_path: Path):
+    root = tmp_path / "daily"
+    root.mkdir(parents=True, exist_ok=True)
+    last_dt = datetime.now() - timedelta(days=1)
+    pl.DataFrame(
+        {
+            "date": [last_dt],
+            "open": [1.0],
+            "high": [1.2],
+            "low": [0.9],
+            "close": [1.1],
+            "adj_close": [1.1],
+            "volume": [100.0],
+        }
+    ).write_parquet(root / "AAA.parquet")
+
+    seen_lookbacks: list[int] = []
+
+    def fake_fetch(spec: data_yf.YFDownloadSpec) -> pl.DataFrame:
+        seen_lookbacks.append(spec.lookback_days)
+        return pl.DataFrame(
+            {
+                "date": [last_dt + timedelta(days=1)],
+                "open": [1.1],
+                "high": [1.3],
+                "low": [1.0],
+                "close": [1.2],
+                "adj_close": [1.2],
+                "volume": [110.0],
+            }
+        )
+
+    monkeypatch.setattr(data_yf, "fetch_yfinance_history", fake_fetch)
+
+    out_path = data_yf.upsert_symbol_parquet("AAA", "1d", 2000, root)
+
+    assert out_path == root / "AAA.parquet"
+    assert seen_lookbacks == [14]
