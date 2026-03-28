@@ -26,6 +26,7 @@ from .data_yf import (
     fetch_symbol_currency,
     read_parquet_if_exists,
 )
+from .schema import MOVE_ALERT_FRAME_SCHEMA
 
 
 INTRADAY_SCHEMA = {
@@ -48,6 +49,10 @@ UPDATE_PERIOD_BY_INTERVAL = {
     "5m": "10d",
     "1m": "2d",
 }
+
+
+def _empty_move_alert_frame() -> pl.DataFrame:
+    return pl.DataFrame(schema=MOVE_ALERT_FRAME_SCHEMA)
 
 
 def _sanitize_intraday_df(df: pl.DataFrame | None) -> pl.DataFrame:
@@ -260,7 +265,7 @@ def compute_moves_vs_close(
             if df is None or df.is_empty():
                 continue
             frames.append(df.with_columns(pl.lit(sym).alias("symbol")))
-        data = pl.concat(frames, how="vertical") if frames else pl.DataFrame(schema={"symbol": pl.Utf8})
+        data = pl.concat(frames, how="vertical") if frames else _empty_move_alert_frame()
     else:
         data = intraday_df
 
@@ -323,7 +328,7 @@ def compute_moves_vs_close(
                 "session": _session_label(last_ts),
             }
         )
-    return pl.DataFrame(rows) if rows else pl.DataFrame(schema={"symbol": pl.Utf8})
+    return pl.DataFrame(rows, schema=MOVE_ALERT_FRAME_SCHEMA) if rows else _empty_move_alert_frame()
 
 
 def detect_alerts(
@@ -332,7 +337,7 @@ def detect_alerts(
     min_volume: float | None = None,
 ) -> pl.DataFrame:
     if moves_df is None or moves_df.is_empty():
-        return pl.DataFrame(schema={"symbol": pl.Utf8})
+        return _empty_move_alert_frame()
     out = moves_df.filter(pl.col("pct_move").abs() >= float(threshold))
     if min_volume is not None and float(min_volume) > 0:
         out = out.filter(pl.col("last_volume").fill_null(0.0) >= float(min_volume))
@@ -357,7 +362,7 @@ def summarize_gap_report(
     session_filter: str = "all",
 ) -> pl.DataFrame:
     if moves_df is None or moves_df.is_empty():
-        return pl.DataFrame(schema={"symbol": pl.Utf8})
+        return _empty_move_alert_frame()
     out = moves_df
     wanted = str(session_filter or "all").strip().lower()
     if wanted not in {"all", "pre", "post", "regular", "closed"}:

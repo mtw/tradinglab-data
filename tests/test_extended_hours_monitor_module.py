@@ -6,6 +6,7 @@ from pathlib import Path
 import polars as pl
 
 import tradinglab_data.extended_hours_monitor as eh
+from tradinglab_data.schema import MOVE_ALERT_FRAME_SCHEMA, validate_alerts_frame, validate_moves_frame
 
 
 def test_compute_moves_vs_close_and_detect_alerts():
@@ -77,6 +78,19 @@ def test_summarize_gap_report_session_filter():
     )
     out = eh.summarize_gap_report(moves, threshold=2.0, top_n=10, session_filter="post")
     assert out.get_column("symbol").to_list() == ["AAPL"]
+
+
+def test_empty_move_and_alert_frames_follow_contract_schema():
+    moves = eh.compute_moves_vs_close({}, {})
+    alerts = eh.detect_alerts(moves, threshold=2.0)
+    summary = eh.summarize_gap_report(moves, threshold=2.0)
+
+    assert moves.columns == list(MOVE_ALERT_FRAME_SCHEMA)
+    assert alerts.columns == list(MOVE_ALERT_FRAME_SCHEMA)
+    assert summary.columns == list(MOVE_ALERT_FRAME_SCHEMA)
+    validate_moves_frame(moves)
+    validate_alerts_frame(alerts)
+    validate_moves_frame(summary)
 
 
 def test_update_extended_hours_store_writes_preferred_and_fallback(tmp_path: Path, monkeypatch):

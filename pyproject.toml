@@ -52,9 +52,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/tradinglab_data"]
 include = [
+  "src/tradinglab_data/LICENSE",
   "src/tradinglab_data/config.yaml.example",
   "src/tradinglab_data/py.typed",
 ]
-
-[tool.hatch.build.targets.wheel.force-include]
-"LICENSE" = "tradinglab_data/LICENSE"

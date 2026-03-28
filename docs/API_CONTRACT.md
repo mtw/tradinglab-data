@@ -75,6 +75,12 @@ Current top-level keys:
 - `intraday`
 - `notes`
 
+Migration note:
+
+- earlier pre-release revisions exposed `API_CONTRACT_VERSION`
+- as of `0.1.0`, package compatibility is tracked by the package version itself
+- on-disk parquet/report compatibility is tracked separately by `ARTIFACT_SCHEMA_VERSION`
+
 ## Package Surface
 
 Installable package name:

@@ -281,7 +281,6 @@ def monitor_extended_hours_from_config(
 
 
 def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> UpdateResult:
-    universe_csv = universe_csv_path(cfg)
     parquet_root = parquet_root_path(cfg)
     interval = cfg.get("timeframe", default="1d")
     lookback_days = int(cfg.get("lookback_days", default=2000))
@@ -355,7 +354,19 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
                 append_update_log(log_path, sym, f"stooq_error:{e}", 1)
 
         if recent_provider in {"yfinance", "yf"} and recent_days > 0:
-            inc_map = fetch_yfinance_history_bulk(symbols, interval=interval, lookback_days=recent_days, chunk_size=chunk_size, sleep_seconds=sleep_seconds, max_retries=max_retries, backoff_max_seconds=backoff_max_seconds, threads=threads, log_path=log_path, show_progress=True, progress_desc="YF recent merge fetch (stooq mode)")
+            inc_map = fetch_yfinance_history_bulk(
+                symbols,
+                interval=interval,
+                lookback_days=recent_days,
+                chunk_size=chunk_size,
+                sleep_seconds=sleep_seconds,
+                max_retries=max_retries,
+                backoff_max_seconds=backoff_max_seconds,
+                threads=threads,
+                log_path=log_path,
+                show_progress=True,
+                progress_desc="YF recent merge fetch (stooq mode)",
+            )
             for sym in tqdm(symbols):
                 path = root / f"{sym}.parquet"
                 try:
@@ -412,11 +423,33 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
         print("Done.")
         return {"symbols": symbols, "parquet_root": str(parquet_root), "intraday": intraday_res}
 
-    full_map = fetch_yfinance_history_bulk(missing_regular, interval=interval, lookback_days=lookback_days, chunk_size=1, sleep_seconds=sleep_seconds, max_retries=max_retries, backoff_max_seconds=backoff_max_seconds, threads=False, log_path=log_path, show_progress=True, progress_desc="YF full-history fetch (missing regular)")
+    full_map = fetch_yfinance_history_bulk(
+        missing_regular,
+        interval=interval,
+        lookback_days=lookback_days,
+        chunk_size=1,
+        sleep_seconds=sleep_seconds,
+        max_retries=max_retries,
+        backoff_max_seconds=backoff_max_seconds,
+        threads=False,
+        log_path=log_path,
+        show_progress=True,
+        progress_desc="YF full-history fetch (missing regular)",
+    )
     for sym in tqdm(missing_regular):
         df_new = full_map.get(sym)
         if df_new is None or df_new.is_empty():
-            retry_map = fetch_yfinance_history_bulk([sym], interval=interval, lookback_days=lookback_days, chunk_size=1, sleep_seconds=sleep_seconds, max_retries=max_retries, backoff_max_seconds=backoff_max_seconds, threads=False, log_path=log_path)
+            retry_map = fetch_yfinance_history_bulk(
+                [sym],
+                interval=interval,
+                lookback_days=lookback_days,
+                chunk_size=1,
+                sleep_seconds=sleep_seconds,
+                max_retries=max_retries,
+                backoff_max_seconds=backoff_max_seconds,
+                threads=False,
+                log_path=log_path,
+            )
             df_new = retry_map.get(sym)
         df_new = sanitize_ohlc_df(df_new)
         if df_new is None or df_new.is_empty():
@@ -436,7 +469,19 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
         )
 
     inc_days = max(1, int(incremental_days))
-    inc_map = fetch_yfinance_history_bulk(existing_regular, interval=interval, lookback_days=inc_days, chunk_size=chunk_size, sleep_seconds=sleep_seconds, max_retries=max_retries, backoff_max_seconds=backoff_max_seconds, threads=threads, log_path=log_path, show_progress=True, progress_desc="YF incremental fetch (existing regular)")
+    inc_map = fetch_yfinance_history_bulk(
+        existing_regular,
+        interval=interval,
+        lookback_days=inc_days,
+        chunk_size=chunk_size,
+        sleep_seconds=sleep_seconds,
+        max_retries=max_retries,
+        backoff_max_seconds=backoff_max_seconds,
+        threads=threads,
+        log_path=log_path,
+        show_progress=True,
+        progress_desc="YF incremental fetch (existing regular)",
+    )
     skipped_unchanged = 0
     for sym in tqdm(existing_regular):
         path = root / f"{sym}.parquet"
@@ -446,7 +491,17 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
             df_old = sanitize_ohlc_df(ensure_currency(df_old, cur))
             df_inc = inc_map.get(sym)
             if df_inc is None or df_inc.is_empty():
-                retry_map = fetch_yfinance_history_bulk([sym], interval=interval, lookback_days=inc_days, chunk_size=1, sleep_seconds=sleep_seconds, max_retries=max_retries, backoff_max_seconds=backoff_max_seconds, threads=False, log_path=log_path)
+                retry_map = fetch_yfinance_history_bulk(
+                    [sym],
+                    interval=interval,
+                    lookback_days=inc_days,
+                    chunk_size=1,
+                    sleep_seconds=sleep_seconds,
+                    max_retries=max_retries,
+                    backoff_max_seconds=backoff_max_seconds,
+                    threads=False,
+                    log_path=log_path,
+                )
                 df_inc = retry_map.get(sym)
             df_inc = sanitize_ohlc_df(ensure_currency(df_inc, cur))
             if df_inc is None or df_inc.is_empty():
@@ -492,12 +547,34 @@ def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> U
         print(f"[UPDATE] skipped unchanged existing symbols: {skipped_unchanged}/{len(existing_regular)}")
 
     if strict_symbols:
-        strict_map = fetch_yfinance_history_bulk(strict_symbols, interval=interval, lookback_days=lookback_days, chunk_size=1, sleep_seconds=sleep_seconds, max_retries=max_retries, backoff_max_seconds=backoff_max_seconds, threads=False, log_path=log_path, show_progress=True, progress_desc="YF strict full-history fetch")
+        strict_map = fetch_yfinance_history_bulk(
+            strict_symbols,
+            interval=interval,
+            lookback_days=lookback_days,
+            chunk_size=1,
+            sleep_seconds=sleep_seconds,
+            max_retries=max_retries,
+            backoff_max_seconds=backoff_max_seconds,
+            threads=False,
+            log_path=log_path,
+            show_progress=True,
+            progress_desc="YF strict full-history fetch",
+        )
         for sym in tqdm(strict_symbols):
             try:
                 df_new = strict_map.get(sym)
                 if df_new is None or df_new.is_empty():
-                    retry_map = fetch_yfinance_history_bulk([sym], interval=interval, lookback_days=lookback_days, chunk_size=1, sleep_seconds=sleep_seconds, max_retries=max_retries, backoff_max_seconds=backoff_max_seconds, threads=False, log_path=log_path)
+                    retry_map = fetch_yfinance_history_bulk(
+                        [sym],
+                        interval=interval,
+                        lookback_days=lookback_days,
+                        chunk_size=1,
+                        sleep_seconds=sleep_seconds,
+                        max_retries=max_retries,
+                        backoff_max_seconds=backoff_max_seconds,
+                        threads=False,
+                        log_path=log_path,
+                    )
                     df_new = retry_map.get(sym)
                 df_new = sanitize_ohlc_df(df_new)
                 if df_new is None or df_new.is_empty():

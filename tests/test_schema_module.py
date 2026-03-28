@@ -98,3 +98,10 @@ def test_compatibility_manifest_separates_package_and_artifact_versions():
     assert "daily_parquet" in manifest["artifact_families"]
     assert manifest["artifact_families"]["daily_parquet"]["category"] == "parquet"
     assert manifest["artifact_families"]["parquet_store_report_markdown"]["category"] == "markdown"
+    assert set(manifest) == {
+        "package_name",
+        "python_package_name",
+        "package_version",
+        "artifact_schema_version",
+        "artifact_families",
+    }

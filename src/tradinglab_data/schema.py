@@ -102,15 +102,12 @@ def compatibility_manifest() -> CompatibilityManifest:
 
 
 def schema_manifest() -> dict[str, object]:
-    manifest = compatibility_manifest()
-    manifest.update(
-        {
-            "daily": {k: str(v) for k, v in DAILY_PARQUET_SCHEMA.items()},
-            "intraday": {k: str(v) for k, v in INTRADAY_PARQUET_SCHEMA.items()},
-            "notes": SCHEMA_NOTES,
-        }
-    )
-    return manifest
+    return {
+        **compatibility_manifest(),
+        "daily": {k: str(v) for k, v in DAILY_PARQUET_SCHEMA.items()},
+        "intraday": {k: str(v) for k, v in INTRADAY_PARQUET_SCHEMA.items()},
+        "notes": SCHEMA_NOTES,
+    }
 
 
 def render_schema_json() -> str:
