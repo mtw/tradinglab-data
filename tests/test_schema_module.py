@@ -22,6 +22,7 @@ def test_render_schema_markdown_contains_header():
 def test_render_schema_json_contains_adj_close():
     text = render_schema_json()
     assert '"adj_close"' in text
+    assert '"api_contract_version"' in text
 
 
 def test_validate_daily_frame_accepts_canonical_schema():
@@ -45,3 +46,8 @@ def test_validate_moves_frame_rejects_missing_columns():
     df = pl.DataFrame({"symbol": ["AAPL"], "pct_move": [2.0]})
     with pytest.raises(ValueError, match="missing="):
         validate_moves_frame(df)
+
+
+def test_schema_manifest_contains_api_contract_version():
+    manifest = schema_manifest()
+    assert manifest["api_contract_version"] == "v0.1.0"

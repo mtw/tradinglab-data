@@ -5,6 +5,8 @@ from typing import Literal, TypedDict
 import polars as pl
 
 
+API_CONTRACT_VERSION = "v0.1.0"
+
 SessionLabel = Literal["pre", "regular", "post", "closed", "unknown"]
 VerifyStatus = Literal["ok", "fail"]
 

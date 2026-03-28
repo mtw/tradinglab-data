@@ -118,6 +118,10 @@ Exact schema and constraints:
 - [`docs/PARQUET_SCHEMA.md`](docs/PARQUET_SCHEMA.md)
 - [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
 
+Current formal API contract version:
+
+- `v0.1.0`
+
 Operational boundary and ownership rules:
 
 - [`docs/BOUNDARY.md`](docs/BOUNDARY.md)

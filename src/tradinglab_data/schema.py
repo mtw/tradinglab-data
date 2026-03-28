@@ -4,6 +4,8 @@ import json
 
 import polars as pl
 
+from .contracts import API_CONTRACT_VERSION
+
 
 OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = {
     "date": pl.Datetime,
@@ -36,6 +38,7 @@ SCHEMA_NOTES = {
 
 def schema_manifest() -> dict[str, object]:
     return {
+        "api_contract_version": API_CONTRACT_VERSION,
         "daily": {k: str(v) for k, v in DAILY_PARQUET_SCHEMA.items()},
         "intraday": {k: str(v) for k, v in INTRADAY_PARQUET_SCHEMA.items()},
         "notes": SCHEMA_NOTES,

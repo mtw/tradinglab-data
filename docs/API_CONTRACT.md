@@ -8,6 +8,33 @@ It is a compatibility snapshot for upcoming review and refactoring work. If code
 
 Current package version in [`pyproject.toml`](../pyproject.toml): `0.1.0`
 
+## Version
+
+API contract version:
+
+- `v0.1.0`
+
+This version identifies the documented consumer-facing compatibility surface of the package.
+
+Contract versioning rule:
+
+- start aligned with the package version at first publication
+- increment whenever the documented compatibility surface changes
+- a package release may keep the same contract version if the external contract is unchanged
+- incompatible contract changes must update the contract version and include migration notes
+
+Programmatic surface:
+
+- `tradinglab_data.API_CONTRACT_VERSION`
+- `tradinglab_data.contracts.API_CONTRACT_VERSION`
+- `tradinglab_data.schema.schema_manifest()["api_contract_version"]`
+
+Contract history:
+
+| Contract Version | Package Version | Notes |
+|---|---|---|
+| `v0.1.0` | `0.1.0` | Initial formalized package contract baseline |
+
 ## Stability Boundary
 
 The following are treated as part of the external contract:
@@ -16,6 +43,7 @@ The following are treated as part of the external contract:
 - YAML config keys consumed by CLI and workflow entrypoints
 - On-disk artifact locations, file naming, and schemas
 - Public Python names that do not start with `_`
+- declared typed result contracts and explicit contract-version metadata
 - Error behavior that downstream automation is likely to depend on
 
 The following are not part of the external contract:
@@ -73,6 +101,7 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `ExtendedHoursResult`
 - `MonitorExtendedHoursResult`
 - `VerifyResult`
+- `API_CONTRACT_VERSION`
 
 ## CLI Contract
 
@@ -514,6 +543,7 @@ This section records public names currently exposed by submodules. All names bel
 
 ### `tradinglab_data.contracts`
 
+- `API_CONTRACT_VERSION`
 - `CoverageEntry`
 - `DailyCloseInfo`
 - `ExtendedHoursResult`

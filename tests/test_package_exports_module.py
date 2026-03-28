@@ -14,6 +14,7 @@ def test_top_level_exports_include_public_helpers():
     assert pkg.build_universe is not None
     assert pkg.run_parquet_sanity_checks is not None
     assert pkg.validate_daily_frame is not None
+    assert pkg.API_CONTRACT_VERSION == "v0.1.0"
 
 
 def test_clear_currency_cache_clears_module_cache():
