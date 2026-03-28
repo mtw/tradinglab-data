@@ -162,9 +162,11 @@ Run the package test suite directly:
 PYTHONPATH=packages/tradinglab-data/src pytest -q packages/tradinglab-data/tests
 ```
 
-Package CI:
+For this standalone repo:
 
-- run `PYTHONPATH=src pytest -q tests`
+```bash
+PYTHONPATH=src pytest -q tests
+```
 
 ## Release
 
