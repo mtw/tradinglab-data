@@ -41,6 +41,9 @@ Issues = "https://github.com/mtw/tradinglab-data/issues"
 test = [
   "pytest>=8.0.0"
 ]
+dev = [
+  "build"
+]
 
 [project.scripts]
 tradinglab-data = "tradinglab_data.cli:main"
