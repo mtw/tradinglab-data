@@ -91,4 +91,6 @@ def test_fetch_stooq_history_falls_back_to_next_candidate(monkeypatch):
 def test_fetch_stooq_history_live_smoke():
     df = stooq.fetch_stooq_history(stooq.StooqDownloadSpec(symbol="AAPL"))
 
+    if df.is_empty():
+        pytest.skip("live Stooq fetch returned no data")
     assert isinstance(df, pl.DataFrame)

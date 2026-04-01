@@ -193,6 +193,7 @@ GitHub CI:
   - `python -m build`
   - `python -m twine check dist/*`
 - reserves `@pytest.mark.network` for live upstream smoke tests, which CI excludes by default
+- treats those live upstream smoke tests as best-effort checks that may skip when a provider blocks or returns no data
 - also builds the wheel in a clean job, installs `dist/*.whl`, and smoke-checks the installed package and CLI
 
 ## Release

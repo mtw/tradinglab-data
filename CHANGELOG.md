@@ -22,6 +22,7 @@
 - narrowed silent CSV/source loading failures into explicit warnings for unexpected universe and override input errors
 - added a minimum `lxml` version floor and developer extras for `ruff`, `mypy`, and `pytest-cov`
 - added explicit `@pytest.mark.network` live smoke coverage and now treat name-only ATX fallback rows as mapping-required
+- made the live network smoke tests skip cleanly when upstreams block or return no data
 
 ## [0.1.0] - 2026-03-28
 

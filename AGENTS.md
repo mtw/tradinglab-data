@@ -49,6 +49,7 @@ PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-m
 ```
 
 Use `@pytest.mark.network` for live upstream smoke tests so CI can exclude them by default.
+Those tests should skip cleanly when the upstream blocks or returns no live data.
 
 Static checks:
 
