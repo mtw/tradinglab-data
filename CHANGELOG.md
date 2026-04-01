@@ -6,6 +6,7 @@
 - Made `scripts/run_daily_update_verify.sh` prefer `configs/config.local.yaml` automatically when present, while still allowing `TLD_CONFIG_PATH` to override it explicitly.
 - Captured noisy `yfinance` stderr/stdout during Yahoo downloads and now classify DNS/connectivity failures as explicit Yahoo connectivity errors instead of leaking misleading `possibly delisted` messages into maintenance logs.
 - Added `scripts/verify_yahoo_access.py`, a lightweight Yahoo Finance accessibility verifier that samples configured universe symbols and probes multiple intervals before a full update run.
+- Changed the Yahoo accessibility verifier to sample different symbols on each invocation by default, with optional `--seed` support for reproducible debugging.
 
 ## [0.1.0] - 2026-03-28
 

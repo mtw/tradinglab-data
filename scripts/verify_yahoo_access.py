@@ -51,12 +51,12 @@ def _load_symbols(cfg: Config, indices: list[str] | None) -> list[str]:
     return symbols
 
 
-def _sample_symbols(symbols: list[str], sample_size: int, seed: int) -> list[str]:
+def _sample_symbols(symbols: list[str], sample_size: int, seed: int | None) -> list[str]:
     if sample_size <= 0:
         raise ValueError("sample_size must be positive")
     if len(symbols) <= sample_size:
         return list(symbols)
-    rng = random.Random(seed)
+    rng = random.Random(seed) if seed is not None else random.Random()
     return sorted(rng.sample(symbols, sample_size))
 
 
@@ -201,7 +201,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated universe shard names to sample from, e.g. sp500,djia. Default: full configured universe.",
     )
     parser.add_argument("--sample-size", type=int, default=15, help="Number of symbols to probe. Default: 15.")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducible sampling. Default: 42.")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="Optional random seed for reproducible sampling. Default: unset, so each run samples different symbols.",
+    )
     parser.add_argument(
         "--intervals",
         default="1d,5m,1m",

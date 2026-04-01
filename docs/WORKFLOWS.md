@@ -145,7 +145,8 @@ Use this when:
 Behavior:
 
 - loads symbols from the configured universe CSV or selected universe shard files
-- picks a deterministic random sample using the configured seed
+- picks a fresh random sample on each run by default
+- supports `--seed` when reproducible sampling is needed for debugging
 - probes Yahoo per symbol and interval
 - classifies connectivity failures separately from empty/no-data responses
 - optionally writes a JSON summary for later inspection

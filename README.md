@@ -58,6 +58,8 @@ Operational verifier script:
 python scripts/verify_yahoo_access.py --config configs/config.local.yaml --sample-size 15 --intervals 1d,5m,1m
 ```
 
+By default, each invocation samples a fresh random set of symbols. Pass `--seed <n>` when you want reproducible sampling for debugging.
+
 Install from PyPI:
 
 ```bash

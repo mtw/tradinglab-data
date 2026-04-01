@@ -11,7 +11,7 @@ from tests._load import load_script_module
 mod = load_script_module("verify_yahoo_access")
 
 
-def test_sample_symbols_is_stable():
+def test_sample_symbols_is_stable_with_explicit_seed():
     symbols = [f"S{idx:02d}" for idx in range(30)]
     sample1 = mod._sample_symbols(symbols, 10, 42)
     sample2 = mod._sample_symbols(symbols, 10, 42)
