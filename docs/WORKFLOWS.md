@@ -130,6 +130,26 @@ Config precedence for this wrapper:
 - `configs/config.local.yaml` when it exists
 - `configs/config.yaml` otherwise
 
+Yahoo accessibility verifier:
+
+```bash
+python scripts/verify_yahoo_access.py --config /path/to/config.yaml --sample-size 15 --intervals 1d,5m,1m
+```
+
+Use this when:
+
+- upstream Yahoo behavior looks suspicious
+- maintenance logs show repeated connectivity or consent-host failures
+- you want a fast operational check before running a full daily update
+
+Behavior:
+
+- loads symbols from the configured universe CSV or selected universe shard files
+- picks a deterministic random sample using the configured seed
+- probes Yahoo per symbol and interval
+- classifies connectivity failures separately from empty/no-data responses
+- optionally writes a JSON summary for later inspection
+
 ## Failure Semantics
 
 - Missing parquet during research is a hard failure in downstream applications, not a signal to fetch data.

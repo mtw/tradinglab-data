@@ -72,6 +72,7 @@ PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown
 ```
 
 If the change affects update behavior, also run at least one config-backed smoke command with a real config path.
+If the change affects Yahoo provider accessibility or error classification, consider running `python scripts/verify_yahoo_access.py --config /path/to/config.yaml --sample-size 10 --intervals 1d,5m`.
 
 ## Testing Ownership
 

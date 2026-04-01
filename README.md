@@ -52,6 +52,12 @@ tradinglab-data --config configs/config.yaml monitor-extended-hours --session pr
 tradinglab-data --config configs/config.yaml report-parquet-store
 ```
 
+Operational verifier script:
+
+```bash
+python scripts/verify_yahoo_access.py --config configs/config.local.yaml --sample-size 15 --intervals 1d,5m,1m
+```
+
 Install from PyPI:
 
 ```bash
@@ -86,6 +92,11 @@ pip install -e /path/to/tradinglab-data
   - audit every daily and intraday parquet file
   - write JSON and markdown integrity reports
   - highlight dirty files, schema issues, history ranges, and currency coverage
+
+- `python scripts/verify_yahoo_access.py`
+  - sample symbols from the configured universe or selected universe shards
+  - probe Yahoo Finance accessibility across multiple intervals
+  - classify connectivity errors separately from empty symbol results
 
 ## Primary Outputs
 
