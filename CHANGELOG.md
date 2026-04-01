@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-- fixed TradingView component parsing to normalize whitespace and extract names correctly
 - invalid extended-hours intraday intervals now fail fast with a clear `ValueError`
 - refactored the update workflow into provider-specific internal runners and aligned intraday update plumbing around `_IntradayConfig`
 - replaced hardcoded universe index dispatch with an internal fetcher registry

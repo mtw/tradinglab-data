@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from io import BytesIO, StringIO
+from io import BytesIO
 from pathlib import Path
 from typing import Iterable
 from urllib.request import urlopen, Request
@@ -117,76 +117,6 @@ def _read_stoxx_closecomposition(index_symbol: str) -> pl.DataFrame | None:
         return df
     except Exception:
         return None
-
-
-def _fetch_html(url: str) -> str | None:
-    try:
-        import urllib.request
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = resp.read()
-        return data.decode("utf-8", errors="ignore")
-    except Exception:
-        return None
-
-
-def _tradingview_components_rows(url: str, source: str) -> list[dict]:
-    try:
-        import pandas as pd
-    except Exception:
-        return []
-
-    html = _fetch_html(url)
-    if not html:
-        return []
-    try:
-        tables = pd.read_html(StringIO(html))
-    except Exception:
-        return []
-    if not tables:
-        return []
-
-    df = None
-    for t in tables:
-        cols = {c.lower(): c for c in t.columns}
-        if "symbol" in cols or "instrument" in cols:
-            df = t
-            break
-    if df is None:
-        df = tables[0]
-
-    cols = {c.lower(): c for c in df.columns}
-    sym_col = cols.get("symbol") or cols.get("instrument")
-    if sym_col is None:
-        return []
-
-    out = pl.from_pandas(df[[sym_col]])
-    out = out.rename({sym_col: "symbol_raw"})
-    out = out.with_columns(
-        pl.col("symbol_raw")
-        .cast(pl.String)
-        .str.replace_all(r"\s+", " ")
-        .str.strip_chars()
-        .alias("symbol_raw")
-    )
-    out = out.with_columns(
-        pl.col("symbol_raw").str.extract(r"^([A-Z0-9._-]+)", 1).alias("symbol"),
-        pl.col("symbol_raw").str.replace(r"^[A-Z0-9._-]+\s*", "").alias("name"),
-    ).drop("symbol_raw")
-    out = out.filter(pl.col("symbol").is_not_null() & (pl.col("symbol") != ""))
-
-    rows = []
-    for row in out.iter_rows(named=True):
-        rows.append({
-            "symbol": row.get("symbol"),
-            "name": row.get("name"),
-            "exchange": "Xetra",
-            "country": "Germany",
-            "source": source,
-            "active": 1,
-            "isin": None,
-        })
-    return rows
 
 
 def _stoxx_closecomposition_rows(index_symbol: str, source: str) -> list[dict]:
