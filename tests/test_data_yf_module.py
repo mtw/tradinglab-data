@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -156,3 +157,35 @@ def test_upsert_symbol_parquet_expands_incremental_window_for_stale_history(monk
 
     assert len(seen_lookbacks) == 1
     assert seen_lookbacks[0] >= 125
+
+
+def test_fetch_yfinance_history_bulk_classifies_dns_failure_without_delisted_noise(monkeypatch, tmp_path: Path, capsys):
+    log_path = tmp_path / "update_log.csv"
+
+    def fake_download(*args, **kwargs):
+        print(
+            "Failed to get ticker 'HYG' reason: Failed to perform, curl: (6) Could not resolve host: guce.yahoo.com.",
+            file=sys.stderr,
+        )
+        print("$HYG: possibly delisted; no timezone found", file=sys.stderr)
+        print("\n1 Failed download:\n['HYG']: possibly delisted; no timezone found", file=sys.stderr)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(data_yf.yf, "download", fake_download)
+
+    out = data_yf.fetch_yfinance_history_bulk(
+        ["HYG"],
+        interval="1d",
+        lookback_days=30,
+        chunk_size=1,
+        sleep_seconds=0.0,
+        log_path=log_path,
+    )
+
+    captured = capsys.readouterr()
+    assert out == {}
+    assert captured.out == ""
+    assert captured.err == ""
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "yahoo_connectivity_error: could not resolve host guce.yahoo.com" in log_text
+    assert "possibly delisted" not in log_text

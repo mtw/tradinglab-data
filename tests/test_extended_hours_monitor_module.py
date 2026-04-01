@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import polars as pl
 import pytest
 
+import tradinglab_data._intraday_fetch as intraday_fetch
 import tradinglab_data.extended_hours_monitor as eh
 from tradinglab_data.schema import MOVE_ALERT_FRAME_SCHEMA, validate_alerts_frame, validate_moves_frame
 
@@ -257,3 +259,34 @@ def test_update_extended_hours_store_rejects_unsupported_interval(tmp_path: Path
             retention_days=10,
             pct_move_threshold=2.0,
         )
+
+
+def test_fetch_intraday_bulk_classifies_dns_failure_without_delisted_noise(monkeypatch, tmp_path: Path, capsys):
+    log_path = tmp_path / "update_log.csv"
+
+    def fake_download(*args, **kwargs):
+        print(
+            "Failed to get ticker 'IEF' reason: Failed to perform, curl: (6) Could not resolve host: guce.yahoo.com.",
+            file=sys.stderr,
+        )
+        print("$IEF: possibly delisted; no timezone found", file=sys.stderr)
+        print("\n1 Failed download:\n['IEF']: possibly delisted; no timezone found", file=sys.stderr)
+        return None
+
+    monkeypatch.setattr(intraday_fetch.yf, "download", fake_download)
+
+    out = intraday_fetch.fetch_intraday_bulk(
+        ["IEF"],
+        interval="5m",
+        period="10d",
+        sleep_seconds=0.0,
+        log_path=log_path,
+    )
+
+    captured = capsys.readouterr()
+    assert out == {}
+    assert captured.out == ""
+    assert captured.err == ""
+    log_text = log_path.read_text(encoding="utf-8")
+    assert "intraday_5m_yahoo_connectivity_error: could not resolve host guce.yahoo.com" in log_text
+    assert "possibly delisted" not in log_text

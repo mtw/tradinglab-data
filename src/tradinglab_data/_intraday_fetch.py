@@ -11,9 +11,11 @@ from tqdm import tqdm
 
 from ._yf_utils import (
     backoff_sleep,
+    classify_yf_download_issue,
     coerce_standard_schema,
     is_rate_limit_error,
     normalize_yf_df_to_polars,
+    run_yf_download,
     split_bulk_download,
 )
 from .data_yf import append_update_log
@@ -106,7 +108,8 @@ def fetch_intraday_bulk(
         attempt = 0
         while True:
             try:
-                df_pd = yf.download(
+                df_pd, output = run_yf_download(
+                    yf.download,
                     chunk,
                     period=period,
                     interval=interval,
@@ -116,7 +119,13 @@ def fetch_intraday_bulk(
                     group_by="column",
                     threads=threads,
                 )
+                issue = classify_yf_download_issue(output)
                 chunk_map = split_bulk_download(df_pd, chunk)
+                if issue is not None and not chunk_map:
+                    if log_path is not None:
+                        for sym in chunk:
+                            append_update_log(log_path, sym, f"intraday_{interval}_{issue}", attempt + 1)
+                    break
                 out_chunk: dict[str, pl.DataFrame] = {}
                 for sym, df_one in chunk_map.items():
                     try:
@@ -144,7 +153,8 @@ def fetch_intraday_one(
     period: str,
     prepost: bool = True,
 ) -> pl.DataFrame:
-    df_pd = yf.download(
+    df_pd, _ = run_yf_download(
+        yf.download,
         symbol,
         period=period,
         interval=interval,

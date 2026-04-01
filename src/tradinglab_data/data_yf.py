@@ -19,6 +19,9 @@ from ._yf_utils import (
     backoff_sleep as _backoff_sleep,
 )
 from ._yf_utils import (
+    classify_yf_download_issue as _classify_yf_download_issue,
+)
+from ._yf_utils import (
     coerce_standard_schema as _coerce_standard_schema,
 )
 from ._yf_utils import (
@@ -26,6 +29,9 @@ from ._yf_utils import (
 )
 from ._yf_utils import (
     normalize_yf_df_to_polars as _normalize_yf_df_to_polars,
+)
+from ._yf_utils import (
+    run_yf_download as _run_yf_download,
 )
 from ._yf_utils import (
     share_class_fallback as _share_class_fallback,
@@ -51,7 +57,8 @@ class YFDownloadSpec:
 def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
     start_s, end_s = _yf_date_window(spec.lookback_days)
 
-    df_pd = yf.download(
+    df_pd, output = _run_yf_download(
+        yf.download,
         spec.symbol,
         start=start_s,
         end=end_s,
@@ -60,11 +67,13 @@ def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
         progress=False,
         group_by="column",
     )
+    issue = _classify_yf_download_issue(output)
 
-    if df_pd is None or len(df_pd) == 0:
+    if (df_pd is None or len(df_pd) == 0) and issue is None:
         fallback = _share_class_fallback(spec.symbol)
         if fallback and fallback != spec.symbol:
-            df_pd = yf.download(
+            df_pd, _ = _run_yf_download(
+                yf.download,
                 fallback,
                 start=start_s,
                 end=end_s,
@@ -138,7 +147,8 @@ def fetch_yfinance_history_bulk(
         attempt = 0
         while True:
             try:
-                df_pd = yf.download(
+                df_pd, output = _run_yf_download(
+                    yf.download,
                     chunk,
                     start=start_s,
                     end=end_s,
@@ -148,7 +158,13 @@ def fetch_yfinance_history_bulk(
                     group_by="column",
                     threads=threads,
                 )
+                issue = _classify_yf_download_issue(output)
                 chunk_map = _split_bulk_download(df_pd, chunk)
+                if issue is not None and not chunk_map:
+                    if log_path is not None:
+                        for sym in chunk:
+                            append_update_log(log_path, sym, issue, attempt + 1)
+                    break
                 # Share-class fallback (e.g. BRK.B -> BRK-B) for symbols not present in bulk response.
                 missing_syms = [sym for sym in chunk if sym not in chunk_map]
                 for msym in missing_syms:
@@ -156,7 +172,8 @@ def fetch_yfinance_history_bulk(
                     if not alt:
                         continue
                     try:
-                        df_one = yf.download(
+                        df_one, single_output = _run_yf_download(
+                            yf.download,
                             alt,
                             start=start_s,
                             end=end_s,
@@ -166,6 +183,11 @@ def fetch_yfinance_history_bulk(
                             group_by="column",
                             threads=False,
                         )
+                        single_issue = _classify_yf_download_issue(single_output)
+                        if single_issue is not None:
+                            if log_path is not None:
+                                append_update_log(log_path, msym, single_issue, attempt + 1)
+                            continue
                         if df_one is not None and len(df_one) > 0:
                             chunk_map[msym] = _normalize_yf_df_to_polars(df_one)
                     except Exception:

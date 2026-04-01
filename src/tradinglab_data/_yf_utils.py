@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import random
 import re
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import polars as pl
 
@@ -159,3 +163,32 @@ def split_bulk_download(df_pd, symbols: list[str]) -> dict[str, pl.DataFrame]:
     if len(symbols) == 1:
         out[symbols[0]] = normalize_yf_df_to_polars(df_pd)
     return out
+
+
+def run_yf_download(download_fn: Callable[..., Any], *args: Any, **kwargs: Any) -> tuple[Any, str]:
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+        df_pd = download_fn(*args, **kwargs)
+    return df_pd, buffer.getvalue()
+
+
+def classify_yf_download_issue(output: str) -> str | None:
+    text = (output or "").strip()
+    if not text:
+        return None
+
+    host_match = re.search(r"could not resolve host:\s*([^\s.]+(?:\.[^\s.]+)*)", text, flags=re.IGNORECASE)
+    if host_match:
+        return f"yahoo_connectivity_error: could not resolve host {host_match.group(1)}"
+
+    if re.search(r"temporary failure in name resolution", text, flags=re.IGNORECASE):
+        return "yahoo_connectivity_error: temporary failure in name resolution"
+
+    if re.search(r"name or service not known", text, flags=re.IGNORECASE):
+        return "yahoo_connectivity_error: name or service not known"
+
+    curl_match = re.search(r"curl:\s*\((\d+)\)", text, flags=re.IGNORECASE)
+    if curl_match:
+        return f"yahoo_connectivity_error: curl ({curl_match.group(1)})"
+
+    return None
