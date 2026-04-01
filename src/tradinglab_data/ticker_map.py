@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from threading import Lock
-import polars as pl
 
+import polars as pl
 
 _OVERRIDE_CACHE: dict[str, str] | None = None
 _OVERRIDE_CACHE_SOURCE: str | None = None

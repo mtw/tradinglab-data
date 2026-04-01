@@ -17,9 +17,11 @@
 - split extended-hours fetch, move computation, and HTML/report writing into dedicated internal modules while preserving the public monitoring API
 - further decomposed the Yahoo update runner into explicit new-symbol, incremental-merge, and strict-symbol write helpers
 - added CI gates for `ruff`, `mypy`, coverage enforcement, and default non-network test execution
+- widened Ruff from Pyflakes-only to a broader import/upgrade/style gate, and reduced blanket mypy suppressions to the remaining Polars-heavy categories
 - replaced Python callback-based symbol override application with a native Polars join/coalesce path
 - narrowed silent CSV/source loading failures into explicit warnings for unexpected universe and override input errors
 - added a minimum `lxml` version floor and developer extras for `ruff`, `mypy`, and `pytest-cov`
+- added explicit `@pytest.mark.network` live smoke coverage and now treat name-only ATX fallback rows as mapping-required
 
 ## [0.1.0] - 2026-03-28
 

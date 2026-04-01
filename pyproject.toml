@@ -74,11 +74,16 @@ line-length = 120
 target-version = "py310"
 
 [tool.ruff.lint]
-select = ["F"]
+select = ["E", "F", "I", "W", "UP"]
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"
 warn_unused_configs = true
 ignore_missing_imports = true
 show_error_codes = true
-disable_error_code = ["arg-type", "assignment", "dict-item", "import-untyped", "typeddict-item"]
+disable_error_code = ["arg-type", "assignment"]
+
+[[tool.mypy.overrides]]
+module = ["tradinglab_data.config"]
+disable_error_code = ["import-untyped"]

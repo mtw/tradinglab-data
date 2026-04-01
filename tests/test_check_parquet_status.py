@@ -6,7 +6,6 @@ from pathlib import Path
 
 from tests._load import load_script_module
 
-
 mod = load_script_module("check_parquet_status")
 
 

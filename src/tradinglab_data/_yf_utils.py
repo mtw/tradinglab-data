@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import random
 import re
 import time
-from typing import Any
+from datetime import datetime, timedelta, timezone
 
 import polars as pl
 
-
-STANDARD_PRICE_SCHEMA: dict[str, Any] = {
+STANDARD_PRICE_SCHEMA: dict[str, type[pl.DataType]] = {
     "date": pl.Datetime,
     "open": pl.Float64,
     "high": pl.Float64,

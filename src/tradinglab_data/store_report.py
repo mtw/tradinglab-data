@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 from statistics import median
-from typing import Callable
 
 import polars as pl
 

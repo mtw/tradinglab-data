@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import time
 
 import polars as pl
 import yfinance as yf
@@ -16,7 +16,6 @@ from ._yf_utils import (
     split_bulk_download,
 )
 from .data_yf import append_update_log
-
 
 INTRADAY_SCHEMA = {
     "date": pl.Datetime,

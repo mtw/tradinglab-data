@@ -48,6 +48,8 @@ Package tests:
 PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
 ```
 
+Use `@pytest.mark.network` for live upstream smoke tests so CI can exclude them by default.
+
 Static checks:
 
 ```bash

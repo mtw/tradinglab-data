@@ -6,7 +6,17 @@ from pathlib import Path
 import pytest
 
 import tradinglab_data.config as config_mod
-from tradinglab_data.config import Config, default_config_path, intraday_root_path, packaged_config_example_text, registry_root_path, resolve_config_path, ticker_overrides_path, universe_dir_path, update_log_path
+from tradinglab_data.config import (
+    Config,
+    default_config_path,
+    intraday_root_path,
+    packaged_config_example_text,
+    registry_root_path,
+    resolve_config_path,
+    ticker_overrides_path,
+    universe_dir_path,
+    update_log_path,
+)
 
 
 def test_config_load_missing_has_clear_message():

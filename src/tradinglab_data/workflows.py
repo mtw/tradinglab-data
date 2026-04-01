@@ -18,14 +18,25 @@ from ._ohlc_utils import (
     resolve_currency,
     sanitize_ohlc_df,
 )
+from .config import (
+    intraday_root_path,
+    parquet_root_path,
+    runs_root_path,
+    ticker_overrides_path,
+    universe_csv_path,
+    universe_dir_path,
+    update_log_path,
+)
 from .contracts import ExtendedHoursResult, MonitorExtendedHoursResult, UpdateResult
 from .data_stooq import StooqDownloadSpec, fetch_stooq_history, infer_currency_from_symbol
 from .data_yf import append_update_log, fetch_symbol_currency, fetch_yfinance_history_bulk, read_parquet_if_exists
-from .config import intraday_root_path, parquet_root_path, runs_root_path, ticker_overrides_path, universe_csv_path, universe_dir_path, update_log_path
-from .extended_hours_monitor import persist_extended_hours_report_html, summarize_gap_report, update_extended_hours_store
+from .extended_hours_monitor import (
+    persist_extended_hours_report_html,
+    summarize_gap_report,
+    update_extended_hours_store,
+)
 from .schema import DAILY_PARQUET_SCHEMA
 from .universe import canonicalize_symbol, load_ticker_overrides, load_universe_frame
-
 
 STRICT_SINGLE_SYMBOL_SUFFIXES = (".VI",)
 

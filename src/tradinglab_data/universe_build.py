@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Callable, Iterable
-from urllib.request import urlopen, Request
+from urllib.request import Request, urlopen
 
 import polars as pl
 
@@ -350,6 +350,8 @@ def build_universe(
         isin = row.get("isin")
         needs_mapping = 0
         symbol_for_norm = raw_symbol
+        if raw_symbol == "" and not isin:
+            needs_mapping = 1
         if raw_symbol == "" and isin:
             symbol_for_norm = str(isin).strip()
             needs_mapping = 1

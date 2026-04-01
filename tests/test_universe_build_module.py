@@ -94,3 +94,35 @@ def test_build_universe_raises_when_all_sources_and_overrides_are_empty(tmp_path
             active_only=True,
             overrides_dir=tmp_path / "missing-overrides",
         )
+
+
+@pytest.mark.network
+def test_safe_read_html_live_smoke():
+    tables = ub._safe_read_html("https://en.wikipedia.org/wiki/DAX", match="Ticker")
+
+    assert tables is not None
+    assert len(tables) >= 1
+
+
+def test_build_universe_marks_atx_wikipedia_name_only_rows_for_mapping(tmp_path: Path, monkeypatch):
+    monkeypatch.setitem(
+        ub._INDEX_FETCHERS,
+        "atx",
+        lambda: [
+            {
+                "symbol": "",
+                "name": "Name Only AG",
+                "exchange": "Vienna",
+                "country": "Austria",
+                "source": "atx_wikipedia_de",
+                "active": 1,
+                "isin": None,
+            }
+        ],
+    )
+    monkeypatch.setattr(ub, "normalize_to_yahoo", lambda symbol, exchange, country, **kwargs: "")
+
+    df = ub.build_universe(indices=["atx"], out_path=tmp_path / "universe.csv", active_only=True)
+
+    assert df.get_column("symbol").to_list() == [""]
+    assert df.get_column("needs_mapping").to_list() == [1]

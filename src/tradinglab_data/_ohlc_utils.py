@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
 
 import polars as pl
 
 from .schema import DAILY_PARQUET_SCHEMA, INTRADAY_PARQUET_SCHEMA
-
 
 PriceFrame = pl.DataFrame | None
 
@@ -89,7 +88,7 @@ def align_for_concat(
     df_left: pl.DataFrame,
     df_right: pl.DataFrame,
     *,
-    schema: dict[str, Any],
+    schema: dict[str, type[pl.DataType]],
     preferred_columns: list[str] | None = None,
     postprocess: Callable[[pl.DataFrame], pl.DataFrame] | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:

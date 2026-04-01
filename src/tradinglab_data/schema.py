@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
 import json
-from typing import Any
+from importlib.metadata import PackageNotFoundError, version
 
 import polars as pl
 
-from .contracts import ARTIFACT_SCHEMA_VERSION, CompatibilityManifest, OHLC_COLUMNS, PACKAGE_NAME, PYTHON_PACKAGE_NAME
+from .contracts import ARTIFACT_SCHEMA_VERSION, OHLC_COLUMNS, PACKAGE_NAME, PYTHON_PACKAGE_NAME, CompatibilityManifest
 
-
-OHLC_SCHEMA: dict[str, Any] = {
+OHLC_SCHEMA: dict[str, type[pl.DataType]] = {
     "date": pl.Datetime,
     "open": pl.Float64,
     "high": pl.Float64,
@@ -21,10 +19,10 @@ OHLC_SCHEMA: dict[str, Any] = {
 }
 
 
-OHLC_PARQUET_SCHEMA: dict[str, Any] = OHLC_SCHEMA
-DAILY_PARQUET_SCHEMA: dict[str, Any] = OHLC_SCHEMA
-INTRADAY_PARQUET_SCHEMA: dict[str, Any] = OHLC_SCHEMA
-MOVE_ALERT_FRAME_SCHEMA: dict[str, Any] = {
+OHLC_PARQUET_SCHEMA: dict[str, type[pl.DataType]] = OHLC_SCHEMA
+DAILY_PARQUET_SCHEMA: dict[str, type[pl.DataType]] = OHLC_SCHEMA
+INTRADAY_PARQUET_SCHEMA: dict[str, type[pl.DataType]] = OHLC_SCHEMA
+MOVE_ALERT_FRAME_SCHEMA: dict[str, type[pl.DataType]] = {
     "symbol": pl.String,
     "ref_close": pl.Float64,
     "last_price": pl.Float64,
@@ -117,7 +115,7 @@ def render_schema_json() -> str:
 
 
 def render_schema_markdown() -> str:
-    def _table(title: str, schema: dict[str, Any]) -> str:
+    def _table(title: str, schema: dict[str, type[pl.DataType]]) -> str:
         rows = "\n".join(f"| `{col}` | `{dtype}` |" for col, dtype in schema.items())
         return f"## {title}\n\n| Column | Type |\n|---|---|\n{rows}\n"
 
@@ -147,7 +145,7 @@ def _dtype_matches(actual: pl.DataType, expected: pl.DataType) -> bool:
 
 def validate_frame_schema(
     df: pl.DataFrame,
-    expected_schema: dict[str, Any],
+    expected_schema: dict[str, type[pl.DataType]],
     *,
     allow_extra_columns: bool = True,
 ) -> None:

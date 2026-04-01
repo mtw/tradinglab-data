@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.error import URLError
 
 import polars as pl
+import pytest
 
 import tradinglab_data.data_stooq as stooq
 
@@ -84,3 +85,10 @@ def test_fetch_stooq_history_falls_back_to_next_candidate(monkeypatch):
     assert any("ebs.at" in url for url in requested_urls)
     assert any("ebs.vi" in url for url in requested_urls)
     assert df.get_column("close").to_list() == [105.0]
+
+
+@pytest.mark.network
+def test_fetch_stooq_history_live_smoke():
+    df = stooq.fetch_stooq_history(stooq.StooqDownloadSpec(symbol="AAPL"))
+
+    assert isinstance(df, pl.DataFrame)

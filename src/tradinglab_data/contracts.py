@@ -4,7 +4,6 @@ from typing import Literal, TypedDict
 
 import polars as pl
 
-
 PACKAGE_NAME = "tradinglab-data"
 PYTHON_PACKAGE_NAME = "tradinglab_data"
 ARTIFACT_SCHEMA_VERSION = "v0.1.0"

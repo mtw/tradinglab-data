@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from importlib.resources import files
-import os
 from pathlib import Path
 from typing import Any
 
 import yaml
-
 
 DEFAULT_CONFIG_BASENAME = "config.yaml"
 DEFAULT_CONFIG_ENVVAR = "TRADINGLAB_DATA_CONFIG"
@@ -116,7 +115,7 @@ class Config:
     source_path: Path | None = None
 
     @staticmethod
-    def load(path: str | Path) -> "Config":
+    def load(path: str | Path) -> Config:
         p = resolve_config_path(path)
         if not p.exists():
             raise FileNotFoundError(

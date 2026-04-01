@@ -11,7 +11,6 @@ from ._yf_utils import coerce_standard_schema
 from .contracts import ExtendedHoursResult
 from .data_yf import fetch_symbol_currency, read_parquet_if_exists
 
-
 persist_alerts = _alert_report.persist_alerts
 persist_extended_hours_report_html = _alert_report.persist_extended_hours_report_html
 render_extended_hours_report_html = _alert_report.render_extended_hours_report_html
@@ -29,11 +28,8 @@ detect_alerts = _move_compute.detect_alerts
 load_daily_reference_closes = _move_compute.load_daily_reference_closes
 summarize_gap_report = _move_compute.summarize_gap_report
 
-_empty_move_alert_frame = _move_compute.empty_move_alert_frame
-_period_for_interval = period_for_interval
+# Private compat alias used by repo-maintenance scripts.
 _sanitize_intraday_df = sanitize_intraday_df
-_session_label = _move_compute.session_label
-_trim_rolling_window = trim_rolling_window
 
 
 def _update_intraday_interval(

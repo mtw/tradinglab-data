@@ -192,6 +192,7 @@ GitHub CI:
   - `PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown`
   - `python -m build`
   - `python -m twine check dist/*`
+- reserves `@pytest.mark.network` for live upstream smoke tests, which CI excludes by default
 - also builds the wheel in a clean job, installs `dist/*.whl`, and smoke-checks the installed package and CLI
 
 ## Release

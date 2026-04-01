@@ -1,24 +1,38 @@
 from __future__ import annotations
 
 import csv
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
-import time
 
-import yfinance as yf
 import polars as pl
+import yfinance as yf
 from tqdm import tqdm
 
 from ._yf_utils import (
     STANDARD_PRICE_SCHEMA,
+)
+from ._yf_utils import (
     backoff_sleep as _backoff_sleep,
+)
+from ._yf_utils import (
     coerce_standard_schema as _coerce_standard_schema,
+)
+from ._yf_utils import (
     is_rate_limit_error as _is_rate_limit_error,
+)
+from ._yf_utils import (
     normalize_yf_df_to_polars as _normalize_yf_df_to_polars,
+)
+from ._yf_utils import (
     share_class_fallback as _share_class_fallback,
+)
+from ._yf_utils import (
     split_bulk_download as _split_bulk_download,
+)
+from ._yf_utils import (
     yf_date_window as _yf_date_window,
 )
 

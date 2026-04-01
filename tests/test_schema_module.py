@@ -3,7 +3,15 @@ from __future__ import annotations
 import polars as pl
 import pytest
 
-from tradinglab_data.schema import compatibility_manifest, render_schema_json, render_schema_markdown, schema_manifest, validate_alerts_frame, validate_daily_frame, validate_moves_frame
+from tradinglab_data.schema import (
+    compatibility_manifest,
+    render_schema_json,
+    render_schema_markdown,
+    schema_manifest,
+    validate_alerts_frame,
+    validate_daily_frame,
+    validate_moves_frame,
+)
 
 
 def test_schema_manifest_has_daily_and_intraday():
