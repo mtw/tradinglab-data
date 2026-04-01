@@ -5,3 +5,4 @@ dist/
 build/
 var/
 refactor/
+.venv/
