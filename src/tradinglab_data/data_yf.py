@@ -4,6 +4,7 @@ import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 import time
 
 import yfinance as yf
@@ -22,6 +23,7 @@ from ._yf_utils import (
 )
 
 _CURRENCY_CACHE: dict[str, str | None] = {}
+_CURRENCY_CACHE_LOCK = Lock()
 
 
 @dataclass(frozen=True)
@@ -63,8 +65,9 @@ def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
 
 
 def fetch_symbol_currency(symbol: str) -> str | None:
-    if symbol in _CURRENCY_CACHE:
-        return _CURRENCY_CACHE[symbol]
+    with _CURRENCY_CACHE_LOCK:
+        if symbol in _CURRENCY_CACHE:
+            return _CURRENCY_CACHE[symbol]
 
     currency: str | None = None
     try:
@@ -89,7 +92,8 @@ def fetch_symbol_currency(symbol: str) -> str | None:
         currency = currency.strip().upper() or None
     else:
         currency = None
-    _CURRENCY_CACHE[symbol] = currency
+    with _CURRENCY_CACHE_LOCK:
+        _CURRENCY_CACHE[symbol] = currency
     return currency
 
 
@@ -230,4 +234,5 @@ def append_update_log(log_path: Path, symbol: str, error: str, attempt_count: in
 
 
 def clear_currency_cache() -> None:
-    _CURRENCY_CACHE.clear()
+    with _CURRENCY_CACHE_LOCK:
+        _CURRENCY_CACHE.clear()

@@ -47,6 +47,7 @@ Disallowed direction:
 
 - `src/tradinglab_data/universe_build.py`
   - index constituent acquisition
+  - registry-based index fetch dispatch with override fallback
   - merged universe construction
   - normalized universe CSV output
 
@@ -68,7 +69,7 @@ Disallowed direction:
 
 - `src/tradinglab_data/workflows.py`
   - config-driven operational workflows
-  - daily update orchestration
+  - provider-dispatched daily update orchestration
   - extended-hours monitor orchestration
 
 - `src/tradinglab_data/cli.py`
@@ -92,11 +93,12 @@ Daily update:
 
 1. load active universe
 2. canonicalize symbols
-3. fetch missing full history
-4. incrementally update existing history
-5. refresh strict-symbol full histories when required
-6. update extended-hours intraday cache
-7. write alerts/report artifacts
+3. dispatch to provider-specific update runner
+4. fetch missing full history
+5. incrementally update existing history
+6. refresh strict-symbol full histories when required
+7. update extended-hours intraday cache
+8. write alerts/report artifacts
 
 Verification and repair:
 
@@ -108,7 +110,9 @@ Verification and repair:
 ## Design Constraints
 
 - Provider instability is expected; workflows must degrade gracefully and log errors.
+- Provider-specific workflows may diverge internally, but they must preserve the documented config and artifact contracts.
 - Extended-hours intraday data is inherently sparse; policy should distinguish sparse but valid data from corruption.
+- Mutable process-local caches must stay concurrency-safe because provider fetch paths may run with threading enabled.
 - ETF history is allowed to be less strict than stock history where explicitly configured.
 - The package should be reusable by multiple downstream codebases.
 

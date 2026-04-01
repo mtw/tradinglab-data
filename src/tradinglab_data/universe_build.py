@@ -360,6 +360,15 @@ def _merge_rows(rows_by_index: dict[str, list[dict]]) -> list[dict]:
     return out
 
 
+_INDEX_FETCHERS = {
+    "sp500": "_sp500_rows",
+    "djia": "_djia_rows",
+    "dax": "_dax_rows_wikipedia",
+    "mdax": "_mdax_rows_wikipedia",
+    "atx": "_atx_rows",
+}
+
+
 def build_universe(
     indices: Iterable[str],
     out_path: str | Path,
@@ -371,36 +380,15 @@ def build_universe(
     overrides_dir = Path(overrides_dir)
 
     rows_by_index: dict[str, list[dict]] = {}
-
-    if "sp500" in idx:
-        rows = _sp500_rows()
+    for index_name in idx:
+        fetcher_name = _INDEX_FETCHERS.get(index_name)
+        if fetcher_name is None:
+            continue
+        fetcher = globals()[fetcher_name]
+        rows = fetcher()
         if not rows:
-            rows = _from_override("sp500", overrides_dir)
-        rows_by_index["sp500"] = rows
-
-    if "djia" in idx:
-        rows = _djia_rows()
-        if not rows:
-            rows = _from_override("djia", overrides_dir)
-        rows_by_index["djia"] = rows
-
-    if "dax" in idx:
-        rows = _dax_rows_wikipedia()
-        if not rows:
-            rows = _from_override("dax", overrides_dir)
-        rows_by_index["dax"] = rows
-
-    if "mdax" in idx:
-        rows = _mdax_rows_wikipedia()
-        if not rows:
-            rows = _from_override("mdax", overrides_dir)
-        rows_by_index["mdax"] = rows
-
-    if "atx" in idx:
-        rows = _atx_rows()
-        if not rows:
-            rows = _from_override("atx", overrides_dir)
-        rows_by_index["atx"] = rows
+            rows = _from_override(index_name, overrides_dir)
+        rows_by_index[index_name] = rows
 
     merged = _merge_rows(rows_by_index)
     out_rows: list[UniverseRow] = []

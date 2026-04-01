@@ -219,7 +219,7 @@ def test_update_intraday_interval_is_testable_in_isolation(tmp_path: Path):
         }
     )
 
-    written = eh._update_intraday_interval(
+    resolved = eh._update_intraday_interval(
         ["AAA"],
         "5m",
         "10d",
@@ -238,7 +238,7 @@ def test_update_intraday_interval_is_testable_in_isolation(tmp_path: Path):
     )
 
     stored = pl.read_parquet(out_dir / "AAA.parquet").sort("date")
-    assert written == ["AAA"]
+    assert resolved == ["AAA"]
     assert stored.height == 2
     assert stored.get_column("currency").to_list() == ["USD", "USD"]
 

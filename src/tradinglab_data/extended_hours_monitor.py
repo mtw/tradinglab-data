@@ -609,7 +609,7 @@ def _update_intraday_interval(
         threads=threads,
         log_path=log_path,
     )
-    written: list[str] = []
+    resolved: list[str] = []
     for sym in target_symbols:
         df_new = fetched.get(sym)
         path = out_dir / f"{sym}.parquet"
@@ -625,7 +625,7 @@ def _update_intraday_interval(
             )
             if df_old_clean.height != df_old_raw.height:
                 df_old_clean.write_parquet(str(path))
-                written.append(sym)
+                resolved.append(sym)
             continue
         df_new = _trim_rolling_window(
             ensure_currency(df_new, cur, postprocess=_sanitize_intraday_df),
@@ -635,7 +635,7 @@ def _update_intraday_interval(
             continue
         if df_old is None or df_old.is_empty():
             df_new.write_parquet(str(path))
-            written.append(sym)
+            resolved.append(sym)
             continue
         df_old_raw = coerce_standard_schema(df_old)
         old_rows_before = df_old_raw.height
@@ -651,7 +651,7 @@ def _update_intraday_interval(
             postprocess=_sanitize_intraday_df,
         )
         if not old_sanitized and not needs_incremental_write(df_old, df_new):
-            written.append(sym)
+            resolved.append(sym)
             continue
         combined = (
             pl.concat([df_old, df_new], how="vertical")
@@ -660,8 +660,8 @@ def _update_intraday_interval(
         )
         combined = _trim_rolling_window(combined, retention_days=retention_days)
         combined.write_parquet(str(path))
-        written.append(sym)
-    return written
+        resolved.append(sym)
+    return resolved
 
 
 def update_extended_hours_store(
@@ -696,7 +696,7 @@ def update_extended_hours_store(
         else:
             pref_missing.append(sym)
 
-    pref_written_missing = _update_intraday_interval(
+    pref_resolved_missing = _update_intraday_interval(
         pref_missing,
         preferred_interval,
         _period_for_interval(preferred_interval, MAX_PERIOD_BY_INTERVAL, purpose="initial fetch"),
@@ -710,7 +710,7 @@ def update_extended_hours_store(
         threads=threads,
         log_path=log_path,
     )
-    pref_written_existing = _update_intraday_interval(
+    pref_resolved_existing = _update_intraday_interval(
         pref_existing,
         preferred_interval,
         _period_for_interval(preferred_interval, UPDATE_PERIOD_BY_INTERVAL, purpose="incremental fetch"),
@@ -724,7 +724,7 @@ def update_extended_hours_store(
         threads=threads,
         log_path=log_path,
     )
-    unresolved = [s for s in symbols if s not in set(pref_written_missing) | set(pref_written_existing)]
+    unresolved = [s for s in symbols if s not in set(pref_resolved_missing) | set(pref_resolved_existing)]
 
     fb_missing: list[str] = []
     fb_existing: list[str] = []
@@ -733,7 +733,7 @@ def update_extended_hours_store(
             fb_existing.append(sym)
         else:
             fb_missing.append(sym)
-    fb_written_missing = _update_intraday_interval(
+    fb_resolved_missing = _update_intraday_interval(
         fb_missing,
         fallback_interval,
         _period_for_interval(fallback_interval, MAX_PERIOD_BY_INTERVAL, purpose="initial fetch"),
@@ -747,7 +747,7 @@ def update_extended_hours_store(
         threads=threads,
         log_path=log_path,
     )
-    fb_written_existing = _update_intraday_interval(
+    fb_resolved_existing = _update_intraday_interval(
         fb_existing,
         fallback_interval,
         _period_for_interval(fallback_interval, UPDATE_PERIOD_BY_INTERVAL, purpose="incremental fetch"),
@@ -792,8 +792,8 @@ def update_extended_hours_store(
         "preferred_interval": preferred_interval,
         "fallback_interval": fallback_interval,
         "symbols": len(symbols),
-        "preferred_written": len(set(pref_written_missing) | set(pref_written_existing)),
-        "fallback_written": len(set(fb_written_missing) | set(fb_written_existing)),
+        "preferred_written": len(set(pref_resolved_missing) | set(pref_resolved_existing)),
+        "fallback_written": len(set(fb_resolved_missing) | set(fb_resolved_existing)),
         "alerts": alerts.height if alerts is not None and not alerts.is_empty() else 0,
         "alerts_path": str(alert_file) if alert_file is not None else "",
         "moves_df": moves_df,
