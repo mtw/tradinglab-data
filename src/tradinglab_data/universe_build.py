@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Callable, Iterable
@@ -25,14 +24,66 @@ class UniverseRow:
     needs_mapping: int = 0
 
 
+def _warn(message: str) -> None:
+    print(f"[WARN] {message}")
+
+
 def _safe_read_html(url: str, match: str | None = None):
     try:
         import pandas as pd
         if match:
             return pd.read_html(url, match=match)
         return pd.read_html(url)
-    except Exception:
+    except (ImportError, ValueError):
         return None
+    except Exception as exc:
+        _warn(f"failed to read HTML tables from {url}: {exc}")
+        return None
+
+
+def _first_matching_column(columns: dict[str, str], candidates: Iterable[str]) -> str | None:
+    for candidate in candidates:
+        matched = columns.get(candidate)
+        if matched is not None:
+            return matched
+    return None
+
+
+def _wikipedia_index_rows(
+    *,
+    url: str,
+    match: str,
+    symbol_columns: tuple[str, ...],
+    name_columns: tuple[str, ...],
+    exchange: str,
+    country: str,
+    source: str,
+) -> list[dict]:
+    tables = _safe_read_html(url, match=match)
+    if not tables:
+        return []
+    df = tables[0]
+    cols = {c.lower(): c for c in df.columns}
+    sym_col = _first_matching_column(cols, symbol_columns)
+    name_col = _first_matching_column(cols, name_columns)
+    rows = []
+    for _, row in df.iterrows():
+        sym = str(row.get(sym_col, "")).strip() if sym_col else ""
+        name = str(row.get(name_col, "")).strip() if name_col else None
+        if not sym and not name:
+            continue
+        rows.append(
+            {
+                "symbol": sym,
+                "name": name or None,
+                "exchange": exchange,
+                "country": country,
+                "source": source,
+                "active": 1,
+                "isin": None,
+            }
+        )
+    return rows
 
 
 def _from_override(index_name: str, overrides_dir: Path) -> list[dict]:
@@ -115,7 +166,10 @@ def _read_stoxx_closecomposition(index_symbol: str) -> pl.DataFrame | None:
         if df.width == 1:
             df = pl.read_csv(BytesIO(data), separator=";")
         return df
-    except Exception:
+    except (OSError, ValueError):
+        return None
+    except Exception as exc:
+        _warn(f"failed to read STOXX composition for {index_symbol}: {exc}")
         return None
 
 
@@ -162,57 +216,27 @@ def _stoxx_closecomposition_rows(index_symbol: str, source: str) -> list[dict]:
 
 
 def _dax_rows_wikipedia() -> list[dict]:
-    url = "https://en.wikipedia.org/wiki/DAX"
-    tables = _safe_read_html(url, match="Ticker")
-    if not tables:
-        return []
-    df = tables[0]
-    cols = {c.lower(): c for c in df.columns}
-    sym_col = cols.get("ticker") or cols.get("symbol")
-    name_col = cols.get("company")
-    rows = []
-    for _, r in df.iterrows():
-        sym = str(r.get(sym_col, "")).strip() if sym_col else ""
-        name = str(r.get(name_col, "")).strip() if name_col else None
-        if not sym and not name:
-            continue
-        rows.append({
-            "symbol": sym,
-            "name": name or None,
-            "exchange": "Xetra",
-            "country": "Germany",
-            "source": "dax_wikipedia",
-            "active": 1,
-            "isin": None,
-        })
-    return rows
+    return _wikipedia_index_rows(
+        url="https://en.wikipedia.org/wiki/DAX",
+        match="Ticker",
+        symbol_columns=("ticker", "symbol"),
+        name_columns=("company",),
+        exchange="Xetra",
+        country="Germany",
+        source="dax_wikipedia",
+    )
 
 
 def _mdax_rows_wikipedia() -> list[dict]:
-    url = "https://en.wikipedia.org/wiki/MDAX"
-    tables = _safe_read_html(url, match="Ticker")
-    if not tables:
-        return []
-    df = tables[0]
-    cols = {c.lower(): c for c in df.columns}
-    sym_col = cols.get("ticker") or cols.get("symbol")
-    name_col = cols.get("company")
-    rows = []
-    for _, r in df.iterrows():
-        sym = str(r.get(sym_col, "")).strip() if sym_col else ""
-        name = str(r.get(name_col, "")).strip() if name_col else None
-        if not sym and not name:
-            continue
-        rows.append({
-            "symbol": sym,
-            "name": name or None,
-            "exchange": "Xetra",
-            "country": "Germany",
-            "source": "mdax_wikipedia",
-            "active": 1,
-            "isin": None,
-        })
-    return rows
+    return _wikipedia_index_rows(
+        url="https://en.wikipedia.org/wiki/MDAX",
+        match="Ticker",
+        symbol_columns=("ticker", "symbol"),
+        name_columns=("company",),
+        exchange="Xetra",
+        country="Germany",
+        source="mdax_wikipedia",
+    )
 
 
 def _atx_rows() -> list[dict]:
@@ -345,7 +369,7 @@ def build_universe(
                 name=row.get("name"),
                 exchange=row.get("exchange"),
                 country=row.get("country"),
-                source=row.get("source"),
+                source=str(row.get("source") or ""),
                 active=int(row.get("active") or 1),
                 isin=row.get("isin"),
                 index_memberships=row.get("index_memberships"),

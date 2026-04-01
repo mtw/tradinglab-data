@@ -382,11 +382,13 @@ def _run_stooq_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Extended
                 if df_old is None or df_old.is_empty():
                     continue
                 cur = currency_from_df(df_old) or infer_currency_from_symbol(sym)
-                df_old = ensure_currency(df_old, cur)
+                df_old = _prepare_history_frame(df_old, cur)
                 df_inc = inc_map.get(sym)
                 if df_inc is None or df_inc.is_empty():
                     continue
-                df_inc = ensure_currency(df_inc, cur)
+                df_inc = _prepare_history_frame(df_inc, cur)
+                if df_old is None or df_inc is None:
+                    continue
                 df_old, df_inc = align_for_concat(
                     df_old,
                     df_inc,
@@ -443,8 +445,46 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
     missing_regular = [s for s in missing if s not in strict_set]
     existing_regular = [s for s in existing if s not in strict_set]
 
-    full_map = _bulk_fetch_with_retry(
+    _fetch_and_write_new_symbols(
         missing_regular,
+        root=root,
+        update_cfg=update_cfg,
+        currency_cache=currency_cache,
+    )
+    skipped_unchanged = _merge_incremental_symbols(
+        existing_regular,
+        root=root,
+        update_cfg=update_cfg,
+        currency_cache=currency_cache,
+    )
+    if skipped_unchanged > 0:
+        print(f"[UPDATE] skipped unchanged existing symbols: {skipped_unchanged}/{len(existing_regular)}")
+    _fetch_and_write_strict_symbols(
+        strict_symbols,
+        root=root,
+        update_cfg=update_cfg,
+        currency_cache=currency_cache,
+    )
+
+    intraday_res = _run_intraday_update(
+        symbols=symbols,
+        runs_root=update_cfg.runs_root,
+        parquet_root=update_cfg.parquet_root,
+        intraday_cfg=update_cfg.intraday,
+        log_path=update_cfg.log_path,
+    )
+    return intraday_res
+
+
+def _fetch_and_write_new_symbols(
+    symbols: list[str],
+    *,
+    root: Path,
+    update_cfg: _UpdateConfig,
+    currency_cache: dict[str, str],
+) -> None:
+    full_map = _bulk_fetch_with_retry(
+        symbols,
         cfg=update_cfg,
         lookback_days=update_cfg.lookback_days,
         chunk_size=1,
@@ -452,7 +492,7 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
         show_progress=True,
         progress_desc="YF full-history fetch (missing regular)",
     )
-    for sym in tqdm(missing_regular):
+    for sym in tqdm(symbols):
         df_new = full_map.get(sym)
         cur = resolve_currency(sym, fetch_symbol_currency, df_hint=df_new, cache=currency_cache)
         out_path = root / f"{sym}.parquet"
@@ -465,9 +505,17 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
             empty_reason="empty_data",
         )
 
+
+def _merge_incremental_symbols(
+    symbols: list[str],
+    *,
+    root: Path,
+    update_cfg: _UpdateConfig,
+    currency_cache: dict[str, str],
+) -> int:
     inc_days = max(1, int(update_cfg.incremental_days))
     inc_map = _bulk_fetch_with_retry(
-        existing_regular,
+        symbols,
         cfg=update_cfg,
         lookback_days=inc_days,
         chunk_size=update_cfg.chunk_size,
@@ -476,14 +524,13 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
         progress_desc="YF incremental fetch (existing regular)",
     )
     skipped_unchanged = 0
-    for sym in tqdm(existing_regular):
+    for sym in tqdm(symbols):
         path = root / f"{sym}.parquet"
         try:
             df_old = read_parquet_if_exists(path)
             cur = resolve_currency(sym, fetch_symbol_currency, df_hint=df_old, cache=currency_cache)
             df_old = _prepare_history_frame(df_old, cur)
-            df_inc = inc_map.get(sym)
-            df_inc = _prepare_history_frame(df_inc, cur)
+            df_inc = _prepare_history_frame(inc_map.get(sym), cur)
             if df_inc is None:
                 append_update_log(update_cfg.log_path, sym, "empty_incremental", 1)
                 continue
@@ -521,44 +568,43 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
             )
         except Exception as e:
             append_update_log(update_cfg.log_path, sym, str(e), 1)
-    if skipped_unchanged > 0:
-        print(f"[UPDATE] skipped unchanged existing symbols: {skipped_unchanged}/{len(existing_regular)}")
+    return skipped_unchanged
 
-    if strict_symbols:
-        strict_map = _bulk_fetch_with_retry(
-            strict_symbols,
-            cfg=update_cfg,
-            lookback_days=update_cfg.lookback_days,
-            chunk_size=1,
-            threads=False,
-            show_progress=True,
-            progress_desc="YF strict full-history fetch",
-        )
-        for sym in tqdm(strict_symbols):
-            try:
-                df_new = strict_map.get(sym)
-                cur = resolve_currency(sym, fetch_symbol_currency, df_hint=df_new, cache=currency_cache)
-                out_path = root / f"{sym}.parquet"
-                _write_symbol_parquet(
-                    out_path,
-                    sym,
-                    df_new,
-                    currency=cur,
-                    cfg=update_cfg,
-                    empty_reason="empty_data_strict",
-                    sort_before_write=True,
-                )
-            except Exception as e:
-                append_update_log(update_cfg.log_path, sym, str(e), 1)
 
-    intraday_res = _run_intraday_update(
-        symbols=symbols,
-        runs_root=update_cfg.runs_root,
-        parquet_root=update_cfg.parquet_root,
-        intraday_cfg=update_cfg.intraday,
-        log_path=update_cfg.log_path,
+def _fetch_and_write_strict_symbols(
+    symbols: list[str],
+    *,
+    root: Path,
+    update_cfg: _UpdateConfig,
+    currency_cache: dict[str, str],
+) -> None:
+    if not symbols:
+        return
+    strict_map = _bulk_fetch_with_retry(
+        symbols,
+        cfg=update_cfg,
+        lookback_days=update_cfg.lookback_days,
+        chunk_size=1,
+        threads=False,
+        show_progress=True,
+        progress_desc="YF strict full-history fetch",
     )
-    return intraday_res
+    for sym in tqdm(symbols):
+        try:
+            df_new = strict_map.get(sym)
+            cur = resolve_currency(sym, fetch_symbol_currency, df_hint=df_new, cache=currency_cache)
+            out_path = root / f"{sym}.parquet"
+            _write_symbol_parquet(
+                out_path,
+                sym,
+                df_new,
+                currency=cur,
+                cfg=update_cfg,
+                empty_reason="empty_data_strict",
+                sort_before_write=True,
+            )
+        except Exception as e:
+            append_update_log(update_cfg.log_path, sym, str(e), 1)
 
 
 def _bulk_fetch_with_retry(

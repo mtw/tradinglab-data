@@ -32,11 +32,17 @@ jobs:
       - name: Install package and test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[test]"
-          python -m pip install build twine
+          python -m pip install -e ".[test,dev]"
+          python -m pip install twine
+
+      - name: Run Ruff
+        run: python -m ruff check src tests
+
+      - name: Run mypy
+        run: python -m mypy src
 
       - name: Run package tests
-        run: PYTHONPATH=src pytest -q tests
+        run: PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
 
       - name: Smoke-check schema CLI
         run: PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown

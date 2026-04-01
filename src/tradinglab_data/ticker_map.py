@@ -10,6 +10,10 @@ _OVERRIDE_CACHE_SOURCE: str | None = None
 _OVERRIDE_CACHE_LOCK = Lock()
 
 
+def _warn(message: str) -> None:
+    print(f"[WARN] {message}")
+
+
 def _load_overrides(path: str | Path | None = None) -> dict[str, str]:
     global _OVERRIDE_CACHE, _OVERRIDE_CACHE_SOURCE
     if path is None:
@@ -26,7 +30,10 @@ def _load_overrides(path: str | Path | None = None) -> dict[str, str]:
             return {}
         try:
             df = pl.read_csv(str(p))
-        except Exception:
+        except (FileNotFoundError, OSError):
+            return {}
+        except Exception as exc:
+            _warn(f"failed to read ticker override file {p}: {exc}")
             return {}
         if not {"raw", "yahoo"}.issubset(set(df.columns)):
             return {}

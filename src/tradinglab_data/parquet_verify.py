@@ -8,7 +8,7 @@ import random
 
 import polars as pl
 
-from .contracts import VerifyResult
+from .contracts import CoverageEntry, VerifyResult
 
 
 @dataclass(frozen=True)
@@ -98,7 +98,7 @@ def run_parquet_sanity_checks(cfg: ParquetVerifyConfig) -> VerifyResult:
     if sample_read_failures:
         errors.append(f"sample_read_failures:{len(sample_read_failures)}")
 
-    coverage: dict[str, dict[str, float | int]] = {}
+    coverage: dict[str, CoverageEntry] = {}
     for uname in cfg.universes:
         upath = universe_dir / f"{uname}.csv"
         syms = _read_universe_symbols(upath)

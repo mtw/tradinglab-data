@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import polars as pl
 
@@ -17,7 +17,7 @@ def scalar_eq(a: object, b: object, tol: float = 1e-12) -> bool:
     if a is None or b is None:
         return False
     try:
-        return abs(float(a) - float(b)) <= tol
+        return abs(float(str(a)) - float(str(b))) <= tol
     except Exception:
         return str(a) == str(b)
 
@@ -89,7 +89,7 @@ def align_for_concat(
     df_left: pl.DataFrame,
     df_right: pl.DataFrame,
     *,
-    schema: dict[str, pl.DataType],
+    schema: dict[str, Any],
     preferred_columns: list[str] | None = None,
     postprocess: Callable[[pl.DataFrame], pl.DataFrame] | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:

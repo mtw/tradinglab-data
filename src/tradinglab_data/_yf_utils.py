@@ -4,11 +4,12 @@ from datetime import datetime, timedelta, timezone
 import random
 import re
 import time
+from typing import Any
 
 import polars as pl
 
 
-STANDARD_PRICE_SCHEMA: dict[str, pl.DataType] = {
+STANDARD_PRICE_SCHEMA: dict[str, Any] = {
     "date": pl.Datetime,
     "open": pl.Float64,
     "high": pl.Float64,

@@ -45,7 +45,14 @@ Those remain in separate downstream applications.
 Package tests:
 
 ```bash
-PYTHONPATH=src pytest -q tests
+PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
+```
+
+Static checks:
+
+```bash
+python -m ruff check src tests
+python -m mypy src
 ```
 
 Build validation:

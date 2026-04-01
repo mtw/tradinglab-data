@@ -14,6 +14,12 @@
 - avoided mutating global random state in parquet verification and replaced Python-side date sorting checks in store audits with native Polars operations
 - vectorized move-vs-close computation across symbols and consolidated the daily/intraday OHLC schema aliases around one definition
 - made config compatibility aliases lazy and added explicit typing for `Config.get(...)`
+- split extended-hours fetch, move computation, and HTML/report writing into dedicated internal modules while preserving the public monitoring API
+- further decomposed the Yahoo update runner into explicit new-symbol, incremental-merge, and strict-symbol write helpers
+- added CI gates for `ruff`, `mypy`, coverage enforcement, and default non-network test execution
+- replaced Python callback-based symbol override application with a native Polars join/coalesce path
+- narrowed silent CSV/source loading failures into explicit warnings for unexpected universe and override input errors
+- added a minimum `lxml` version floor and developer extras for `ruff`, `mypy`, and `pytest-cov`
 
 ## [0.1.0] - 2026-03-28
 

@@ -11,7 +11,9 @@ def test_readme_and_ci_workflow_reference_same_core_commands():
     workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     commands = [
-        "PYTHONPATH=src pytest -q tests",
+        "python -m ruff check src tests",
+        "python -m mypy src",
+        'PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests',
         "PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown",
         "python -m build",
         "python -m twine check dist/*",

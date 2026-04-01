@@ -169,13 +169,15 @@ If a config-backed command is run without a valid config file, the CLI raises a 
 Run the package test suite directly:
 
 ```bash
-PYTHONPATH=src pytest -q tests
+PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
 ```
 
 For this standalone repo:
 
 ```bash
-PYTHONPATH=src pytest -q tests
+python -m ruff check src tests
+python -m mypy src
+PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
 ```
 
 GitHub CI:
@@ -184,7 +186,9 @@ GitHub CI:
 - runs on push and pull request
 - tests Python `3.10`, `3.11`, `3.12`, and `3.13`
 - executes the same core checks used for local release discipline:
-  - `PYTHONPATH=src pytest -q tests`
+  - `python -m ruff check src tests`
+  - `python -m mypy src`
+  - `PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests`
   - `PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown`
   - `python -m build`
   - `python -m twine check dist/*`

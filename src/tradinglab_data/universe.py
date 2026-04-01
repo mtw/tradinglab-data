@@ -4,6 +4,10 @@ from pathlib import Path
 import polars as pl
 
 
+def _warn(message: str) -> None:
+    print(f"[WARN] {message}")
+
+
 def load_ticker_overrides(csv_path: str | Path | None = None) -> dict[str, str]:
     if csv_path is None:
         return {}
@@ -12,7 +16,10 @@ def load_ticker_overrides(csv_path: str | Path | None = None) -> dict[str, str]:
         return {}
     try:
         df = pl.read_csv(str(path))
-    except Exception:
+    except (FileNotFoundError, OSError):
+        return {}
+    except Exception as exc:
+        _warn(f"failed to read ticker overrides from {path}: {exc}")
         return {}
     cols = {c.lower(): c for c in df.columns}
     raw_col = cols.get("raw")
@@ -43,7 +50,10 @@ def load_universe_frame(
 ) -> pl.DataFrame:
     try:
         df = pl.read_csv(str(csv_path))
-    except Exception:
+    except (FileNotFoundError, OSError):
+        df = pl.DataFrame()
+    except Exception as exc:
+        _warn(f"failed to read universe CSV {csv_path}: {exc}")
         df = pl.DataFrame()
 
     if df.is_empty() and universe_dir is not None:
@@ -53,7 +63,10 @@ def load_universe_frame(
             for p in sorted(universe_dir.glob("*.csv")):
                 try:
                     frames.append(pl.read_csv(str(p)))
-                except Exception:
+                except (FileNotFoundError, OSError):
+                    continue
+                except Exception as exc:
+                    _warn(f"failed to read universe shard {p}: {exc}")
                     continue
             if frames:
                 all_cols: set[str] = set()
@@ -77,9 +90,18 @@ def load_universe_frame(
     df = df.with_columns(pl.col("symbol").cast(pl.String).str.strip_chars().str.to_uppercase().alias("symbol"))
     df = df.filter((pl.col("symbol") != "") & (~pl.col("symbol").str.contains(r"[$\s]")))
     if overrides:
-        df = df.with_columns(
-            pl.col("symbol").map_elements(lambda s: overrides.get(str(s), str(s)), return_dtype=pl.String).alias("symbol")
-        ).unique(subset=["symbol"], keep="first", maintain_order=True)
+        override_df = pl.DataFrame(
+            {
+                "symbol": list(overrides.keys()),
+                "_symbol_override": list(overrides.values()),
+            }
+        )
+        df = (
+            df.join(override_df, on="symbol", how="left")
+            .with_columns(pl.coalesce([pl.col("_symbol_override"), pl.col("symbol")]).alias("symbol"))
+            .drop("_symbol_override")
+            .unique(subset=["symbol"], keep="first", maintain_order=True)
+        )
     return df
 
 

@@ -52,10 +52,20 @@ Disallowed direction:
   - normalized universe CSV output
 
 - `src/tradinglab_data/extended_hours_monitor.py`
-  - intraday extended-hours retrieval
-  - move-vs-close computation
-  - alert generation
   - intraday parquet maintenance
+  - orchestration over extended-hours fetch, move, alert, and report helpers
+
+- `src/tradinglab_data/_intraday_fetch.py`
+  - intraday extended-hours retrieval
+  - interval-specific fetch windows
+  - intraday normalization and retention trimming
+
+- `src/tradinglab_data/_move_compute.py`
+  - move-vs-close computation
+  - alert filtering
+  - daily close reference loading
+
+- `src/tradinglab_data/_alert_report.py`
   - HTML/CSV reporting for extended-hours monitoring
 
 - `src/tradinglab_data/parquet_verify.py`
