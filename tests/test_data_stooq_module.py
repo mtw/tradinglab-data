@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from urllib.error import URLError
+
+import polars as pl
+
 import tradinglab_data.data_stooq as stooq
 
 
@@ -24,3 +28,59 @@ def test_parse_stooq_csv_text_normalizes_to_tradinglab_schema():
     assert row["open"] == 100.0
     assert row["close"] == 105.0
     assert row["volume"] == 12345.0
+
+
+def test_parse_stooq_csv_text_empty_returns_canonical_empty_frame():
+    df = stooq._parse_stooq_csv_text("")
+
+    assert df.is_empty()
+    assert dict(df.schema) == {
+        "date": pl.Datetime,
+        "open": pl.Float64,
+        "high": pl.Float64,
+        "low": pl.Float64,
+        "close": pl.Float64,
+        "adj_close": pl.Float64,
+        "volume": pl.Float64,
+    }
+
+
+def test_parse_stooq_csv_text_missing_volume_fills_zero():
+    text = "Date,Open,High,Low,Close\n2020-01-02,100,110,90,105\n"
+    df = stooq._parse_stooq_csv_text(text)
+
+    assert df.height == 1
+    assert df.get_column("volume").to_list() == [0.0]
+    assert df.get_column("adj_close").to_list() == [105.0]
+
+
+def test_fetch_stooq_history_falls_back_to_next_candidate(monkeypatch):
+    requested_urls: list[str] = []
+
+    class _FakeResponse:
+        def __init__(self, text: str):
+            self._text = text
+
+        def read(self):
+            return self._text.encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(url: str, timeout: int = 30):
+        requested_urls.append(url)
+        if "ebs.at" in url:
+            raise URLError("primary failed")
+        return _FakeResponse("Date,Open,High,Low,Close,Volume\n2020-01-02,100,110,90,105,12345\n")
+
+    monkeypatch.setattr(stooq, "urlopen", fake_urlopen)
+
+    df = stooq.fetch_stooq_history(stooq.StooqDownloadSpec(symbol="EBS.VI"))
+
+    assert df.height == 1
+    assert any("ebs.at" in url for url in requested_urls)
+    assert any("ebs.vi" in url for url in requested_urls)
+    assert df.get_column("close").to_list() == [105.0]
