@@ -9,6 +9,11 @@
 - switched the universe fetcher registry to typed callable entries instead of string-based global lookup
 - tightened override-cache locking so file loads and cache population stay in one critical section
 - routed explicit extended-hours monitoring through the shared intraday runner to keep config plumbing in one place
+- split shared intraday execution from the update-only wrapper so monitor and update flows no longer depend on boolean control flags
+- reduced duplicated Yahoo update logic with shared bulk-fetch retry and parquet-write helpers
+- avoided mutating global random state in parquet verification and replaced Python-side date sorting checks in store audits with native Polars operations
+- vectorized move-vs-close computation across symbols and consolidated the daily/intraday OHLC schema aliases around one definition
+- made config compatibility aliases lazy and added explicit typing for `Config.get(...)`
 
 ## [0.1.0] - 2026-03-28
 

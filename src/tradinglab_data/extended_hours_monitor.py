@@ -263,6 +263,29 @@ def load_daily_reference_closes(
     return out
 
 
+def _daily_close_frame(daily_close_map: dict[str, DailyCloseInfo | float]) -> pl.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for sym, info in daily_close_map.items():
+        if isinstance(info, dict):
+            ref_close = info.get("close")
+            ref_currency = info.get("currency")
+        else:
+            ref_close = info
+            ref_currency = None
+        if ref_close in {None, 0}:
+            continue
+        rows.append(
+            {
+                "symbol": str(sym),
+                "ref_close": float(ref_close),
+                "ref_currency": str(ref_currency).strip().upper() if ref_currency is not None and str(ref_currency).strip() else None,
+            }
+        )
+    if not rows:
+        return pl.DataFrame(schema={"symbol": pl.String, "ref_close": pl.Float64, "ref_currency": pl.String})
+    return pl.DataFrame(rows, schema={"symbol": pl.String, "ref_close": pl.Float64, "ref_currency": pl.String})
+
+
 def compute_moves_vs_close(
     intraday_df: pl.DataFrame | dict[str, pl.DataFrame],
     daily_close_map: dict[str, DailyCloseInfo | float],
@@ -278,65 +301,55 @@ def compute_moves_vs_close(
         data = intraday_df
 
     if data.is_empty() or "symbol" not in data.columns:
-        return pl.DataFrame(
-            schema={
-                "symbol": pl.String,
-                "ref_close": pl.Float64,
-                "last_price": pl.Float64,
-                "pct_move": pl.Float64,
-                "last_volume": pl.Float64,
-                "currency": pl.String,
-                "last_ts": pl.Datetime,
-                "session": pl.String,
-            }
-        )
+        return _empty_move_alert_frame()
 
-    rows: list[dict[str, Any]] = []
-    for sym in sorted(set(data.get_column("symbol").cast(pl.String, strict=False).to_list())):
-        sdf = data.filter(pl.col("symbol") == sym).sort("date")
-        if sdf.is_empty():
-            continue
-        valid = sdf.filter(pl.col("close").is_not_null())
-        if valid.is_empty():
-            continue
-        last = valid.tail(1)
-        info = daily_close_map.get(sym)
-        if info is None:
-            continue
-        if isinstance(info, dict):
-            ref_close = info.get("close")
-            ref_currency = info.get("currency")
-        else:
-            ref_close = info
-            ref_currency = None
-        if ref_close in {None, 0}:
-            continue
-        last_price = float(last.get_column("close").to_list()[0])
-        last_ts = last.get_column("date").to_list()[0]
-        last_volume = None
-        if "volume" in last.columns:
-            vals = last.get_column("volume").to_list()
-            if vals:
-                last_volume = vals[0]
-        last_currency = ref_currency
-        if "currency" in last.columns:
-            vals = [v for v in last.get_column("currency").to_list() if v is not None and str(v).strip()]
-            if vals:
-                last_currency = str(vals[0]).strip().upper()
-        pct_move = ((last_price / float(ref_close)) - 1.0) * 100.0
-        rows.append(
-            {
-                "symbol": sym,
-                "ref_close": float(ref_close),
-                "last_price": last_price,
-                "pct_move": pct_move,
-                "last_volume": float(last_volume) if last_volume is not None else None,
-                "currency": str(last_currency or "").strip().upper() or None,
-                "last_ts": last_ts,
-                "session": _session_label(last_ts),
-            }
+    valid = data.filter(pl.col("close").is_not_null())
+    if valid.is_empty():
+        return _empty_move_alert_frame()
+
+    valid = valid.with_columns(pl.col("symbol").cast(pl.String, strict=False))
+    if "date" in valid.columns:
+        valid = valid.sort(["symbol", "date"])
+    else:
+        valid = valid.sort("symbol")
+
+    aggregate_exprs: list[pl.Expr] = [
+        pl.col("close").last().cast(pl.Float64).alias("last_price"),
+        pl.col("date").last().alias("last_ts"),
+    ]
+    if "volume" in valid.columns:
+        aggregate_exprs.append(pl.col("volume").last().cast(pl.Float64, strict=False).alias("last_volume"))
+    else:
+        aggregate_exprs.append(pl.lit(None, dtype=pl.Float64).alias("last_volume"))
+    if "currency" in valid.columns:
+        aggregate_exprs.append(pl.col("currency").last().cast(pl.String, strict=False).alias("last_currency"))
+    else:
+        aggregate_exprs.append(pl.lit(None, dtype=pl.String).alias("last_currency"))
+
+    last_per_symbol = valid.group_by("symbol").agg(*aggregate_exprs)
+    ref_df = _daily_close_frame(daily_close_map)
+    if ref_df.is_empty():
+        return _empty_move_alert_frame()
+
+    moves = last_per_symbol.join(ref_df, on="symbol", how="inner")
+    if moves.is_empty():
+        return _empty_move_alert_frame()
+
+    cleaned_last_currency = pl.col("last_currency").cast(pl.String, strict=False).str.strip_chars().str.to_uppercase()
+    cleaned_ref_currency = pl.col("ref_currency").cast(pl.String, strict=False).str.strip_chars().str.to_uppercase()
+    moves = moves.with_columns(
+        pl.when(cleaned_last_currency.is_null() | (cleaned_last_currency == ""))
+        .then(
+            pl.when(cleaned_ref_currency.is_null() | (cleaned_ref_currency == ""))
+            .then(pl.lit(None, dtype=pl.String))
+            .otherwise(cleaned_ref_currency)
         )
-    return pl.DataFrame(rows, schema=MOVE_ALERT_FRAME_SCHEMA) if rows else _empty_move_alert_frame()
+        .otherwise(cleaned_last_currency)
+        .alias("currency"),
+        (((pl.col("last_price") / pl.col("ref_close")) - 1.0) * 100.0).alias("pct_move"),
+        pl.col("last_ts").map_elements(_session_label, return_dtype=pl.String).alias("session"),
+    )
+    return moves.select(list(MOVE_ALERT_FRAME_SCHEMA)).sort("symbol")
 
 
 def detect_alerts(

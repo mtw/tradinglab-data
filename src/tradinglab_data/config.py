@@ -36,10 +36,14 @@ def _repo_default_config_path() -> Path | None:
     return configs_dir / DEFAULT_CONFIG_BASENAME
 
 
-# Legacy compatibility aliases. Repo-discovery behavior uses the helper functions above.
-PACKAGE_ROOT = _discover_repo_root()
-CONFIGS_DIR = _repo_configs_dir()
-DEFAULT_CONFIG_PATH = _repo_default_config_path()
+def __getattr__(name: str) -> Any:
+    if name == "PACKAGE_ROOT":
+        return _discover_repo_root()
+    if name == "CONFIGS_DIR":
+        return _repo_configs_dir()
+    if name == "DEFAULT_CONFIG_PATH":
+        return _repo_default_config_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def packaged_config_example_text() -> str:
@@ -125,7 +129,7 @@ class Config:
             raise ValueError(f"{p.name} must parse to a dict")
         return Config(raw=_expand_value(data), source_path=p)
 
-    def get(self, *keys: str, default=None):
+    def get(self, *keys: str, default: Any = None) -> Any:
         cur: Any = self.raw
         for k in keys:
             if not isinstance(cur, dict) or k not in cur:

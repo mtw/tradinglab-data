@@ -76,4 +76,4 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"[PARQUET_STORE_REPORT] json={report['json_path']} markdown={report['markdown_path']}")
         return 0
-    raise SystemExit(f"Unknown command: {args.cmd}")
+    return 2

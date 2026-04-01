@@ -176,6 +176,19 @@ def test_resolve_config_path_checks_repo_candidate_when_present(tmp_path: Path, 
     assert resolve_config_path("config.yaml") == repo_cfg
 
 
+def test_config_legacy_aliases_are_resolved_lazily(monkeypatch, tmp_path: Path):
+    repo_root = tmp_path / "repo"
+    configs_dir = repo_root / "configs"
+    default_cfg = configs_dir / "config.yaml"
+    monkeypatch.setattr(config_mod, "_discover_repo_root", lambda: repo_root)
+    monkeypatch.setattr(config_mod, "_repo_configs_dir", lambda: configs_dir)
+    monkeypatch.setattr(config_mod, "_repo_default_config_path", lambda: default_cfg)
+
+    assert getattr(config_mod, "PACKAGE_ROOT") == repo_root
+    assert getattr(config_mod, "CONFIGS_DIR") == configs_dir
+    assert getattr(config_mod, "DEFAULT_CONFIG_PATH") == default_cfg
+
+
 def test_packaged_config_example_text_contains_paths():
     text = packaged_config_example_text()
     assert "paths:" in text

@@ -5,10 +5,10 @@ import json
 
 import polars as pl
 
-from .contracts import ARTIFACT_SCHEMA_VERSION, CompatibilityManifest, PACKAGE_NAME, PYTHON_PACKAGE_NAME
+from .contracts import ARTIFACT_SCHEMA_VERSION, CompatibilityManifest, OHLC_COLUMNS, PACKAGE_NAME, PYTHON_PACKAGE_NAME
 
 
-OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = {
+OHLC_SCHEMA: dict[str, pl.DataType] = {
     "date": pl.Datetime,
     "open": pl.Float64,
     "high": pl.Float64,
@@ -20,8 +20,9 @@ OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = {
 }
 
 
-DAILY_PARQUET_SCHEMA: dict[str, pl.DataType] = dict(OHLC_PARQUET_SCHEMA)
-INTRADAY_PARQUET_SCHEMA: dict[str, pl.DataType] = dict(OHLC_PARQUET_SCHEMA)
+OHLC_PARQUET_SCHEMA: dict[str, pl.DataType] = OHLC_SCHEMA
+DAILY_PARQUET_SCHEMA: dict[str, pl.DataType] = OHLC_SCHEMA
+INTRADAY_PARQUET_SCHEMA: dict[str, pl.DataType] = OHLC_SCHEMA
 MOVE_ALERT_FRAME_SCHEMA: dict[str, pl.DataType] = {
     "symbol": pl.String,
     "ref_close": pl.Float64,
@@ -183,3 +184,6 @@ def validate_moves_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) 
 
 def validate_alerts_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
     validate_frame_schema(df, MOVE_ALERT_FRAME_SCHEMA, allow_extra_columns=allow_extra_columns)
+
+
+assert tuple(DAILY_PARQUET_SCHEMA) == OHLC_COLUMNS

@@ -81,10 +81,9 @@ def _sorted_dates(df: pl.DataFrame) -> bool:
     if "date" not in df.columns or df.is_empty():
         return True
     try:
-        dates = df.get_column("date").to_list()
+        return bool(df.get_column("date").is_sorted())
     except Exception:
         return False
-    return dates == sorted(dates)
 
 
 def _history_bounds(df: pl.DataFrame) -> tuple[str | None, str | None]:

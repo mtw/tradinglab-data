@@ -85,8 +85,8 @@ def run_parquet_sanity_checks(cfg: ParquetVerifyConfig) -> VerifyResult:
     if zero_byte > int(cfg.max_zero_byte):
         errors.append(f"zero_byte_files:{zero_byte}>{int(cfg.max_zero_byte)}")
 
-    random.seed(42)
-    sample = files if len(files) <= int(cfg.sample_read_files) else random.sample(files, int(cfg.sample_read_files))
+    rng = random.Random(42)
+    sample = files if len(files) <= int(cfg.sample_read_files) else rng.sample(files, int(cfg.sample_read_files))
     sample_read_failures: list[str] = []
     for p in sample:
         try:

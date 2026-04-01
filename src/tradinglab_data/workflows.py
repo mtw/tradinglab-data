@@ -223,7 +223,7 @@ def _write_extended_hours_artifacts(
     return str(report_path)
 
 
-def _run_intraday_update(
+def _execute_intraday_update(
     *,
     symbols: list[str],
     runs_root: str | Path,
@@ -232,47 +232,61 @@ def _run_intraday_update(
     log_path: Path,
     top_n: int = 25,
     session_filter: str = "all",
-    swallow_errors: bool = True,
-    force: bool = False,
-) -> tuple[ExtendedHoursResult | None, str | None]:
-    if not intraday_cfg.enabled and not force:
-        return None, None
+) -> tuple[ExtendedHoursResult, str]:
     alert_dir = _run_dir(runs_root) / "monitor"
     alert_path = alert_dir / "extended_hours_alerts.csv"
+    intraday_res = update_extended_hours_store(
+        symbols=symbols,
+        intraday_root=intraday_cfg.root,
+        daily_root=parquet_root,
+        preferred_interval=intraday_cfg.preferred_interval,
+        fallback_interval=intraday_cfg.fallback_interval,
+        retention_days=intraday_cfg.retention_days,
+        prepost=intraday_cfg.prepost,
+        pct_move_threshold=intraday_cfg.pct_move_threshold,
+        min_volume=intraday_cfg.min_volume,
+        alerts_path=alert_path,
+        chunk_size=intraday_cfg.chunk_size,
+        sleep_seconds=intraday_cfg.sleep_seconds,
+        max_retries=intraday_cfg.max_retries,
+        backoff_max_seconds=intraday_cfg.backoff_max_seconds,
+        threads=intraday_cfg.threads,
+        log_path=log_path,
+    )
+    report_path = _write_extended_hours_artifacts(
+        intraday_res,
+        runs_root=runs_root,
+        threshold=intraday_cfg.pct_move_threshold,
+        min_volume=intraday_cfg.min_volume,
+        top_n=top_n,
+        session_filter=session_filter,
+    )
+    return intraday_res, report_path
+
+
+def _run_intraday_update(
+    *,
+    symbols: list[str],
+    runs_root: str | Path,
+    parquet_root: str | Path,
+    intraday_cfg: _IntradayConfig,
+    log_path: Path,
+) -> ExtendedHoursResult | None:
+    if not intraday_cfg.enabled:
+        return None
     try:
-        intraday_res = update_extended_hours_store(
+        intraday_res, _ = _execute_intraday_update(
             symbols=symbols,
-            intraday_root=intraday_cfg.root,
-            daily_root=parquet_root,
-            preferred_interval=intraday_cfg.preferred_interval,
-            fallback_interval=intraday_cfg.fallback_interval,
-            retention_days=intraday_cfg.retention_days,
-            prepost=intraday_cfg.prepost,
-            pct_move_threshold=intraday_cfg.pct_move_threshold,
-            min_volume=intraday_cfg.min_volume,
-            alerts_path=alert_path,
-            chunk_size=intraday_cfg.chunk_size,
-            sleep_seconds=intraday_cfg.sleep_seconds,
-            max_retries=intraday_cfg.max_retries,
-            backoff_max_seconds=intraday_cfg.backoff_max_seconds,
-            threads=intraday_cfg.threads,
+            runs_root=runs_root,
+            parquet_root=parquet_root,
+            intraday_cfg=intraday_cfg,
             log_path=log_path,
         )
-        report_path = _write_extended_hours_artifacts(
-            intraday_res,
-            runs_root=runs_root,
-            threshold=intraday_cfg.pct_move_threshold,
-            min_volume=intraday_cfg.min_volume,
-            top_n=top_n,
-            session_filter=session_filter,
-        )
-        return intraday_res, report_path
+        return intraday_res
     except Exception as e:
-        if not swallow_errors:
-            raise
         append_update_log(log_path, "__extended_hours__", str(e), 1)
         print(f"[WARN] extended-hours update failed: {e}")
-        return None, None
+        return None
 
 
 def monitor_extended_hours_from_config(
@@ -286,7 +300,7 @@ def monitor_extended_hours_from_config(
     runs_root = runs_root_path(cfg)
     log_path = update_log_path(cfg)
     intraday_cfg = _read_intraday_config(cfg)
-    res, report_path = _run_intraday_update(
+    res, report_path = _execute_intraday_update(
         symbols=symbols,
         runs_root=runs_root,
         parquet_root=daily_root,
@@ -294,11 +308,7 @@ def monitor_extended_hours_from_config(
         log_path=log_path,
         top_n=top_n,
         session_filter=session_filter,
-        swallow_errors=False,
-        force=True,
     )
-    if res is None or report_path is None:
-        raise RuntimeError("Extended-hours monitoring did not produce a result.")
     return {**res, "report_html": str(report_path)}
 
 
@@ -404,7 +414,7 @@ def _run_stooq_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Extended
             except Exception as e:
                 append_update_log(update_cfg.log_path, sym, f"stooq_yf_recent_error:{e}", 1)
 
-    intraday_res, _ = _run_intraday_update(
+    intraday_res = _run_intraday_update(
         symbols=symbols,
         runs_root=update_cfg.runs_root,
         parquet_root=update_cfg.parquet_root,
@@ -433,62 +443,35 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
     missing_regular = [s for s in missing if s not in strict_set]
     existing_regular = [s for s in existing if s not in strict_set]
 
-    full_map = fetch_yfinance_history_bulk(
+    full_map = _bulk_fetch_with_retry(
         missing_regular,
-        interval=update_cfg.interval,
+        cfg=update_cfg,
         lookback_days=update_cfg.lookback_days,
         chunk_size=1,
-        sleep_seconds=update_cfg.sleep_seconds,
-        max_retries=update_cfg.max_retries,
-        backoff_max_seconds=update_cfg.backoff_max_seconds,
         threads=False,
-        log_path=update_cfg.log_path,
         show_progress=True,
         progress_desc="YF full-history fetch (missing regular)",
     )
     for sym in tqdm(missing_regular):
         df_new = full_map.get(sym)
-        if df_new is None or df_new.is_empty():
-            retry_map = fetch_yfinance_history_bulk(
-                [sym],
-                interval=update_cfg.interval,
-                lookback_days=update_cfg.lookback_days,
-                chunk_size=1,
-                sleep_seconds=update_cfg.sleep_seconds,
-                max_retries=update_cfg.max_retries,
-                backoff_max_seconds=update_cfg.backoff_max_seconds,
-                threads=False,
-                log_path=update_cfg.log_path,
-            )
-            df_new = retry_map.get(sym)
-        df_new = sanitize_ohlc_df(df_new)
-        if df_new is None or df_new.is_empty():
-            append_update_log(update_cfg.log_path, sym, "empty_data", 1)
-            continue
         cur = resolve_currency(sym, fetch_symbol_currency, df_hint=df_new, cache=currency_cache)
-        df_new = ensure_currency(df_new, cur)
         out_path = root / f"{sym}.parquet"
-        df_new.write_parquet(str(out_path))
-        assert_postwrite_integrity(
+        _write_symbol_parquet(
             out_path,
             sym,
-            enabled=update_cfg.postwrite_integrity_enabled,
-            read_frame=read_parquet_if_exists,
-            append_log=append_update_log,
-            log_path=update_cfg.log_path,
+            df_new,
+            currency=cur,
+            cfg=update_cfg,
+            empty_reason="empty_data",
         )
 
     inc_days = max(1, int(update_cfg.incremental_days))
-    inc_map = fetch_yfinance_history_bulk(
+    inc_map = _bulk_fetch_with_retry(
         existing_regular,
-        interval=update_cfg.interval,
+        cfg=update_cfg,
         lookback_days=inc_days,
         chunk_size=update_cfg.chunk_size,
-        sleep_seconds=update_cfg.sleep_seconds,
-        max_retries=update_cfg.max_retries,
-        backoff_max_seconds=update_cfg.backoff_max_seconds,
         threads=update_cfg.threads,
-        log_path=update_cfg.log_path,
         show_progress=True,
         progress_desc="YF incremental fetch (existing regular)",
     )
@@ -498,34 +481,20 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
         try:
             df_old = read_parquet_if_exists(path)
             cur = resolve_currency(sym, fetch_symbol_currency, df_hint=df_old, cache=currency_cache)
-            df_old = sanitize_ohlc_df(ensure_currency(df_old, cur))
+            df_old = _prepare_history_frame(df_old, cur)
             df_inc = inc_map.get(sym)
-            if df_inc is None or df_inc.is_empty():
-                retry_map = fetch_yfinance_history_bulk(
-                    [sym],
-                    interval=update_cfg.interval,
-                    lookback_days=inc_days,
-                    chunk_size=1,
-                    sleep_seconds=update_cfg.sleep_seconds,
-                    max_retries=update_cfg.max_retries,
-                    backoff_max_seconds=update_cfg.backoff_max_seconds,
-                    threads=False,
-                    log_path=update_cfg.log_path,
-                )
-                df_inc = retry_map.get(sym)
-            df_inc = sanitize_ohlc_df(ensure_currency(df_inc, cur))
-            if df_inc is None or df_inc.is_empty():
+            df_inc = _prepare_history_frame(df_inc, cur)
+            if df_inc is None:
                 append_update_log(update_cfg.log_path, sym, "empty_incremental", 1)
                 continue
-            if df_old is None or df_old.is_empty():
-                df_inc.write_parquet(str(path))
-                assert_postwrite_integrity(
+            if df_old is None:
+                _write_symbol_parquet(
                     path,
                     sym,
-                    enabled=update_cfg.postwrite_integrity_enabled,
-                    read_frame=read_parquet_if_exists,
-                    append_log=append_update_log,
-                    log_path=update_cfg.log_path,
+                    df_inc,
+                    currency=cur,
+                    cfg=update_cfg,
+                    empty_reason="empty_incremental",
                 )
                 continue
             if not needs_incremental_write(df_old, df_inc):
@@ -542,18 +511,13 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
                 .unique(subset=["date"], keep="last")
                 .sort("date")
             )
-            combined = sanitize_ohlc_df(combined)
-            if combined is None or combined.is_empty():
-                append_update_log(update_cfg.log_path, sym, "empty_combined_after_sanitize", 1)
-                continue
-            combined.write_parquet(str(path))
-            assert_postwrite_integrity(
+            _write_symbol_parquet(
                 path,
                 sym,
-                enabled=update_cfg.postwrite_integrity_enabled,
-                read_frame=read_parquet_if_exists,
-                append_log=append_update_log,
-                log_path=update_cfg.log_path,
+                combined,
+                currency=cur,
+                cfg=update_cfg,
+                empty_reason="empty_combined_after_sanitize",
             )
         except Exception as e:
             append_update_log(update_cfg.log_path, sym, str(e), 1)
@@ -561,55 +525,33 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
         print(f"[UPDATE] skipped unchanged existing symbols: {skipped_unchanged}/{len(existing_regular)}")
 
     if strict_symbols:
-        strict_map = fetch_yfinance_history_bulk(
+        strict_map = _bulk_fetch_with_retry(
             strict_symbols,
-            interval=update_cfg.interval,
+            cfg=update_cfg,
             lookback_days=update_cfg.lookback_days,
             chunk_size=1,
-            sleep_seconds=update_cfg.sleep_seconds,
-            max_retries=update_cfg.max_retries,
-            backoff_max_seconds=update_cfg.backoff_max_seconds,
             threads=False,
-            log_path=update_cfg.log_path,
             show_progress=True,
             progress_desc="YF strict full-history fetch",
         )
         for sym in tqdm(strict_symbols):
             try:
                 df_new = strict_map.get(sym)
-                if df_new is None or df_new.is_empty():
-                    retry_map = fetch_yfinance_history_bulk(
-                        [sym],
-                        interval=update_cfg.interval,
-                        lookback_days=update_cfg.lookback_days,
-                        chunk_size=1,
-                        sleep_seconds=update_cfg.sleep_seconds,
-                        max_retries=update_cfg.max_retries,
-                        backoff_max_seconds=update_cfg.backoff_max_seconds,
-                        threads=False,
-                        log_path=update_cfg.log_path,
-                    )
-                    df_new = retry_map.get(sym)
-                df_new = sanitize_ohlc_df(df_new)
-                if df_new is None or df_new.is_empty():
-                    append_update_log(update_cfg.log_path, sym, "empty_data_strict", 1)
-                    continue
                 cur = resolve_currency(sym, fetch_symbol_currency, df_hint=df_new, cache=currency_cache)
-                df_new = ensure_currency(df_new, cur)
                 out_path = root / f"{sym}.parquet"
-                df_new.sort("date").write_parquet(str(out_path))
-                assert_postwrite_integrity(
+                _write_symbol_parquet(
                     out_path,
                     sym,
-                    enabled=update_cfg.postwrite_integrity_enabled,
-                    read_frame=read_parquet_if_exists,
-                    append_log=append_update_log,
-                    log_path=update_cfg.log_path,
+                    df_new,
+                    currency=cur,
+                    cfg=update_cfg,
+                    empty_reason="empty_data_strict",
+                    sort_before_write=True,
                 )
             except Exception as e:
                 append_update_log(update_cfg.log_path, sym, str(e), 1)
 
-    intraday_res, _ = _run_intraday_update(
+    intraday_res = _run_intraday_update(
         symbols=symbols,
         runs_root=update_cfg.runs_root,
         parquet_root=update_cfg.parquet_root,
@@ -617,3 +559,82 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
         log_path=update_cfg.log_path,
     )
     return intraday_res
+
+
+def _bulk_fetch_with_retry(
+    symbols: list[str],
+    *,
+    cfg: _UpdateConfig,
+    lookback_days: int,
+    chunk_size: int,
+    threads: bool,
+    show_progress: bool = False,
+    progress_desc: str = "yfinance bulk",
+) -> dict[str, pl.DataFrame]:
+    if not symbols:
+        return {}
+    result = fetch_yfinance_history_bulk(
+        symbols,
+        interval=cfg.interval,
+        lookback_days=lookback_days,
+        chunk_size=chunk_size,
+        sleep_seconds=cfg.sleep_seconds,
+        max_retries=cfg.max_retries,
+        backoff_max_seconds=cfg.backoff_max_seconds,
+        threads=threads,
+        log_path=cfg.log_path,
+        show_progress=show_progress,
+        progress_desc=progress_desc,
+    )
+    misses = [sym for sym in symbols if sym not in result or result[sym] is None or result[sym].is_empty()]
+    for sym in misses:
+        single = fetch_yfinance_history_bulk(
+            [sym],
+            interval=cfg.interval,
+            lookback_days=lookback_days,
+            chunk_size=1,
+            sleep_seconds=cfg.sleep_seconds,
+            max_retries=cfg.max_retries,
+            backoff_max_seconds=cfg.backoff_max_seconds,
+            threads=False,
+            log_path=cfg.log_path,
+        )
+        df_one = single.get(sym)
+        if df_one is not None and not df_one.is_empty():
+            result[sym] = df_one
+    return result
+
+
+def _prepare_history_frame(df: pl.DataFrame | None, currency: str) -> pl.DataFrame | None:
+    prepared = sanitize_ohlc_df(ensure_currency(df, currency))
+    if prepared is None or prepared.is_empty():
+        return None
+    return prepared
+
+
+def _write_symbol_parquet(
+    path: Path,
+    symbol: str,
+    df: pl.DataFrame | None,
+    *,
+    currency: str,
+    cfg: _UpdateConfig,
+    empty_reason: str,
+    sort_before_write: bool = False,
+) -> bool:
+    prepared = _prepare_history_frame(df, currency)
+    if prepared is None:
+        append_update_log(cfg.log_path, symbol, empty_reason, 1)
+        return False
+    if sort_before_write:
+        prepared = prepared.sort("date")
+    prepared.write_parquet(str(path))
+    assert_postwrite_integrity(
+        path,
+        symbol,
+        enabled=cfg.postwrite_integrity_enabled,
+        read_frame=read_parquet_if_exists,
+        append_log=append_update_log,
+        log_path=cfg.log_path,
+    )
+    return True

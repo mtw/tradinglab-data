@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import random
 
 import pandas as pd
 
@@ -49,6 +50,32 @@ def test_run_parquet_sanity_checks_success_and_baseline_drop(tmp_path: Path):
     )
     assert dropped["ok"] is False
     assert any(str(e).startswith("file_count_drop:") for e in dropped["errors"])
+
+
+def test_run_parquet_sanity_checks_does_not_mutate_global_random_state(tmp_path: Path):
+    root = tmp_path / "daily"
+    root.mkdir(parents=True, exist_ok=True)
+    universe_dir = tmp_path / "universes"
+    universe_dir.mkdir(parents=True, exist_ok=True)
+
+    pd.DataFrame({"symbol": ["AAA"]}).to_csv(universe_dir / "sp500.csv", index=False)
+    pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2025-01-01"]),
+            "open": [1.0],
+            "high": [1.2],
+            "low": [0.9],
+            "close": [1.1],
+        }
+    ).to_parquet(root / "AAA.parquet", index=False)
+
+    state_before = random.getstate()
+    run_parquet_sanity_checks(
+        ParquetVerifyConfig(root=root, universe_dir=universe_dir, universes=("sp500",), min_parquet_files=1, sample_read_files=1)
+    )
+    state_after = random.getstate()
+
+    assert state_after == state_before
 
 
 def test_write_verification_summary(tmp_path: Path):

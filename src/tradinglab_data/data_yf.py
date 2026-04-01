@@ -184,6 +184,13 @@ def upsert_symbol_parquet(
     lookback_days: int,
     parquet_root: str | Path,
 ) -> Path:
+    """Legacy single-symbol parquet updater.
+
+    This helper predates the bulk workflow layer in `workflows.py`. It performs
+    a direct fetch/merge/write cycle for one symbol and bypasses the
+    workflow-level currency resolution, sanitization policy, and post-write
+    integrity assertions used by the main package update commands.
+    """
     root = Path(parquet_root)
     root.mkdir(parents=True, exist_ok=True)
     out_path = root / f"{symbol}.parquet"

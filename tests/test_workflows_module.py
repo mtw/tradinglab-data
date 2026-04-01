@@ -121,7 +121,7 @@ def test_monitor_extended_hours_from_config_uses_shared_artifact_writer(
     _, _, runs_root, _ = patch_workflow_common_paths(workflows, symbols=["AAA"])
     intraday_calls: list[dict[str, object]] = []
 
-    def fake_run_intraday_update(**kwargs):
+    def fake_execute_intraday_update(**kwargs):
         intraday_calls.append(kwargs)
         return (
             {
@@ -138,7 +138,7 @@ def test_monitor_extended_hours_from_config_uses_shared_artifact_writer(
             "/tmp/report.html",
         )
 
-    monkeypatch.setattr(workflows, "_run_intraday_update", fake_run_intraday_update)
+    monkeypatch.setattr(workflows, "_execute_intraday_update", fake_execute_intraday_update)
     cfg = _base_cfg(dummy_cfg_factory)
 
     res = workflows.monitor_extended_hours_from_config(cfg, top_n=12, session_filter="post")
@@ -153,7 +153,5 @@ def test_monitor_extended_hours_from_config_uses_shared_artifact_writer(
             "log_path": workflows.update_log_path(cfg),
             "top_n": 12,
             "session_filter": "post",
-            "swallow_errors": False,
-            "force": True,
         }
     ]
