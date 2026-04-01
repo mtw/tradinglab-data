@@ -164,6 +164,19 @@ Example template:
 
 If a config-backed command is run without a valid config file, the CLI raises a clear error telling you to create one from the bundled template, pass `--config`, or set `TRADINGLAB_DATA_CONFIG`.
 
+Keep the tracked [`configs/config.yaml`](configs/config.yaml) generic. For machine-specific sibling-store paths, create an untracked `configs/config.local.yaml` and point commands at it:
+
+```bash
+export TRADINGLAB_DATA_CONFIG=configs/config.local.yaml
+tradinglab-data update
+```
+
+The maintenance wrapper supports the same local-override pattern:
+
+```bash
+TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_daily_update_verify.sh
+```
+
 ## Testing
 
 Run the package test suite directly:

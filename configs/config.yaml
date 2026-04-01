@@ -1,7 +1,7 @@
 paths:
-  universe_csv: "../tradinglab-store/meta/universe_master.csv"
-  universe_dir: "../tradinglab-store/meta/universes"
-  ticker_overrides_csv: "../tradinglab-store/meta/ticker_overrides.csv"
+  universe_csv: "./var/meta/universe_master.csv"
+  universe_dir: "./var/meta/universes"
+  ticker_overrides_csv: "./var/meta/ticker_overrides.csv"
   parquet_root: "./var/parquet/daily"
   update_log_csv: "./var/meta/update_log.csv"
   runs_root: "./var/runs"

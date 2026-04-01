@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- No unreleased changes.
+- Reverted the tracked checkout config to the generic `./var/...` layout and documented the untracked `configs/config.local.yaml` override pattern for machine-specific sibling-store paths.
 
 ## [0.1.0] - 2026-03-28
 
