@@ -15,7 +15,11 @@ def test_merge_rows_adds_index_memberships():
 
 
 def test_build_universe_with_mocked_source(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(ub, "_sp500_rows", lambda: [{"symbol": "AAPL", "name": "Apple", "exchange": "NASDAQ", "country": "US", "source": "sp500_x", "active": 1, "isin": None}])
+    monkeypatch.setitem(
+        ub._INDEX_FETCHERS,
+        "sp500",
+        lambda: [{"symbol": "AAPL", "name": "Apple", "exchange": "NASDAQ", "country": "US", "source": "sp500_x", "active": 1, "isin": None}],
+    )
     monkeypatch.setattr(ub, "normalize_to_yahoo", lambda symbol, exchange, country, **kwargs: symbol)
     out = tmp_path / "universe.csv"
     df = ub.build_universe(indices=["sp500"], out_path=out, active_only=True)
@@ -31,7 +35,7 @@ def test_build_universe_falls_back_to_override_csv_when_fetch_is_empty(tmp_path:
         "symbol,name,exchange,country,active,isin\nMSFT,Microsoft,NASDAQ,US,1,\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(ub, "_sp500_rows", lambda: [])
+    monkeypatch.setitem(ub._INDEX_FETCHERS, "sp500", lambda: [])
     monkeypatch.setattr(ub, "normalize_to_yahoo", lambda symbol, exchange, country, **kwargs: symbol)
 
     out = tmp_path / "universe.csv"
@@ -48,9 +52,9 @@ def test_build_universe_falls_back_to_override_csv_when_fetch_is_empty(tmp_path:
 
 
 def test_build_universe_marks_isin_only_rows_for_mapping(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(
-        ub,
-        "_sp500_rows",
+    monkeypatch.setitem(
+        ub._INDEX_FETCHERS,
+        "sp500",
         lambda: [
             {
                 "symbol": "",
@@ -80,7 +84,7 @@ def test_build_universe_marks_isin_only_rows_for_mapping(tmp_path: Path, monkeyp
 
 
 def test_build_universe_raises_when_all_sources_and_overrides_are_empty(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(ub, "_sp500_rows", lambda: [])
+    monkeypatch.setitem(ub._INDEX_FETCHERS, "sp500", lambda: [])
     monkeypatch.setattr(ub, "normalize_to_yahoo", lambda symbol, exchange, country, **kwargs: symbol)
 
     with pytest.raises(RuntimeError, match="No constituents found"):

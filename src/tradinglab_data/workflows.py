@@ -230,9 +230,13 @@ def _run_intraday_update(
     parquet_root: str | Path,
     intraday_cfg: _IntradayConfig,
     log_path: Path,
-) -> ExtendedHoursResult | None:
-    if not intraday_cfg.enabled:
-        return None
+    top_n: int = 25,
+    session_filter: str = "all",
+    swallow_errors: bool = True,
+    force: bool = False,
+) -> tuple[ExtendedHoursResult | None, str | None]:
+    if not intraday_cfg.enabled and not force:
+        return None, None
     alert_dir = _run_dir(runs_root) / "monitor"
     alert_path = alert_dir / "extended_hours_alerts.csv"
     try:
@@ -254,17 +258,21 @@ def _run_intraday_update(
             threads=intraday_cfg.threads,
             log_path=log_path,
         )
-        _write_extended_hours_artifacts(
+        report_path = _write_extended_hours_artifacts(
             intraday_res,
             runs_root=runs_root,
             threshold=intraday_cfg.pct_move_threshold,
             min_volume=intraday_cfg.min_volume,
+            top_n=top_n,
+            session_filter=session_filter,
         )
-        return intraday_res
+        return intraday_res, report_path
     except Exception as e:
+        if not swallow_errors:
+            raise
         append_update_log(log_path, "__extended_hours__", str(e), 1)
         print(f"[WARN] extended-hours update failed: {e}")
-        return None
+        return None, None
 
 
 def monitor_extended_hours_from_config(
@@ -278,37 +286,20 @@ def monitor_extended_hours_from_config(
     runs_root = runs_root_path(cfg)
     log_path = update_log_path(cfg)
     intraday_cfg = _read_intraday_config(cfg)
-
-    alert_dir = _run_dir(runs_root) / "monitor"
-    alert_path = alert_dir / "extended_hours_alerts.csv"
-    res = update_extended_hours_store(
+    res, report_path = _run_intraday_update(
         symbols=symbols,
-        intraday_root=intraday_cfg.root,
-        daily_root=daily_root,
-        preferred_interval=intraday_cfg.preferred_interval,
-        fallback_interval=intraday_cfg.fallback_interval,
-        retention_days=intraday_cfg.retention_days,
-        prepost=intraday_cfg.prepost,
-        pct_move_threshold=intraday_cfg.pct_move_threshold,
-        min_volume=intraday_cfg.min_volume,
-        alerts_path=alert_path,
-        chunk_size=intraday_cfg.chunk_size,
-        sleep_seconds=intraday_cfg.sleep_seconds,
-        max_retries=intraday_cfg.max_retries,
-        backoff_max_seconds=intraday_cfg.backoff_max_seconds,
-        threads=intraday_cfg.threads,
-        log_path=log_path,
-    )
-    report_path = _write_extended_hours_artifacts(
-        res,
         runs_root=runs_root,
-        threshold=intraday_cfg.pct_move_threshold,
-        min_volume=intraday_cfg.min_volume,
+        parquet_root=daily_root,
+        intraday_cfg=intraday_cfg,
+        log_path=log_path,
         top_n=top_n,
         session_filter=session_filter,
+        swallow_errors=False,
+        force=True,
     )
-    res["report_html"] = str(report_path)
-    return res
+    if res is None or report_path is None:
+        raise RuntimeError("Extended-hours monitoring did not produce a result.")
+    return {**res, "report_html": str(report_path)}
 
 
 def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> UpdateResult:
@@ -413,13 +404,14 @@ def _run_stooq_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Extended
             except Exception as e:
                 append_update_log(update_cfg.log_path, sym, f"stooq_yf_recent_error:{e}", 1)
 
-    return _run_intraday_update(
+    intraday_res, _ = _run_intraday_update(
         symbols=symbols,
         runs_root=update_cfg.runs_root,
         parquet_root=update_cfg.parquet_root,
         intraday_cfg=update_cfg.intraday,
         log_path=update_cfg.log_path,
     )
+    return intraday_res
 
 
 def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> ExtendedHoursResult | None:
@@ -617,10 +609,11 @@ def _run_yfinance_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Exten
             except Exception as e:
                 append_update_log(update_cfg.log_path, sym, str(e), 1)
 
-    return _run_intraday_update(
+    intraday_res, _ = _run_intraday_update(
         symbols=symbols,
         runs_root=update_cfg.runs_root,
         parquet_root=update_cfg.parquet_root,
         intraday_cfg=update_cfg.intraday,
         log_path=update_cfg.log_path,
     )
+    return intraday_res

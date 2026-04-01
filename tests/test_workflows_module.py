@@ -119,39 +119,41 @@ def test_monitor_extended_hours_from_config_uses_shared_artifact_writer(
     dummy_cfg_factory,
 ):
     _, _, runs_root, _ = patch_workflow_common_paths(workflows, symbols=["AAA"])
-    monkeypatch.setattr(
-        workflows,
-        "update_extended_hours_store",
-        lambda **kwargs: {
-            "preferred_interval": "5m",
-            "fallback_interval": "1m",
-            "symbols": 1,
-            "preferred_written": 1,
-            "fallback_written": 0,
-            "alerts": 0,
-            "alerts_path": str(kwargs["alerts_path"]),
-            "moves_df": pl.DataFrame(),
-            "alerts_df": pl.DataFrame(),
-        },
-    )
-    artifact_calls: list[dict[str, object]] = []
+    intraday_calls: list[dict[str, object]] = []
 
-    def fake_write_artifacts(intraday_res, **kwargs):
-        artifact_calls.append(kwargs)
-        return "/tmp/report.html"
+    def fake_run_intraday_update(**kwargs):
+        intraday_calls.append(kwargs)
+        return (
+            {
+                "preferred_interval": "5m",
+                "fallback_interval": "1m",
+                "symbols": 1,
+                "preferred_written": 1,
+                "fallback_written": 0,
+                "alerts": 0,
+                "alerts_path": "/tmp/alerts.csv",
+                "moves_df": pl.DataFrame(),
+                "alerts_df": pl.DataFrame(),
+            },
+            "/tmp/report.html",
+        )
 
-    monkeypatch.setattr(workflows, "_write_extended_hours_artifacts", fake_write_artifacts)
+    monkeypatch.setattr(workflows, "_run_intraday_update", fake_run_intraday_update)
     cfg = _base_cfg(dummy_cfg_factory)
 
     res = workflows.monitor_extended_hours_from_config(cfg, top_n=12, session_filter="post")
 
     assert res["report_html"] == "/tmp/report.html"
-    assert artifact_calls == [
+    assert intraday_calls == [
         {
+            "symbols": ["AAA"],
             "runs_root": runs_root,
-            "threshold": 2.0,
-            "min_volume": 0.0,
+            "parquet_root": workflows.parquet_root_path(cfg),
+            "intraday_cfg": workflows._read_intraday_config(cfg),
+            "log_path": workflows.update_log_path(cfg),
             "top_n": 12,
             "session_filter": "post",
+            "swallow_errors": False,
+            "force": True,
         }
     ]

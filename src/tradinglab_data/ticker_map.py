@@ -22,19 +22,18 @@ def _load_overrides(path: str | Path | None = None) -> dict[str, str]:
     with _OVERRIDE_CACHE_LOCK:
         if _OVERRIDE_CACHE is not None and _OVERRIDE_CACHE_SOURCE == cache_key:
             return dict(_OVERRIDE_CACHE)
-    if not p.exists() or p.stat().st_size == 0:
-        return {}
-    try:
-        df = pl.read_csv(str(p))
-    except Exception:
-        return {}
-    if not {"raw", "yahoo"}.issubset(set(df.columns)):
-        return {}
-    overrides = {}
-    for raw, yahoo in df.select(["raw", "yahoo"]).iter_rows():
-        if raw and yahoo:
-            overrides[str(raw).strip()] = str(yahoo).strip()
-    with _OVERRIDE_CACHE_LOCK:
+        if not p.exists() or p.stat().st_size == 0:
+            return {}
+        try:
+            df = pl.read_csv(str(p))
+        except Exception:
+            return {}
+        if not {"raw", "yahoo"}.issubset(set(df.columns)):
+            return {}
+        overrides = {}
+        for raw, yahoo in df.select(["raw", "yahoo"]).iter_rows():
+            if raw and yahoo:
+                overrides[str(raw).strip()] = str(yahoo).strip()
         _OVERRIDE_CACHE = dict(overrides)
         _OVERRIDE_CACHE_SOURCE = cache_key
     return overrides

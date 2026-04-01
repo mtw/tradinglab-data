@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 from urllib.request import urlopen, Request
 
 import polars as pl
@@ -290,12 +290,12 @@ def _merge_rows(rows_by_index: dict[str, list[dict]]) -> list[dict]:
     return out
 
 
-_INDEX_FETCHERS = {
-    "sp500": "_sp500_rows",
-    "djia": "_djia_rows",
-    "dax": "_dax_rows_wikipedia",
-    "mdax": "_mdax_rows_wikipedia",
-    "atx": "_atx_rows",
+_INDEX_FETCHERS: dict[str, Callable[[], list[dict]]] = {
+    "sp500": _sp500_rows,
+    "djia": _djia_rows,
+    "dax": _dax_rows_wikipedia,
+    "mdax": _mdax_rows_wikipedia,
+    "atx": _atx_rows,
 }
 
 
@@ -311,10 +311,9 @@ def build_universe(
 
     rows_by_index: dict[str, list[dict]] = {}
     for index_name in idx:
-        fetcher_name = _INDEX_FETCHERS.get(index_name)
-        if fetcher_name is None:
+        fetcher = _INDEX_FETCHERS.get(index_name)
+        if fetcher is None:
             continue
-        fetcher = globals()[fetcher_name]
         rows = fetcher()
         if not rows:
             rows = _from_override(index_name, overrides_dir)

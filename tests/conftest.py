@@ -70,7 +70,7 @@ def patch_workflow_common_paths(monkeypatch, tmp_path: Path):
         monkeypatch.setattr(module, "runs_root_path", lambda cfg: runs_root)
         monkeypatch.setattr(module, "intraday_root_path", lambda cfg: intraday_root)
         monkeypatch.setattr(module, "append_update_log", lambda *args, **kwargs: None)
-        monkeypatch.setattr(module, "_run_intraday_update", lambda **kwargs: None)
+        monkeypatch.setattr(module, "_run_intraday_update", lambda **kwargs: (None, None))
         monkeypatch.setattr(module, "assert_postwrite_integrity", lambda *args, **kwargs: None)
         return parquet_root, log_path, runs_root, intraday_root
 
