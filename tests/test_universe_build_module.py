@@ -90,3 +90,30 @@ def test_build_universe_raises_when_all_sources_and_overrides_are_empty(tmp_path
             active_only=True,
             overrides_dir=tmp_path / "missing-overrides",
         )
+
+
+def test_tradingview_components_rows_normalizes_whitespace_and_extracts_name(monkeypatch):
+    monkeypatch.setattr(
+        ub,
+        "_fetch_html",
+        lambda url: """
+            <table>
+              <tr><th>Symbol</th></tr>
+              <tr><td>ALV    Allianz SE</td></tr>
+            </table>
+        """,
+    )
+
+    rows = ub._tradingview_components_rows("https://example.test/components", "tv_test")
+
+    assert rows == [
+        {
+            "symbol": "ALV",
+            "name": "Allianz SE",
+            "exchange": "Xetra",
+            "country": "Germany",
+            "source": "tv_test",
+            "active": 1,
+            "isin": None,
+        }
+    ]

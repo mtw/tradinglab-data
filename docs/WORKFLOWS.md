@@ -45,6 +45,13 @@ High-level behavior:
 6. write CSV alert output
 7. render HTML report
 
+Current supported intraday intervals for this workflow:
+
+- `5m`
+- `1m`
+
+Configuring another interval currently fails fast with a clear validation error.
+
 Outputs:
 
 - `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_alerts.csv`
@@ -117,3 +124,4 @@ It still exists for provider verification, intraday cleaning, and mismatch repai
 - Provider no-data responses are expected occasionally and should be classified carefully.
 - Historical gaps may be tolerated differently for ETFs vs stocks according to configured policy.
 - Sparse extended-hours data is not automatically corruption.
+- Unsupported intraday interval configuration is a hard configuration error and raises immediately.

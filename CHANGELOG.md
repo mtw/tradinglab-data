@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- no unreleased changes
+- fixed TradingView component parsing to normalize whitespace and extract names correctly
+- invalid extended-hours intraday intervals now fail fast with a clear `ValueError`
 
 ## [0.1.0] - 2026-03-28
 

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Iterable
-from io import BytesIO
 from urllib.request import urlopen, Request
 
 import polars as pl
@@ -140,7 +140,7 @@ def _tradingview_components_rows(url: str, source: str) -> list[dict]:
     if not html:
         return []
     try:
-        tables = pd.read_html(html)
+        tables = pd.read_html(StringIO(html))
     except Exception:
         return []
     if not tables:
@@ -165,13 +165,13 @@ def _tradingview_components_rows(url: str, source: str) -> list[dict]:
     out = out.with_columns(
         pl.col("symbol_raw")
         .cast(pl.String)
-        .str.replace_all(r"\\s+", " ")
+        .str.replace_all(r"\s+", " ")
         .str.strip_chars()
         .alias("symbol_raw")
     )
     out = out.with_columns(
         pl.col("symbol_raw").str.extract(r"^([A-Z0-9._-]+)", 1).alias("symbol"),
-        pl.col("symbol_raw").str.replace(r"^[A-Z0-9._-]+\\s*", "").alias("name"),
+        pl.col("symbol_raw").str.replace(r"^[A-Z0-9._-]+\s*", "").alias("name"),
     ).drop("symbol_raw")
     out = out.filter(pl.col("symbol").is_not_null() & (pl.col("symbol") != ""))
 

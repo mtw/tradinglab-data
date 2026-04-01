@@ -319,6 +319,14 @@ Operational keys currently consumed by workflows:
   - `pct_move_threshold`
   - `min_volume`
 
+Current interval support:
+
+- `extended_hours.preferred_interval`
+  - supported values: `5m`, `1m`
+- `extended_hours.fallback_interval`
+  - supported values: `5m`, `1m`
+- unsupported values raise a clear `ValueError` at workflow runtime
+
 Reference template:
 
 - [`configs/config.yaml.example`](../configs/config.yaml.example)

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 import tradinglab_data.extended_hours_monitor as eh
 from tradinglab_data.schema import MOVE_ALERT_FRAME_SCHEMA, validate_alerts_frame, validate_moves_frame
@@ -240,3 +241,19 @@ def test_update_intraday_interval_is_testable_in_isolation(tmp_path: Path):
     assert written == ["AAA"]
     assert stored.height == 2
     assert stored.get_column("currency").to_list() == ["USD", "USD"]
+
+
+def test_update_extended_hours_store_rejects_unsupported_interval(tmp_path: Path):
+    daily_root = tmp_path / "daily"
+    daily_root.mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(ValueError, match="Unsupported intraday interval"):
+        eh.update_extended_hours_store(
+            symbols=["AAA"],
+            intraday_root=tmp_path / "intraday",
+            daily_root=daily_root,
+            preferred_interval="15m",
+            fallback_interval="1m",
+            retention_days=10,
+            pct_move_threshold=2.0,
+        )

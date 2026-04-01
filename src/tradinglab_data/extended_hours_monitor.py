@@ -51,6 +51,14 @@ UPDATE_PERIOD_BY_INTERVAL = {
 }
 
 
+def _period_for_interval(interval: str, mapping: dict[str, str], *, purpose: str) -> str:
+    period = mapping.get(interval)
+    if period is None:
+        supported = ", ".join(sorted(mapping))
+        raise ValueError(f"Unsupported intraday interval for {purpose}: {interval!r}. Supported intervals: {supported}.")
+    return period
+
+
 def _empty_move_alert_frame() -> pl.DataFrame:
     return pl.DataFrame(schema=MOVE_ALERT_FRAME_SCHEMA)
 
@@ -691,7 +699,7 @@ def update_extended_hours_store(
     pref_written_missing = _update_intraday_interval(
         pref_missing,
         preferred_interval,
-        MAX_PERIOD_BY_INTERVAL[preferred_interval],
+        _period_for_interval(preferred_interval, MAX_PERIOD_BY_INTERVAL, purpose="initial fetch"),
         pref_dir,
         retention_days=retention_days,
         prepost=prepost,
@@ -705,7 +713,7 @@ def update_extended_hours_store(
     pref_written_existing = _update_intraday_interval(
         pref_existing,
         preferred_interval,
-        UPDATE_PERIOD_BY_INTERVAL[preferred_interval],
+        _period_for_interval(preferred_interval, UPDATE_PERIOD_BY_INTERVAL, purpose="incremental fetch"),
         pref_dir,
         retention_days=retention_days,
         prepost=prepost,
@@ -728,7 +736,7 @@ def update_extended_hours_store(
     fb_written_missing = _update_intraday_interval(
         fb_missing,
         fallback_interval,
-        MAX_PERIOD_BY_INTERVAL[fallback_interval],
+        _period_for_interval(fallback_interval, MAX_PERIOD_BY_INTERVAL, purpose="initial fetch"),
         fb_dir,
         retention_days=retention_days,
         prepost=prepost,
@@ -742,7 +750,7 @@ def update_extended_hours_store(
     fb_written_existing = _update_intraday_interval(
         fb_existing,
         fallback_interval,
-        UPDATE_PERIOD_BY_INTERVAL[fallback_interval],
+        _period_for_interval(fallback_interval, UPDATE_PERIOD_BY_INTERVAL, purpose="incremental fetch"),
         fb_dir,
         retention_days=retention_days,
         prepost=prepost,
