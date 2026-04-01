@@ -118,6 +118,18 @@ scripts/check_parquet_status.py
 
 It still exists for provider verification, intraday cleaning, and mismatch repair, but the package-level integrity audit above is now the regular store-health entrypoint.
 
+Daily update/verify wrapper:
+
+```bash
+./scripts/run_daily_update_verify.sh
+```
+
+Config precedence for this wrapper:
+
+- `TLD_CONFIG_PATH` when set
+- `configs/config.local.yaml` when it exists
+- `configs/config.yaml` otherwise
+
 ## Failure Semantics
 
 - Missing parquet during research is a hard failure in downstream applications, not a signal to fetch data.

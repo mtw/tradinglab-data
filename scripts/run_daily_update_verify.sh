@@ -22,7 +22,19 @@ resolve_venv_path() {
 }
 
 VENV_PATH="$(resolve_venv_path || true)"
-CONFIG_PATH="${TLD_CONFIG_PATH:-configs/config.yaml}"
+resolve_config_path() {
+  if [[ -n "${TLD_CONFIG_PATH:-}" ]]; then
+    printf '%s\n' "$TLD_CONFIG_PATH"
+    return 0
+  fi
+  if [[ -f "$REPO_DIR/configs/config.local.yaml" ]]; then
+    printf '%s\n' "configs/config.local.yaml"
+    return 0
+  fi
+  printf '%s\n' "configs/config.yaml"
+}
+
+CONFIG_PATH="$(resolve_config_path)"
 VERIFY_INTRADAY="${TLD_VERIFY_INTRADAY:-1}"
 INTRADAY_INTERVALS="${TLD_INTRADAY_INTERVALS:-5m,1m}"
 MIN_PARQUET_FILES="${TLD_MIN_PARQUET_FILES:-400}"
@@ -150,6 +162,7 @@ if ! mkdir "$LOCK_PATH" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCK_PATH" 2>/dev/null || true' EXIT
 log INFO "lock acquired: $LOCK_PATH"
+log INFO "using config: $CONFIG_PATH"
 
 rm -f "$OK_FILE" "$FAIL_FILE" "$RUNNING_FILE"
 {

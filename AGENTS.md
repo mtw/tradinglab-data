@@ -84,3 +84,4 @@ If the change affects update behavior, also run at least one config-backed smoke
 - Prefer additive config changes over silent behavior changes.
 - Avoid writing code that assumes the package lives inside any larger monorepo.
 - Keep committed configs generic. Machine-specific path layouts should live in an untracked local override such as `configs/config.local.yaml`, passed via `--config`, `TRADINGLAB_DATA_CONFIG`, or `TLD_CONFIG_PATH`.
+- The local maintenance wrapper `scripts/run_daily_update_verify.sh` prefers `TLD_CONFIG_PATH`, then `configs/config.local.yaml`, then `configs/config.yaml`.

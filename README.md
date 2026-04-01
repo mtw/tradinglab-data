@@ -177,6 +177,8 @@ The maintenance wrapper supports the same local-override pattern:
 TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_daily_update_verify.sh
 ```
 
+If `TLD_CONFIG_PATH` is not set, the wrapper now prefers `configs/config.local.yaml` automatically when that file exists, and falls back to `configs/config.yaml` otherwise.
+
 ## Testing
 
 Run the package test suite directly:
