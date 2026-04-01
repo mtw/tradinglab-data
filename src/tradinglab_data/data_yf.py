@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import time
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -205,6 +206,11 @@ def upsert_symbol_parquet(
     workflow-level currency resolution, sanitization policy, and post-write
     integrity assertions used by the main package update commands.
     """
+    warnings.warn(
+        "upsert_symbol_parquet() is deprecated; prefer config-driven bulk update workflows in tradinglab_data.workflows.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     root = Path(parquet_root)
     root.mkdir(parents=True, exist_ok=True)
     out_path = root / f"{symbol}.parquet"

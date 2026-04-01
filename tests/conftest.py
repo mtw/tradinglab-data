@@ -9,6 +9,7 @@ import pytest
 class DummyCfg:
     def __init__(self, raw: dict[str, object]):
         self.raw = raw
+        self.source_path = None
 
     def get(self, *keys: str, default=None):
         cur: object = self.raw
@@ -17,6 +18,14 @@ class DummyCfg:
                 return default
             cur = cur[key]
         return cur
+
+    def path(self, *keys: str, default=None) -> Path | None:
+        value = self.get(*keys, default=default)
+        if value is None:
+            return None
+        if isinstance(value, Path):
+            return value
+        return Path(str(value))
 
 
 def make_history_frame(

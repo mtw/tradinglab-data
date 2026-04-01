@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
+from polars.datatypes.classes import DataTypeClass
 
 from .schema import DAILY_PARQUET_SCHEMA, INTRADAY_PARQUET_SCHEMA
 
@@ -88,7 +89,7 @@ def align_for_concat(
     df_left: pl.DataFrame,
     df_right: pl.DataFrame,
     *,
-    schema: dict[str, type[pl.DataType]],
+    schema: dict[str, pl.DataType | DataTypeClass],
     preferred_columns: list[str] | None = None,
     postprocess: Callable[[pl.DataFrame], pl.DataFrame] | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:

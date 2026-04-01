@@ -623,7 +623,7 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `fetch_yfinance_history_bulk(...) -> dict[str, pl.DataFrame]`
 - `read_parquet_if_exists(path) -> pl.DataFrame | None`
 - `upsert_symbol_parquet(symbol, interval, lookback_days, parquet_root) -> Path`
-  - legacy single-symbol helper; it bypasses workflow-level currency resolution, sanitization policy, and post-write integrity checks
+  - deprecated legacy single-symbol helper; it bypasses workflow-level currency resolution, sanitization policy, and post-write integrity checks
 - `append_update_log(log_path, symbol, error, attempt_count) -> None`
 - `clear_currency_cache() -> None`
 

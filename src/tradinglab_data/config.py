@@ -4,9 +4,19 @@ import os
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import yaml
+
+
+class ConfigLike(Protocol):
+    @property
+    def source_path(self) -> Path | None: ...
+
+    def get(self, *keys: str, default: Any = None) -> Any: ...
+
+    def path(self, *keys: str, default: Any = None) -> Path | None: ...
+
 
 DEFAULT_CONFIG_BASENAME = "config.yaml"
 DEFAULT_CONFIG_ENVVAR = "TRADINGLAB_DATA_CONFIG"
@@ -145,44 +155,44 @@ class Config:
         return Path(_expand_string(str(value)))
 
 
-def _require_path(cfg: Config, section: str, key: str) -> Path:
+def _require_path(cfg: ConfigLike, section: str, key: str) -> Path:
     value = cfg.path(section, key)
     if value is None:
         raise ValueError(f"Missing {section}.{key} in {cfg.source_path or 'config'}")
     return value
 
 
-def universe_csv_path(cfg: Config) -> Path:
+def universe_csv_path(cfg: ConfigLike) -> Path:
     return _require_path(cfg, "paths", "universe_csv")
 
 
-def meta_root_path(cfg: Config) -> Path:
+def meta_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "meta_root") or universe_csv_path(cfg).parent
 
 
-def universe_dir_path(cfg: Config) -> Path:
+def universe_dir_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "universe_dir") or (meta_root_path(cfg) / "universes")
 
 
-def update_log_path(cfg: Config) -> Path:
+def update_log_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "update_log_csv") or (meta_root_path(cfg) / "update_log.csv")
 
 
-def ticker_overrides_path(cfg: Config) -> Path:
+def ticker_overrides_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "ticker_overrides_csv") or (meta_root_path(cfg) / "ticker_overrides.csv")
 
 
-def parquet_root_path(cfg: Config) -> Path:
+def parquet_root_path(cfg: ConfigLike) -> Path:
     return _require_path(cfg, "paths", "parquet_root")
 
 
-def intraday_root_path(cfg: Config) -> Path:
+def intraday_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("extended_hours", "intraday_root") or (parquet_root_path(cfg).parent / "intraday")
 
 
-def runs_root_path(cfg: Config) -> Path:
+def runs_root_path(cfg: ConfigLike) -> Path:
     return _require_path(cfg, "paths", "runs_root")
 
 
-def registry_root_path(cfg: Config) -> Path:
+def registry_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "registry_root") or (runs_root_path(cfg) / "runs_registry")

@@ -28,7 +28,7 @@ detect_alerts = _move_compute.detect_alerts
 load_daily_reference_closes = _move_compute.load_daily_reference_closes
 summarize_gap_report = _move_compute.summarize_gap_report
 
-# Private compat alias used by repo-maintenance scripts.
+# Private compat alias used by scripts/check_parquet_status.py.
 _sanitize_intraday_df = sanitize_intraday_df
 
 

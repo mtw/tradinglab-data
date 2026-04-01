@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import polars as pl
+import pytest
 
 import tradinglab_data.data_yf as data_yf
 
@@ -109,7 +110,8 @@ def test_upsert_symbol_parquet_uses_recent_age_for_incremental_fetch(monkeypatch
 
     monkeypatch.setattr(data_yf, "fetch_yfinance_history", fake_fetch)
 
-    out_path = data_yf.upsert_symbol_parquet("AAA", "1d", 2000, root)
+    with pytest.warns(DeprecationWarning, match="deprecated"):
+        out_path = data_yf.upsert_symbol_parquet("AAA", "1d", 2000, root)
 
     assert out_path == root / "AAA.parquet"
     assert seen_lookbacks == [14]
@@ -149,7 +151,8 @@ def test_upsert_symbol_parquet_expands_incremental_window_for_stale_history(monk
 
     monkeypatch.setattr(data_yf, "fetch_yfinance_history", fake_fetch)
 
-    data_yf.upsert_symbol_parquet("AAA", "1d", 2000, root)
+    with pytest.warns(DeprecationWarning, match="deprecated"):
+        data_yf.upsert_symbol_parquet("AAA", "1d", 2000, root)
 
     assert len(seen_lookbacks) == 1
     assert seen_lookbacks[0] >= 125

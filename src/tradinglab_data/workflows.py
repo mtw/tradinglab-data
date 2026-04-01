@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import polars as pl
 from tqdm import tqdm
@@ -19,6 +18,7 @@ from ._ohlc_utils import (
     sanitize_ohlc_df,
 )
 from .config import (
+    ConfigLike,
     intraday_root_path,
     parquet_root_path,
     runs_root_path,
@@ -91,7 +91,7 @@ def _is_strict_single_symbol(sym: str) -> bool:
     return any(up.endswith(sfx) for sfx in STRICT_SINGLE_SYMBOL_SUFFIXES)
 
 
-def _read_intraday_config(cfg: Any) -> _IntradayConfig:
+def _read_intraday_config(cfg: ConfigLike) -> _IntradayConfig:
     return _IntradayConfig(
         enabled=bool(cfg.get("extended_hours", "enabled", default=True)),
         root=str(intraday_root_path(cfg)),
@@ -109,7 +109,7 @@ def _read_intraday_config(cfg: Any) -> _IntradayConfig:
     )
 
 
-def _read_update_config(cfg: Any) -> _UpdateConfig:
+def _read_update_config(cfg: ConfigLike) -> _UpdateConfig:
     return _UpdateConfig(
         parquet_root=parquet_root_path(cfg),
         interval=cfg.get("timeframe", default="1d"),
@@ -131,7 +131,7 @@ def _read_update_config(cfg: Any) -> _UpdateConfig:
     )
 
 
-def _load_active_symbols_from_cfg(cfg: Any, symbols_override: list[str] | None = None) -> list[str]:
+def _load_active_symbols_from_cfg(cfg: ConfigLike, symbols_override: list[str] | None = None) -> list[str]:
     universe_csv = universe_csv_path(cfg)
     universe_dir = universe_dir_path(cfg)
     overrides_path = ticker_overrides_path(cfg)
@@ -301,7 +301,7 @@ def _run_intraday_update(
 
 
 def monitor_extended_hours_from_config(
-    cfg: Any,
+    cfg: ConfigLike,
     symbols_override: list[str] | None = None,
     top_n: int = 25,
     session_filter: str = "all",
@@ -323,7 +323,7 @@ def monitor_extended_hours_from_config(
     return {**res, "report_html": str(report_path)}
 
 
-def update_from_config(cfg: Any, symbols_override: list[str] | None = None) -> UpdateResult:
+def update_from_config(cfg: ConfigLike, symbols_override: list[str] | None = None) -> UpdateResult:
     update_cfg = _read_update_config(cfg)
     symbols = _load_active_symbols_from_cfg(cfg, symbols_override=symbols_override)
     _migrate_symbol_alias_parquet(
@@ -349,18 +349,18 @@ def _run_stooq_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Extended
     stooq_targets = symbols if update_cfg.stooq_refresh_all else missing
     for sym in tqdm(stooq_targets):
         try:
-            df_hist = fetch_stooq_history(StooqDownloadSpec(symbol=sym))
-            if df_hist.is_empty():
+            fetched_hist = fetch_stooq_history(StooqDownloadSpec(symbol=sym))
+            if fetched_hist.is_empty():
                 append_update_log(update_cfg.log_path, sym, "stooq_empty_data", 1)
                 continue
             cur = infer_currency_from_symbol(sym)
-            df_hist = ensure_currency(df_hist, cur)
+            df_hist = ensure_currency(fetched_hist, cur)
             out_path = root / f"{sym}.parquet"
-            df_hist = sanitize_ohlc_df(df_hist)
-            if df_hist is None or df_hist.is_empty():
+            sanitized_hist = sanitize_ohlc_df(df_hist)
+            if sanitized_hist is None or sanitized_hist.is_empty():
                 append_update_log(update_cfg.log_path, sym, "stooq_empty_after_sanitize", 1)
                 continue
-            df_hist.write_parquet(str(out_path))
+            sanitized_hist.write_parquet(str(out_path))
             assert_postwrite_integrity(
                 out_path,
                 sym,
@@ -411,11 +411,11 @@ def _run_stooq_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Extended
                     .unique(subset=["date"], keep="last")
                     .sort("date")
                 )
-                combined = sanitize_ohlc_df(combined)
-                if combined is None or combined.is_empty():
+                sanitized_combined = sanitize_ohlc_df(combined)
+                if sanitized_combined is None or sanitized_combined.is_empty():
                     append_update_log(update_cfg.log_path, sym, "stooq_yf_recent_empty_after_sanitize", 1)
                     continue
-                combined.write_parquet(str(path))
+                sanitized_combined.write_parquet(str(path))
                 assert_postwrite_integrity(
                     path,
                     sym,

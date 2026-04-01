@@ -6,6 +6,7 @@ from pathlib import Path
 
 import polars as pl
 import yfinance as yf
+from polars.datatypes.classes import DataTypeClass
 from tqdm import tqdm
 
 from ._yf_utils import (
@@ -17,7 +18,7 @@ from ._yf_utils import (
 )
 from .data_yf import append_update_log
 
-INTRADAY_SCHEMA = {
+INTRADAY_SCHEMA: dict[str, pl.DataType | DataTypeClass] = {
     "date": pl.Datetime,
     "open": pl.Float64,
     "high": pl.Float64,
