@@ -2,13 +2,7 @@
 
 ## Unreleased
 
-- Reverted the tracked checkout config to the generic `./var/...` layout and documented the untracked `configs/config.local.yaml` override pattern for machine-specific sibling-store paths.
-- Made `scripts/run_daily_update_verify.sh` prefer `configs/config.local.yaml` automatically when present, while still allowing `TLD_CONFIG_PATH` to override it explicitly.
-- Captured noisy `yfinance` stderr/stdout during Yahoo downloads and now classify DNS/connectivity failures as explicit Yahoo connectivity errors instead of leaking misleading `possibly delisted` messages into maintenance logs.
-- Added `scripts/verify_yahoo_access.py`, a lightweight Yahoo Finance accessibility verifier that samples configured universe symbols and probes multiple intervals before a full update run.
-- Changed the Yahoo accessibility verifier to sample different symbols on each invocation by default, with optional `--seed` support for reproducible debugging.
-- Switched schema typing to Polars’ public `PolarsDataType` alias and exported `ConfigLike` as part of the package surface.
-- Made Yahoo download capture return any raised exception for consistent connectivity classification, and classified `possibly delisted` output explicitly.
+- No unreleased changes.
 
 ## [0.1.0] - 2026-03-28
 
@@ -20,6 +14,7 @@
 - GitHub CI for tests, schema CLI smoke checks, build validation, and distribution checks
 - test infrastructure via `tests/__init__.py`, `tests/conftest.py`, and expanded workflow/report regression coverage
 - `ARTIFACT_SCHEMA_VERSION` to track parquet/report compatibility independently from package release cadence
+- `scripts/verify_yahoo_access.py`, a lightweight Yahoo Finance accessibility verifier that samples configured universe symbols and probes multiple intervals before a full update run
 
 ### Changed
 
@@ -43,6 +38,10 @@
 - widened Ruff from Pyflakes-only to a broader import/upgrade/style gate, and replaced workflow `cfg: Any` usage with a structural config protocol so mypy can run without broad suppressions
 - replaced Python callback-based symbol override application with a native Polars join/coalesce path
 - added a minimum `lxml` version floor and developer extras for `ruff`, `mypy`, and `pytest-cov`
+- reverted the tracked checkout config to the generic `./var/...` layout and documented the untracked `configs/config.local.yaml` override pattern for machine-specific sibling-store paths
+- made `scripts/run_daily_update_verify.sh` prefer `configs/config.local.yaml` automatically when present, while still allowing `TLD_CONFIG_PATH` to override it explicitly
+- changed the Yahoo accessibility verifier to sample different symbols on each invocation by default, with optional `--seed` support for reproducible debugging
+- switched schema typing to Polars’ public `PolarsDataType` alias and exported `ConfigLike` as part of the package surface
 
 ### Fixed
 
@@ -60,6 +59,8 @@
 - added explicit `@pytest.mark.network` live smoke coverage and made those tests skip cleanly when upstreams block or return no data
 - now treat name-only ATX fallback rows as mapping-required
 - marked `upsert_symbol_parquet(...)` as deprecated so the legacy single-symbol path does not masquerade as a first-class workflow API
+- captured noisy `yfinance` stderr/stdout during Yahoo downloads and now classify DNS/connectivity failures as explicit Yahoo connectivity errors instead of leaking misleading `possibly delisted` messages into maintenance logs
+- made Yahoo download capture return any raised exception for consistent connectivity classification, and classified `possibly delisted` output explicitly
 
 ### Migration Notes
 

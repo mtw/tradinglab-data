@@ -15,17 +15,19 @@ Downstream consumers should import `tradinglab_data` from the installed package,
 ## PyPI Release Checklist
 
 1. Bump version in `pyproject.toml`
-2. Run `PYTHONPATH=src pytest -q tests`
-3. Run `PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown`
-4. Build distributions with `python -m build`
-5. Check distributions with `python -m twine check dist/*`
-6. Verify the CLI locally with a real config path, for example:
+2. Run `python -m ruff check src tests`
+3. Run `python -m mypy src`
+4. Run `PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests`
+5. Run `PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown`
+6. Build distributions with `python -m build`
+7. Check distributions with `python -m twine check dist/*`
+8. Verify the CLI locally with a real config path, for example:
    - `tradinglab-data --config /path/to/config.yaml update`
    - `tradinglab-data --config /path/to/config.yaml report-parquet-store`
-7. Publish to TestPyPI
-8. Publish to PyPI
-9. Tag the release in Git
-10. Update downstream dependency pins
+9. Publish to TestPyPI
+10. Publish to PyPI
+11. Tag the release in Git
+12. Update downstream dependency pins
 
 Package CI:
 

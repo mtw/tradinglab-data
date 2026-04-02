@@ -231,4 +231,6 @@ Release and repo-split notes:
 - [`RELEASE.md`](RELEASE.md)
 - [`CHANGELOG.md`](CHANGELOG.md)
 
+Current release: `0.1.0` (see `CHANGELOG.md` for details).
+
 This repository is the standalone package and is intended to be published to PyPI as `tradinglab-data`.
