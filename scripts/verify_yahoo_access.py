@@ -97,7 +97,7 @@ def probe_symbol_interval(symbol: str, interval: str, lookback_days: int, *, pre
             issue=str(exc),
             used_fallback_symbol="",
         )
-    issue = classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+    issue = classify_yf_download_issue(f"{output}\n{exc!s}" if exc is not None else output)
     if exc is not None and issue is None:
         return ProbeResult(
             symbol=symbol,
@@ -154,7 +154,7 @@ def probe_symbol_interval(symbol: str, interval: str, lookback_days: int, *, pre
                 issue=str(exc),
                 used_fallback_symbol=fallback,
             )
-        issue_alt = classify_yf_download_issue(f"{output_alt}\n{exc_alt}" if exc_alt is not None else output_alt)
+        issue_alt = classify_yf_download_issue(f"{output_alt}\n{exc_alt!s}" if exc_alt is not None else output_alt)
         if exc_alt is not None and issue_alt is None:
             return ProbeResult(
                 symbol=symbol,

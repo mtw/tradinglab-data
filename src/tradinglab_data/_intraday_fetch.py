@@ -119,7 +119,7 @@ def fetch_intraday_bulk(
                     group_by="column",
                     threads=threads,
                 )
-                issue = classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+                issue = classify_yf_download_issue(f"{output}\n{exc!s}" if exc is not None else output)
                 if exc is not None and issue is None:
                     raise exc
                 chunk_map = split_bulk_download(df_pd, chunk)
@@ -166,7 +166,7 @@ def fetch_intraday_one(
         group_by="column",
         threads=False,
     )
-    issue = classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+    issue = classify_yf_download_issue(f"{output}\n{exc!s}" if exc is not None else output)
     if exc is not None and issue is None:
         raise exc
     if df_pd is None or len(df_pd) == 0:

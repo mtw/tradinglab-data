@@ -8,6 +8,7 @@ import polars as pl
 
 from .contracts import ARTIFACT_SCHEMA_VERSION, OHLC_COLUMNS, PACKAGE_NAME, PYTHON_PACKAGE_NAME, CompatibilityManifest
 
+# Use the public PolarsDataType alias for typing while keeping runtime on the stable pl.DataType export.
 if TYPE_CHECKING:
     from polars import PolarsDataType as _PolarsDataType  # type: ignore[attr-defined]
 else:

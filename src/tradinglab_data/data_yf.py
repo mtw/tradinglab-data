@@ -67,7 +67,7 @@ def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
         progress=False,
         group_by="column",
     )
-    issue = _classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+    issue = _classify_yf_download_issue(f"{output}\n{exc!s}" if exc is not None else output)
     if exc is not None and issue is None:
         raise exc
 
@@ -162,7 +162,7 @@ def fetch_yfinance_history_bulk(
                     group_by="column",
                     threads=threads,
                 )
-                issue = _classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+                issue = _classify_yf_download_issue(f"{output}\n{exc!s}" if exc is not None else output)
                 if exc is not None and issue is None:
                     raise exc
                 chunk_map = _split_bulk_download(df_pd, chunk)
@@ -190,7 +190,7 @@ def fetch_yfinance_history_bulk(
                             threads=False,
                         )
                         single_issue = _classify_yf_download_issue(
-                            f"{single_output}\n{single_exc}" if single_exc is not None else single_output
+                            f"{single_output}\n{single_exc!s}" if single_exc is not None else single_output
                         )
                         if single_exc is not None and single_issue is None:
                             raise single_exc
