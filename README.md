@@ -41,7 +41,7 @@ pip install -e /path/to/tradinglab-data
 ## Primary Commands
 
 - `tradinglab-data update`
-  - update daily parquet history
+  - refresh daily parquet history
   - optionally refresh extended-hours intraday parquet
   - write extended-hours alert/report artifacts
 
@@ -86,7 +86,7 @@ By default, each invocation samples a fresh random set of symbols. Pass `--seed 
 
 ## Configuration
 
-The CLI expects a YAML config with paths and update settings.
+The CLI expects a YAML config with paths and workflow settings.
 Example templates:
 
 - `configs/config.yaml.example`

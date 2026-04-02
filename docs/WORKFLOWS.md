@@ -1,6 +1,6 @@
 # Workflows
 
-## Daily Update Workflow
+## Daily Workflow
 
 Primary command:
 
@@ -24,7 +24,7 @@ Outputs:
 
 - daily parquet under `paths.parquet_root`
 - intraday parquet under `extended_hours.intraday_root`
-- update log under `<paths.update_log_csv>`
+- maintenance log under `<paths.update_log_csv>`
 - extended-hours alerts/report under `<paths.runs_root>/YYYY-MM-DD/monitor/`
 
 ## Extended-Hours Monitoring Workflow
@@ -40,7 +40,7 @@ High-level behavior:
 1. read daily reference close from the daily parquet store
 2. fetch intraday Yahoo data with `prepost=True`
 3. prefer `5m` interval and fallback to `1m` when needed
-4. update intraday parquet files incrementally
+4. write intraday parquet files incrementally
 5. compute `% move` vs most recent regular-session close
 6. write CSV alert output
 7. render HTML report
@@ -118,7 +118,7 @@ scripts/check_parquet_status.py
 
 It still exists for provider verification, intraday cleaning, and mismatch repair, but the package-level integrity audit above is now the regular store-health entrypoint.
 
-Daily update/verify wrapper:
+Daily maintenance wrapper:
 
 ```bash
 ./scripts/run_daily_update_verify.sh
@@ -140,7 +140,7 @@ Use this when:
 
 - upstream Yahoo behavior looks suspicious
 - maintenance logs show repeated connectivity or consent-host failures
-- you want a fast operational check before running a full daily update
+- you want a fast operational check before running a full daily run
 
 Behavior:
 

@@ -13,7 +13,7 @@
 
 ## Module Map
 
-- `src/tradinglab_data/data_yf.py`: Yahoo Finance history and update log helpers
+- `src/tradinglab_data/data_yf.py`: Yahoo Finance history and log helpers
 - `src/tradinglab_data/data_stooq.py`: Stooq history and CSV parsing helpers
 - `src/tradinglab_data/ticker_map.py`: ticker normalization and overrides
 - `src/tradinglab_data/universe.py`: universe loading and canonicalization

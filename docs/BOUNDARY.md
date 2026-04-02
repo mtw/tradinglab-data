@@ -19,12 +19,12 @@ Primary artifacts produced by this package:
 - daily parquet: `<paths.parquet_root>/<SYMBOL>.parquet`
 - intraday parquet: `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
 - universe CSV: `<paths.universe_csv>` or `<paths.universe_dir>/*.csv`
-- update log: `<paths.update_log_csv>`
+- maintenance log: `<paths.update_log_csv>`
 - extended-hours alerts/report: `<paths.runs_root>/YYYY-MM-DD/monitor/*`
 - integrity reports: `<paths.runs_root>/YYYY-MM-DD/integrity/*`
 
 ## Contract Guidance
 
-- Schema changes must update `docs/PARQUET_SCHEMA.md`.
-- Workflow changes must update `docs/WORKFLOWS.md` when user-visible behavior changes.
+- Schema modifications require edits to `docs/PARQUET_SCHEMA.md`.
+- Workflow modifications require edits to `docs/WORKFLOWS.md` when user-visible behavior changes.
 - `ARTIFACT_SCHEMA_VERSION` tracks parquet/report compatibility across releases.

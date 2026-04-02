@@ -210,7 +210,7 @@ Contract:
 
 - loads active symbols from configured universe inputs
 - updates daily parquet under `paths.parquet_root`
-- may also update intraday parquet and extended-hours artifacts when `extended_hours.enabled` is true
+- may also write intraday parquet and extended-hours artifacts when `extended_hours.enabled` is true
 - accepts an optional symbol subset; unknown requested symbols are skipped with a warning, and an all-missing selection exits with an error
 - returns a dict from the Python entrypoint `update_from_config(...)`; CLI itself returns exit code `0` when no exception is raised
 
@@ -224,7 +224,7 @@ tradinglab-data monitor-extended-hours [--symbols SYMBOL ...] [--top-n N] [--ses
 
 Contract:
 
-- updates intraday parquet only
+- writes intraday parquet only
 - reads reference closes from the daily parquet store
 - writes alert CSV and HTML report under `<paths.runs_root>/YYYY-MM-DD/monitor/`
 - accepts the same optional symbol filtering behavior as `update`

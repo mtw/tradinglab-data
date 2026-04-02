@@ -10,5 +10,5 @@ This release provides a complete market-data maintenance workflow:
 - intraday parquet maintenance with extended-hours monitoring
 - universe CSV generation, ticker normalization, and overrides
 - integrity verification and store-wide reporting
-- CLI workflows for update, monitor, build-universe, schema, and report-parquet-store
+- CLI workflows for daily maintenance, monitoring, universe building, schema inspection, and integrity reporting
 - a Yahoo accessibility verifier for quick operational checks

@@ -8,8 +8,8 @@ This repository is a standalone data-maintenance package.
 - ticker normalization and override mapping
 - market data retrieval from upstream providers
 - normalization into the canonical parquet schema
-- daily parquet update workflows
-- extended-hours intraday update workflows
+- daily parquet workflows
+- extended-hours intraday workflows
 - parquet sanity checks and verification primitives
 - schema specification for parquet artifacts
 
@@ -28,8 +28,8 @@ Those remain out of scope for this package.
 
 - Do not add research or prediction logic here.
 - Treat parquet and universe CSVs as public artifacts consumed by external applications.
-- Schema changes must update `docs/PARQUET_SCHEMA.md`.
-- Workflow changes must update `docs/WORKFLOWS.md` when user-visible behavior changes.
+- Schema modifications require edits to `docs/PARQUET_SCHEMA.md`.
+- Workflow modifications require edits to `docs/WORKFLOWS.md` when user-visible behavior changes.
 
 ## Source Of Truth
 
@@ -70,7 +70,7 @@ CLI smoke checks:
 PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown
 ```
 
-If the change affects update behavior, also run at least one config-backed smoke command with a real config path.
+If the change affects daily workflows, also run at least one config-backed smoke command with a real config path.
 If the change affects Yahoo provider accessibility or error classification, consider running `python scripts/verify_yahoo_access.py --config /path/to/config.yaml --sample-size 10 --intervals 1d,5m`. Use `--seed` only when you need reproducible sampling during debugging.
 
 ## Testing Ownership
