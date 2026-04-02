@@ -1,135 +1,41 @@
 # Architecture
 
-## Purpose
+`tradinglab-data` is a market-data maintenance package. It retrieves upstream data, normalizes it into a canonical parquet schema, maintains a universe registry, and produces integrity reports and monitoring artifacts.
 
-`tradinglab-data` is the standalone artifact-production layer for market-data maintenance.
-It is responsible for obtaining raw market data, normalizing it, and materializing deterministic local artifacts that other packages consume.
+## Data Flow
 
-Primary artifacts:
-
-- universe CSV files
-- daily parquet store
-- intraday parquet store
-- verification summaries and maintenance reports
-
-## Dependency Direction
-
-Allowed direction:
-
-- `tradinglab-data` -> upstream providers (`yfinance`, `stooq`, web sources for universe construction)
-- downstream consumers -> `tradinglab-data` artifacts and package APIs
-
-Disallowed direction:
-
-- `tradinglab-data` importing research or prediction logic from downstream applications
-- downstream research code fetching providers directly as an implicit fallback
+1. Universe inputs define the target symbol set.
+2. Provider adapters fetch daily and intraday history.
+3. Normalization enforces the canonical schema.
+4. Per-symbol parquet files are written and verified.
+5. Extended-hours monitoring computes moves and writes alerts/reports.
+6. Store-wide audits summarize integrity and coverage.
 
 ## Module Map
 
-- `src/tradinglab_data/data_yf.py`
-  - Yahoo Finance download helpers
-  - parquet read/update helpers
-  - update log writing
+- `src/tradinglab_data/data_yf.py`: Yahoo Finance history and update log helpers
+- `src/tradinglab_data/data_stooq.py`: Stooq history and CSV parsing helpers
+- `src/tradinglab_data/ticker_map.py`: ticker normalization and overrides
+- `src/tradinglab_data/universe.py`: universe loading and canonicalization
+- `src/tradinglab_data/universe_build.py`: index fetchers and merged universe construction
+- `src/tradinglab_data/extended_hours_monitor.py`: intraday orchestration and alert/report outputs
+- `src/tradinglab_data/_intraday_fetch.py`: intraday Yahoo fetch helpers
+- `src/tradinglab_data/_move_compute.py`: move-vs-close computation
+- `src/tradinglab_data/_alert_report.py`: alert filtering and HTML rendering
+- `src/tradinglab_data/parquet_verify.py`: parquet sanity checks
+- `src/tradinglab_data/store_report.py`: store-wide integrity reporting
+- `src/tradinglab_data/schema.py`: canonical schema definitions and renderers
+- `src/tradinglab_data/workflows.py`: config-driven daily and intraday workflows
+- `src/tradinglab_data/cli.py`: CLI entrypoints
 
-- `src/tradinglab_data/data_stooq.py`
-  - Stooq symbol mapping
-  - Stooq CSV parsing
-  - Stooq history fetch
+## Contract Surface
 
-- `src/tradinglab_data/ticker_map.py`
-  - symbol normalization to Yahoo-compatible tickers
-  - override CSV handling
+- Schema and artifact contract: `docs/PARQUET_SCHEMA.md`
+- CLI and config contract: `docs/API_CONTRACT.md`
+- Workflow behavior: `docs/WORKFLOWS.md`
 
-- `src/tradinglab_data/universe.py`
-  - universe CSV loading
-  - active filtering
-  - canonicalization through overrides
+## Design Notes
 
-- `src/tradinglab_data/universe_build.py`
-  - index constituent acquisition
-  - registry-based index fetch dispatch with override fallback
-  - merged universe construction
-  - normalized universe CSV output
-
-- `src/tradinglab_data/extended_hours_monitor.py`
-  - intraday parquet maintenance
-  - orchestration over extended-hours fetch, move, alert, and report helpers
-
-- `src/tradinglab_data/_intraday_fetch.py`
-  - intraday extended-hours retrieval
-  - interval-specific fetch windows
-  - intraday normalization and retention trimming
-
-- `src/tradinglab_data/_move_compute.py`
-  - move-vs-close computation
-  - alert filtering
-  - daily close reference loading
-
-- `src/tradinglab_data/_alert_report.py`
-  - HTML/CSV reporting for extended-hours monitoring
-
-- `src/tradinglab_data/parquet_verify.py`
-  - parquet store sanity checks
-  - coverage thresholds
-  - summary serialization helpers
-
-- `src/tradinglab_data/schema.py`
-  - canonical parquet schema definition
-  - schema rendering helpers
-
-- `src/tradinglab_data/workflows.py`
-  - config-driven operational workflows
-  - provider-dispatched daily update orchestration
-  - extended-hours monitor orchestration
-
-- `src/tradinglab_data/cli.py`
-  - standalone package CLI entrypoint
-
-## Artifact Contract
-
-The core contract is intentionally simple:
-
-- one parquet file per symbol
-- stable column schema across files of the same store kind
-- stable file naming based on canonicalized symbol
-- parquet files are the primary runtime data interface for downstream research/predict/screen/plot workflows
-
-Detailed schema and constraints live in `docs/PARQUET_SCHEMA.md`.
-The broader package/API compatibility snapshot lives in `docs/API_CONTRACT.md`.
-
-## Operational Model
-
-Daily update:
-
-1. load active universe
-2. canonicalize symbols
-3. dispatch to provider-specific update runner
-4. fetch missing full history
-5. incrementally update existing history
-6. refresh strict-symbol full histories when required
-7. update extended-hours intraday cache
-8. write alerts/report artifacts
-
-Verification and repair:
-
-1. run parquet sanity checks
-2. compare against provider snapshots where configured
-3. classify critical vs non-critical issues
-4. optionally repair mismatches or rebuild specific files
-
-## Design Constraints
-
-- Provider instability is expected; workflows must degrade gracefully and log errors.
-- Provider-specific workflows may diverge internally, but they must preserve the documented config and artifact contracts.
-- Extended-hours intraday data is inherently sparse; policy should distinguish sparse but valid data from corruption.
-- Mutable process-local caches must stay concurrency-safe because provider fetch paths may run with threading enabled.
-- ETF history is allowed to be less strict than stock history where explicitly configured.
-- The package should be reusable by multiple downstream codebases.
-
-## Non-Goals
-
-- strategy evaluation
-- alpha research
-- model training
-- portfolio simulation
-- registry or dashboard analysis not directly tied to data-maintenance outputs
+- Per-symbol parquet files are the primary persistence layer.
+- Intraday data is stored under interval-specific directories.
+- Provider adapters are isolated behind normalization helpers for consistency.

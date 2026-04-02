@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- No unreleased changes.
+- Rewrote user-facing documentation to present `tradinglab-data` as a standalone package with a positive, self-contained scope.
 
 ## [0.1.0] - 2026-03-28
 

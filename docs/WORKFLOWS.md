@@ -153,7 +153,6 @@ Behavior:
 
 ## Failure Semantics
 
-- Missing parquet during research is a hard failure in downstream applications, not a signal to fetch data.
 - Provider no-data responses are expected occasionally and should be classified carefully.
 - Historical gaps may be tolerated differently for ETFs vs stocks according to configured policy.
 - Sparse extended-hours data is not automatically corruption.

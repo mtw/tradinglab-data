@@ -1,40 +1,14 @@
 # tradinglab-data
 
-`tradinglab-data` is a standalone data-maintenance package for market-data artifact workflows.
-It is responsible for fetching market data, normalizing it into a stable parquet contract, maintaining universe files, and validating the resulting local data store.
+`tradinglab-data` is a standalone market-data maintenance package. It retrieves upstream price history, normalizes it into a stable parquet contract, maintains universe metadata, and validates the resulting local data store.
 
-It does not own research, screening, plotting, prediction, or experiment analysis. Those belong in downstream consumer applications.
+It is designed to be the system of record for:
+- daily OHLC parquet history
+- extended-hours intraday parquet history
+- universe CSVs and ticker overrides
+- store-wide integrity and verification reports
 
-## Why This Exists
-
-Splitting data maintenance into a standalone package has three purposes:
-
-- keep research infrastructure independent from provider and cache-maintenance code
-- make parquet/universe artifacts reusable from other packages
-- allow data maintenance to evolve and release on its own lifecycle
-
-## Scope
-
-`tradinglab-data` owns:
-
-- universe loading and merged-universe construction
-- ticker normalization and override mapping
-- daily market data retrieval and parquet writes
-- extended-hours intraday retrieval and parquet writes
-- parquet sanity verification primitives
-- canonical parquet schema definitions
-
-`tradinglab-data` does not own:
-
-- signal generation
-- strategy research
-- model training
-- screening outputs
-- research dashboards unrelated to data maintenance
-
-## 5-Minute Quick Start
-
-Standalone package install:
+## Quick Start
 
 ```bash
 python -m venv .venv
@@ -42,7 +16,7 @@ source .venv/bin/activate
 pip install -e ".[test]"
 ```
 
-Run a few core commands:
+Core commands:
 
 ```bash
 tradinglab-data schema --format markdown
@@ -51,14 +25,6 @@ tradinglab-data --config configs/config.yaml update
 tradinglab-data --config configs/config.yaml monitor-extended-hours --session pre --top-n 25
 tradinglab-data --config configs/config.yaml report-parquet-store
 ```
-
-Operational verifier script:
-
-```bash
-python scripts/verify_yahoo_access.py --config configs/config.local.yaml --sample-size 15 --intervals 1d,5m,1m
-```
-
-By default, each invocation samples a fresh random set of symbols. Pass `--seed <n>` when you want reproducible sampling for debugging.
 
 Install from PyPI:
 
@@ -95,10 +61,13 @@ pip install -e /path/to/tradinglab-data
   - write JSON and markdown integrity reports
   - highlight dirty files, schema issues, history ranges, and currency coverage
 
-- `python scripts/verify_yahoo_access.py`
-  - sample symbols from the configured universe or selected universe shards
-  - probe Yahoo Finance accessibility across multiple intervals
-  - classify connectivity errors separately from empty symbol results
+Operational verifier:
+
+```bash
+python scripts/verify_yahoo_access.py --config configs/config.local.yaml --sample-size 15 --intervals 1d,5m,1m
+```
+
+By default, each invocation samples a fresh random set of symbols. Pass `--seed <n>` when you want reproducible sampling for debugging.
 
 ## Primary Outputs
 
@@ -115,69 +84,17 @@ pip install -e /path/to/tradinglab-data
 - parquet store integrity report
   - `<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.{md,json}`
 
-## Package Modules
-
-| Module | Purpose |
-|---|---|
-| `data_yf.py` | Yahoo Finance download helpers, parquet read/update helpers, update log writing |
-| `data_stooq.py` | Stooq symbol mapping, CSV parsing, Stooq history fetch |
-| `ticker_map.py` | Ticker normalization and override handling |
-| `universe.py` | Universe CSV loading and canonicalization |
-| `universe_build.py` | Index constituent acquisition and merged universe construction |
-| `extended_hours_monitor.py` | Intraday retrieval, alert computation, intraday parquet maintenance, HTML/CSV outputs |
-| `parquet_verify.py` | Parquet sanity checks and summary helpers |
-| `schema.py` | Canonical parquet schema definitions and rendering helpers |
-| `contracts.py` | Typed result contracts and dataframe column-set constants |
-| `store_report.py` | Store-wide parquet integrity auditing and report rendering |
-| `workflows.py` | Config-driven update and extended-hours operational workflows |
-| `cli.py` | Standalone package CLI |
-
-## Data Contract
-
-The package writes symbol-partitioned parquet stores with stable columns and file naming.
-
-- daily: `<paths.parquet_root>/<SYMBOL>.parquet`
-- intraday: `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
-
-Exact schema and constraints:
-
-- [`docs/PARQUET_SCHEMA.md`](docs/PARQUET_SCHEMA.md)
-- [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md)
-
-Current compatibility signals:
-
-- package version
-  - `0.1.0`
-- artifact schema version
-  - `v0.1.0`
-
-Machine-readable manifest:
-
-- `tradinglab_data.compatibility_manifest()`
-- `tradinglab_data.schema_manifest()`
-
-Contract history:
-
-- package version is the dependency compatibility signal for Python/CLI consumers
-- `ARTIFACT_SCHEMA_VERSION` tracks parquet/report compatibility independently from package release cadence
-
-Operational boundary and ownership rules:
-
-- [`docs/BOUNDARY.md`](docs/BOUNDARY.md)
-- [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md)
-
 ## Configuration
 
-The standalone CLI expects a YAML config with path and update settings.
-Example template:
+The CLI expects a YAML config with paths and update settings.
+Example templates:
 
-- [`configs/config.yaml.example`](configs/config.yaml.example)
-- bundled package template: [`src/tradinglab_data/config.yaml.example`](src/tradinglab_data/config.yaml.example)
+- `configs/config.yaml.example`
+- bundled package template: `src/tradinglab_data/config.yaml.example`
 
 If a config-backed command is run without a valid config file, the CLI raises a clear error telling you to create one from the bundled template, pass `--config`, or set `TRADINGLAB_DATA_CONFIG`.
 
-Keep the tracked [`configs/config.yaml`](configs/config.yaml) generic. For machine-specific sibling-store paths, create an untracked `configs/config.local.yaml` and point commands at it:
+Keep the tracked `configs/config.yaml` generic. For machine-specific path layouts, create an untracked `configs/config.local.yaml` and point commands at it:
 
 ```bash
 export TRADINGLAB_DATA_CONFIG=configs/config.local.yaml
@@ -190,7 +107,19 @@ The maintenance wrapper supports the same local-override pattern:
 TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_daily_update_verify.sh
 ```
 
-If `TLD_CONFIG_PATH` is not set, the wrapper now prefers `configs/config.local.yaml` automatically when that file exists, and falls back to `configs/config.yaml` otherwise.
+If `TLD_CONFIG_PATH` is not set, the wrapper prefers `configs/config.local.yaml` automatically when it exists, and falls back to `configs/config.yaml` otherwise.
+
+## Programmatic Surface
+
+Machine-readable manifests:
+
+- `tradinglab_data.compatibility_manifest()`
+- `tradinglab_data.schema_manifest()`
+
+Schema contract and artifacts:
+
+- `docs/PARQUET_SCHEMA.md`
+- `docs/API_CONTRACT.md`
 
 ## Testing
 
@@ -210,27 +139,16 @@ PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-m
 
 GitHub CI:
 
-- [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
-- runs on push and pull request
-- tests Python `3.10`, `3.11`, `3.12`, and `3.13`
-- executes the same core checks used for local release discipline:
-  - `python -m ruff check src tests`
-  - `python -m mypy src`
-  - `PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests`
-  - `PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown`
-  - `python -m build`
-  - `python -m twine check dist/*`
-- reserves `@pytest.mark.network` for live upstream smoke tests, which CI excludes by default
-- treats those live upstream smoke tests as best-effort checks that may skip when a provider blocks or returns no data
-- also builds the wheel in a clean job, installs `dist/*.whl`, and smoke-checks the installed package and CLI
+- `.github/workflows/ci.yml`
+- tests Python 3.10, 3.11, 3.12, and 3.13
+- runs Ruff, mypy, pytest with coverage and `-m "not network"`, schema CLI smoke, build, twine check
+- builds and installs the wheel to smoke-check the installed package and CLI
 
 ## Release
 
-Release and repo-split notes:
+Release notes and process:
 
-- [`RELEASE.md`](RELEASE.md)
-- [`CHANGELOG.md`](CHANGELOG.md)
+- `RELEASE.md`
+- `CHANGELOG.md`
 
-Current release: `0.1.0` (see `CHANGELOG.md` for details).
-
-This repository is the standalone package and is intended to be published to PyPI as `tradinglab-data`.
+Current release: `0.1.0`.

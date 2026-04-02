@@ -10,7 +10,7 @@ The source of truth is:
 
 - `src/tradinglab_data/`
 
-Downstream consumers should import `tradinglab_data` from the installed package, not from in-repo bridge code.
+Consumers should import `tradinglab_data` from the installed package, not from in-repo bridge code.
 
 ## PyPI Release Checklist
 
@@ -27,7 +27,7 @@ Downstream consumers should import `tradinglab_data` from the installed package,
 9. Publish to TestPyPI
 10. Publish to PyPI
 11. Tag the release in Git
-12. Update downstream dependency pins
+12. Update consumer dependency pins
 
 Package CI:
 

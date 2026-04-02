@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document records the compatibility surface of `tradinglab-data` for independent consumers.
+This document records the compatibility surface of `tradinglab-data` for consumers.
 
 The package now uses a simpler model:
 
@@ -36,7 +36,7 @@ Recommended consumer model:
 
 - depend on package version ranges for installed-package compatibility
 - inspect `ARTIFACT_SCHEMA_VERSION` when validating data-store compatibility
-- add downstream compatibility tests when another package depends on this one
+- add consumer compatibility tests when another package depends on this one
 
 ## Stability Boundary
 
@@ -47,7 +47,7 @@ The following are treated as part of the external contract:
 - on-disk artifact locations, file naming, and schemas
 - public Python names that do not start with `_`
 - declared typed result contracts and manifest metadata
-- error behavior that downstream automation is likely to depend on
+- error behavior that consumer automation is likely to depend on
 
 The following are not part of the external contract:
 
@@ -377,7 +377,7 @@ Current invariants enforced by workflow code:
 Notes:
 
 - `volume` is normalized to `Float64` in the canonical daily contract, even when upstream providers return integral volume
-- per-symbol files are the main downstream artifact surface
+- per-symbol files are the primary artifact surface
 
 ### Intraday Parquet Store
 

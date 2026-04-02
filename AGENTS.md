@@ -22,13 +22,12 @@ This repository is a standalone data-maintenance package.
 - predictive modeling
 - experiment registry analysis
 
-Those remain in separate downstream applications.
+Those remain out of scope for this package.
 
 ## Hard Boundary Rules
 
 - Do not add research or prediction logic here.
-- Do not reintroduce provider fetches into downstream research code.
-- Treat parquet and universe CSVs as public artifacts consumed by downstream packages.
+- Treat parquet and universe CSVs as public artifacts consumed by external applications.
 - Schema changes must update `docs/PARQUET_SCHEMA.md`.
 - Workflow changes must update `docs/WORKFLOWS.md` when user-visible behavior changes.
 
@@ -77,12 +76,12 @@ If the change affects Yahoo provider accessibility or error classification, cons
 ## Testing Ownership
 
 - Unit tests for provider adapters, universe handling, parquet verification, schema rendering, and package CLI belong here.
-- Downstream applications should keep only integration tests that verify they delegate correctly to this package and respect the artifact boundary.
+- External applications should keep only integration tests that verify they delegate correctly to this package and respect the artifact boundary.
 
 ## Change Discipline
 
 - Preserve backward compatibility of the parquet schema unless there is a deliberate versioned migration.
 - Prefer additive config changes over silent behavior changes.
-- Avoid writing code that assumes the package lives inside any larger monorepo.
+- Avoid assumptions about repository layout beyond this package.
 - Keep committed configs generic. Machine-specific path layouts should live in an untracked local override such as `configs/config.local.yaml`, passed via `--config`, `TRADINGLAB_DATA_CONFIG`, or `TLD_CONFIG_PATH`.
 - The local maintenance wrapper `scripts/run_daily_update_verify.sh` prefers `TLD_CONFIG_PATH`, then `configs/config.local.yaml`, then `configs/config.yaml`.

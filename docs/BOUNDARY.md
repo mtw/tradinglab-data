@@ -1,22 +1,30 @@
-# Package Boundary
+# Scope
 
-`tradinglab-data` is responsible for data acquisition, normalization, storage, verification, and repair.
+`tradinglab-data` is a market-data maintenance package. It retrieves upstream data, normalizes it into canonical parquet artifacts, maintains universe metadata, and provides verification and integrity reporting for the local store.
 
-Downstream applications are responsible for consuming prepared artifacts for:
+## Responsibilities
 
-- screening
-- plotting
-- research
-- prediction
-- experiment analysis
+- acquire daily and intraday OHLC data from configured providers
+- normalize provider data into the canonical parquet schema
+- maintain per-symbol parquet history
+- build and merge universe CSVs
+- apply ticker normalization and override mappings
+- generate extended-hours alerts and HTML reports
+- verify parquet integrity, schema conformance, and history coverage
 
-Required artifact inputs for downstream consumers:
+## Public Artifacts
 
-- universe CSVs
-- daily parquet store
-- optional intraday parquet store
+Primary artifacts produced by this package:
 
-Design rule:
+- daily parquet: `<paths.parquet_root>/<SYMBOL>.parquet`
+- intraday parquet: `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
+- universe CSV: `<paths.universe_csv>` or `<paths.universe_dir>/*.csv`
+- update log: `<paths.update_log_csv>`
+- extended-hours alerts/report: `<paths.runs_root>/YYYY-MM-DD/monitor/*`
+- integrity reports: `<paths.runs_root>/YYYY-MM-DD/integrity/*`
 
-- downstream applications should not fetch market data on demand during research workflows.
-- Missing parquet is an operational failure, not a signal to call providers from research code.
+## Contract Guidance
+
+- Schema changes must update `docs/PARQUET_SCHEMA.md`.
+- Workflow changes must update `docs/WORKFLOWS.md` when user-visible behavior changes.
+- `ARTIFACT_SCHEMA_VERSION` tracks parquet/report compatibility across releases.
