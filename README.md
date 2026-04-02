@@ -135,6 +135,9 @@ For this standalone repo:
 python -m ruff check src tests
 python -m mypy src
 PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
+PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown
+python -m build
+python -m twine check dist/*
 ```
 
 GitHub CI:
