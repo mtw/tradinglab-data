@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING, TypeAlias
 
 import polars as pl
-from polars.datatypes.classes import DataTypeClass
 
 from .contracts import ARTIFACT_SCHEMA_VERSION, OHLC_COLUMNS, PACKAGE_NAME, PYTHON_PACKAGE_NAME, CompatibilityManifest
 
-SchemaDtype = pl.DataType | DataTypeClass
+if TYPE_CHECKING:
+    from polars import PolarsDataType as _PolarsDataType  # type: ignore[attr-defined]
+else:
+    _PolarsDataType = pl.DataType
+
+SchemaDtype: TypeAlias = _PolarsDataType
 
 OHLC_SCHEMA: dict[str, SchemaDtype] = {
     "date": pl.Datetime,

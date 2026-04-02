@@ -78,7 +78,7 @@ def _download_params(interval: str, lookback_days: int, *, prepost: bool) -> dic
 def probe_symbol_interval(symbol: str, interval: str, lookback_days: int, *, prepost: bool) -> ProbeResult:
     params = _download_params(interval, lookback_days, prepost=prepost)
     try:
-        df_pd, output = run_yf_download(
+        df_pd, output, exc = run_yf_download(
             yf.download,
             symbol,
             auto_adjust=False,
@@ -97,7 +97,17 @@ def probe_symbol_interval(symbol: str, interval: str, lookback_days: int, *, pre
             issue=str(exc),
             used_fallback_symbol="",
         )
-    issue = classify_yf_download_issue(output)
+    issue = classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+    if exc is not None and issue is None:
+        return ProbeResult(
+            symbol=symbol,
+            interval=interval,
+            ok=False,
+            rows=0,
+            status="other_error",
+            issue=str(exc),
+            used_fallback_symbol="",
+        )
     used_fallback = ""
     if issue is not None:
         return ProbeResult(
@@ -125,7 +135,7 @@ def probe_symbol_interval(symbol: str, interval: str, lookback_days: int, *, pre
     fallback = share_class_fallback(symbol)
     if fallback and fallback != symbol:
         try:
-            df_pd_alt, output_alt = run_yf_download(
+            df_pd_alt, output_alt, exc_alt = run_yf_download(
                 yf.download,
                 fallback,
                 auto_adjust=False,
@@ -144,7 +154,17 @@ def probe_symbol_interval(symbol: str, interval: str, lookback_days: int, *, pre
                 issue=str(exc),
                 used_fallback_symbol=fallback,
             )
-        issue_alt = classify_yf_download_issue(output_alt)
+        issue_alt = classify_yf_download_issue(f"{output_alt}\n{exc_alt}" if exc_alt is not None else output_alt)
+        if exc_alt is not None and issue_alt is None:
+            return ProbeResult(
+                symbol=symbol,
+                interval=interval,
+                ok=False,
+                rows=0,
+                status="other_error",
+                issue=str(exc_alt),
+                used_fallback_symbol=fallback,
+            )
         if issue_alt is not None:
             return ProbeResult(
                 symbol=symbol,

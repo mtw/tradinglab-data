@@ -6,7 +6,6 @@ from pathlib import Path
 
 import polars as pl
 import yfinance as yf
-from polars.datatypes.classes import DataTypeClass
 from tqdm import tqdm
 
 from ._yf_utils import (
@@ -19,8 +18,9 @@ from ._yf_utils import (
     split_bulk_download,
 )
 from .data_yf import append_update_log
+from .schema import SchemaDtype
 
-INTRADAY_SCHEMA: dict[str, pl.DataType | DataTypeClass] = {
+INTRADAY_SCHEMA: dict[str, SchemaDtype] = {
     "date": pl.Datetime,
     "open": pl.Float64,
     "high": pl.Float64,
@@ -108,7 +108,7 @@ def fetch_intraday_bulk(
         attempt = 0
         while True:
             try:
-                df_pd, output = run_yf_download(
+                df_pd, output, exc = run_yf_download(
                     yf.download,
                     chunk,
                     period=period,
@@ -119,7 +119,9 @@ def fetch_intraday_bulk(
                     group_by="column",
                     threads=threads,
                 )
-                issue = classify_yf_download_issue(output)
+                issue = classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+                if exc is not None and issue is None:
+                    raise exc
                 chunk_map = split_bulk_download(df_pd, chunk)
                 if issue is not None and not chunk_map:
                     if log_path is not None:
@@ -153,7 +155,7 @@ def fetch_intraday_one(
     period: str,
     prepost: bool = True,
 ) -> pl.DataFrame:
-    df_pd, _ = run_yf_download(
+    df_pd, output, exc = run_yf_download(
         yf.download,
         symbol,
         period=period,
@@ -164,6 +166,9 @@ def fetch_intraday_one(
         group_by="column",
         threads=False,
     )
+    issue = classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+    if exc is not None and issue is None:
+        raise exc
     if df_pd is None or len(df_pd) == 0:
         return pl.DataFrame(schema=INTRADAY_SCHEMA)
     return normalize_intraday_pd(df_pd)

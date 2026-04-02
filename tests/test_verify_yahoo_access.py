@@ -19,6 +19,12 @@ def test_sample_symbols_is_stable_with_explicit_seed():
     assert len(sample1) == 10
 
 
+def test_sample_symbols_without_seed_has_expected_size():
+    symbols = [f"S{idx:02d}" for idx in range(30)]
+    sample = mod._sample_symbols(symbols, 10, None)
+    assert len(sample) == 10
+
+
 def test_probe_symbol_interval_classifies_connectivity_issue(monkeypatch):
     def fake_download(*args, **kwargs):
         print(

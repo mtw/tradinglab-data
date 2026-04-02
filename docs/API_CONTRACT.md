@@ -572,6 +572,7 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `packaged_config_example_text() -> str`
 - `resolve_config_path(path) -> Path`
 - `Config`
+- `ConfigLike`
   - fields: `raw`, `source_path`
   - methods: `load(...)`, `get(...)`, `path(...)`
 - `universe_csv_path(cfg) -> Path`

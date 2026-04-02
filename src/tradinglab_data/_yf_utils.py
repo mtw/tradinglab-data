@@ -165,11 +165,30 @@ def split_bulk_download(df_pd, symbols: list[str]) -> dict[str, pl.DataFrame]:
     return out
 
 
-def run_yf_download(download_fn: Callable[..., Any], *args: Any, **kwargs: Any) -> tuple[Any, str]:
+def run_yf_download(
+    download_fn: Callable[..., Any],
+    *args: Any,
+    **kwargs: Any,
+) -> tuple[Any, str, Exception | None]:
+    """Run a Yahoo/yfinance download while capturing its noisy terminal output.
+
+    The wrapped `yfinance` path can fail in two different ways:
+    - print warnings/errors to stdout/stderr and return an empty frame
+    - raise an exception directly before returning anything
+
+    This helper captures both the textual output and any raised exception so
+    callers can classify connectivity issues consistently instead of letting the
+    transport failure path bypass stderr-based classification entirely.
+    """
     buffer = io.StringIO()
+    exc: Exception | None = None
+    df_pd = None
     with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
-        df_pd = download_fn(*args, **kwargs)
-    return df_pd, buffer.getvalue()
+        try:
+            df_pd = download_fn(*args, **kwargs)
+        except Exception as err:  # pragma: no cover - behavior asserted via returned exception
+            exc = err
+    return df_pd, buffer.getvalue(), exc
 
 
 def classify_yf_download_issue(output: str) -> str | None:
@@ -190,5 +209,12 @@ def classify_yf_download_issue(output: str) -> str | None:
     curl_match = re.search(r"curl:\s*\((\d+)\)", text, flags=re.IGNORECASE)
     if curl_match:
         return f"yahoo_connectivity_error: curl ({curl_match.group(1)})"
+
+    if re.search(r"possibly delisted", text, flags=re.IGNORECASE) or re.search(
+        r"no timezone found",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return "yahoo_symbol_warning: possibly delisted or no timezone found"
 
     return None

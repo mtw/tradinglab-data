@@ -57,7 +57,7 @@ class YFDownloadSpec:
 def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
     start_s, end_s = _yf_date_window(spec.lookback_days)
 
-    df_pd, output = _run_yf_download(
+    df_pd, output, exc = _run_yf_download(
         yf.download,
         spec.symbol,
         start=start_s,
@@ -67,12 +67,14 @@ def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
         progress=False,
         group_by="column",
     )
-    issue = _classify_yf_download_issue(output)
+    issue = _classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+    if exc is not None and issue is None:
+        raise exc
 
     if (df_pd is None or len(df_pd) == 0) and issue is None:
         fallback = _share_class_fallback(spec.symbol)
         if fallback and fallback != spec.symbol:
-            df_pd, _ = _run_yf_download(
+            df_pd, _, exc = _run_yf_download(
                 yf.download,
                 fallback,
                 start=start_s,
@@ -82,6 +84,8 @@ def fetch_yfinance_history(spec: YFDownloadSpec) -> pl.DataFrame:
                 progress=False,
                 group_by="column",
             )
+            if exc is not None:
+                raise exc
     if df_pd is None or len(df_pd) == 0:
         return pl.DataFrame(schema=STANDARD_PRICE_SCHEMA)
 
@@ -147,7 +151,7 @@ def fetch_yfinance_history_bulk(
         attempt = 0
         while True:
             try:
-                df_pd, output = _run_yf_download(
+                df_pd, output, exc = _run_yf_download(
                     yf.download,
                     chunk,
                     start=start_s,
@@ -158,7 +162,9 @@ def fetch_yfinance_history_bulk(
                     group_by="column",
                     threads=threads,
                 )
-                issue = _classify_yf_download_issue(output)
+                issue = _classify_yf_download_issue(f"{output}\n{exc}" if exc is not None else output)
+                if exc is not None and issue is None:
+                    raise exc
                 chunk_map = _split_bulk_download(df_pd, chunk)
                 if issue is not None and not chunk_map:
                     if log_path is not None:
@@ -172,7 +178,7 @@ def fetch_yfinance_history_bulk(
                     if not alt:
                         continue
                     try:
-                        df_one, single_output = _run_yf_download(
+                        df_one, single_output, single_exc = _run_yf_download(
                             yf.download,
                             alt,
                             start=start_s,
@@ -183,7 +189,11 @@ def fetch_yfinance_history_bulk(
                             group_by="column",
                             threads=False,
                         )
-                        single_issue = _classify_yf_download_issue(single_output)
+                        single_issue = _classify_yf_download_issue(
+                            f"{single_output}\n{single_exc}" if single_exc is not None else single_output
+                        )
+                        if single_exc is not None and single_issue is None:
+                            raise single_exc
                         if single_issue is not None:
                             if log_path is not None:
                                 append_update_log(log_path, msym, single_issue, attempt + 1)
