@@ -1,10 +1,6 @@
 # Changelog
 
-## Unreleased
-
-- Rewrote user-facing documentation to present `tradinglab-data` as a standalone package with a positive, self-contained scope.
-
-## [0.1.0] - 2026-03-28
+## [0.1.0] - 2026-04-02
 
 ### Added
 
@@ -42,6 +38,7 @@
 - made `scripts/run_daily_update_verify.sh` prefer `configs/config.local.yaml` automatically when present, while still allowing `TLD_CONFIG_PATH` to override it explicitly
 - changed the Yahoo accessibility verifier to sample different symbols on each invocation by default, with optional `--seed` support for reproducible debugging
 - switched schema typing to Polars’ public `PolarsDataType` alias and exported `ConfigLike` as part of the package surface
+- rewrote user-facing documentation to present `tradinglab-data` as a standalone package with a positive, self-contained scope
 
 ### Fixed
 
@@ -61,7 +58,3 @@
 - marked `upsert_symbol_parquet(...)` as deprecated so the legacy single-symbol path does not masquerade as a first-class workflow API
 - captured noisy `yfinance` stderr/stdout during Yahoo downloads and now classify DNS/connectivity failures as explicit Yahoo connectivity errors instead of leaking misleading `possibly delisted` messages into maintenance logs
 - made Yahoo download capture return any raised exception for consistent connectivity classification, and classified `possibly delisted` output explicitly
-
-### Migration Notes
-
-- pre-release revisions exposed `API_CONTRACT_VERSION`; `0.1.0` removes that name in favor of package-version compatibility plus `ARTIFACT_SCHEMA_VERSION` for on-disk artifacts
