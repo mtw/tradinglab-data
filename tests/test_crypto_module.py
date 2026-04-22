@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import polars as pl
@@ -103,7 +103,7 @@ def test_normalize_ohlcv_rows_attaches_metadata():
 
 def test_filter_closed_bars_drops_open_bar():
     frame = _crypto_frame(timestamps=["2026-04-20T08:00:00", "2026-04-20T09:00:00"])
-    filtered = filter_closed_bars(frame, interval="1h", now_ts=datetime(2026, 4, 20, 9, 30, tzinfo=UTC))
+    filtered = filter_closed_bars(frame, interval="1h", now_ts=datetime(2026, 4, 20, 9, 30, tzinfo=timezone.utc))
     assert filtered.get_column("timestamp").to_list() == [datetime(2026, 4, 20, 8, 0)]
 
 
