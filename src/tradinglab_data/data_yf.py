@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import csv
+import json
 import time
 import warnings
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 
@@ -45,6 +46,9 @@ from ._yf_utils import (
 
 _CURRENCY_CACHE: dict[str, str | None] = {}
 _CURRENCY_CACHE_LOCK = Lock()
+_UPDATE_WARNING_STATE_BY_PATH: dict[str, dict[tuple[str, str], datetime]] = {}
+_UPDATE_LOG_CACHE_LOCK = Lock()
+_WARNING_STATE_TTL_DAYS = 30
 
 
 @dataclass(frozen=True)
@@ -290,6 +294,90 @@ def append_update_log(log_path: Path, symbol: str, error: str, attempt_count: in
         if not exists:
             writer.writerow(["timestamp", "symbol", "error", "attempt_count"])
         writer.writerow([datetime.now(timezone.utc).isoformat(), symbol, error, attempt_count])
+
+
+def append_update_log_throttled(
+    log_path: Path,
+    symbol: str,
+    error: str,
+    attempt_count: int,
+    *,
+    cooldown_hours: float,
+    state_path: Path | None = None,
+) -> bool:
+    if cooldown_hours <= 0:
+        append_update_log(log_path, symbol, error, attempt_count)
+        return True
+
+    resolved_state_path = _warning_state_path(log_path, state_path=state_path)
+    cache_key = str(resolved_state_path.resolve(strict=False))
+    now = datetime.now(timezone.utc)
+    entry_key = (str(symbol).strip().upper(), str(error))
+    with _UPDATE_LOG_CACHE_LOCK:
+        seen = _UPDATE_WARNING_STATE_BY_PATH.get(cache_key)
+        if seen is None:
+            seen = _load_warning_state(resolved_state_path)
+            _UPDATE_WARNING_STATE_BY_PATH[cache_key] = seen
+        last_seen = seen.get(entry_key)
+        if last_seen is not None and (now - last_seen) < timedelta(hours=float(cooldown_hours)):
+            return False
+        append_update_log(log_path, symbol, error, attempt_count)
+        seen[entry_key] = now
+        _write_warning_state(resolved_state_path, seen)
+    return True
+
+
+def _warning_state_path(log_path: Path, *, state_path: Path | None = None) -> Path:
+    if state_path is not None:
+        return state_path
+    stem = log_path.stem
+    suffix = ".json"
+    return log_path.with_name(f"{stem}_warning_state{suffix}")
+
+
+def _load_warning_state(state_path: Path) -> dict[tuple[str, str], datetime]:
+    if not state_path.exists() or state_path.stat().st_size == 0:
+        return {}
+    seen: dict[tuple[str, str], datetime] = {}
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return {}
+        for key, timestamp_raw in payload.items():
+            if not isinstance(key, str) or not isinstance(timestamp_raw, str):
+                continue
+            if "\u241f" not in key:
+                continue
+            symbol, error = key.split("\u241f", 1)
+            if not symbol or not error:
+                continue
+            try:
+                timestamp = datetime.fromisoformat(timestamp_raw)
+            except Exception:
+                continue
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            else:
+                timestamp = timestamp.astimezone(timezone.utc)
+            seen[(symbol, error)] = timestamp
+    except Exception:
+        return {}
+    return seen
+
+
+def _write_warning_state(state_path: Path, seen: dict[tuple[str, str], datetime]) -> None:
+    cutoff = datetime.now(timezone.utc) - timedelta(days=_WARNING_STATE_TTL_DAYS)
+    pruned = {
+        key: value
+        for key, value in seen.items()
+        if value.astimezone(timezone.utc) >= cutoff
+    }
+    payload = {
+        f"{symbol}\u241f{error}": value.astimezone(timezone.utc).isoformat()
+        for (symbol, error), value in pruned.items()
+    }
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def clear_currency_cache() -> None:

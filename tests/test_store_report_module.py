@@ -12,6 +12,7 @@ from tradinglab_data.store_report import generate_parquet_store_report, render_s
 def _write_config(tmp_path: Path) -> Path:
     daily_root = tmp_path / "daily"
     intraday_root = tmp_path / "intraday"
+    crypto_root = tmp_path / "crypto"
     runs_root = tmp_path / "runs"
     universe_csv = tmp_path / "meta" / "merged.csv"
     universe_dir = tmp_path / "meta" / "universes"
@@ -26,6 +27,7 @@ def _write_config(tmp_path: Path) -> Path:
                 "paths:",
                 f"  universe_csv: {universe_csv}",
                 f"  parquet_root: {daily_root}",
+                f"  crypto_root: {crypto_root}",
                 f"  runs_root: {runs_root}",
                 f"  universe_dir: {universe_dir}",
                 "extended_hours:",
@@ -70,6 +72,34 @@ def _write_intraday_parquet(path: Path) -> None:
     ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(path)
 
 
+def _write_crypto_parquet(path: Path, *, timestamps: list[str], quote_asset: list[str] | None = None) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    quotes = quote_asset or ["USDT" for _ in timestamps]
+    pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": [30.0 + idx for idx, _ in enumerate(timestamps)],
+            "high": [30.5 + idx for idx, _ in enumerate(timestamps)],
+            "low": [29.5 + idx for idx, _ in enumerate(timestamps)],
+            "close": [30.2 + idx for idx, _ in enumerate(timestamps)],
+            "volume": [700.0 + idx for idx, _ in enumerate(timestamps)],
+            "provider": ["ccxt" for _ in timestamps],
+            "exchange": ["binance" for _ in timestamps],
+            "market_type": ["spot" for _ in timestamps],
+            "symbol": ["BTC_USDT" for _ in timestamps],
+            "base_asset": ["BTC" for _ in timestamps],
+            "quote_asset": quotes,
+            "interval": ["1h" for _ in timestamps],
+            "is_closed": [True for _ in timestamps],
+            "ingested_at": ["2026-03-27T09:00:00" for _ in timestamps],
+            "source_symbol": ["BTC/USDT" for _ in timestamps],
+        }
+    ).with_columns(
+        pl.col("timestamp").str.strptime(pl.Datetime, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    ).write_parquet(path)
+
+
 def test_generate_parquet_store_report_detects_dirty_files(tmp_path: Path):
     config_path = _write_config(tmp_path)
     cfg = Config.load(config_path)
@@ -85,6 +115,10 @@ def test_generate_parquet_store_report_detects_dirty_files(tmp_path: Path):
         currency=["UNKNOWN", "", "USD"],
     )
     _write_intraday_parquet(tmp_path / "intraday" / "5m" / "AAA.parquet")
+    _write_crypto_parquet(
+        tmp_path / "crypto" / "binance" / "spot" / "1h" / "BTC_USDT.parquet",
+        timestamps=["2026-03-26T00:00:00", "2026-03-26T01:00:00"],
+    )
 
     report = generate_parquet_store_report(cfg)
 
@@ -92,7 +126,7 @@ def test_generate_parquet_store_report_detects_dirty_files(tmp_path: Path):
     assert report["markdown_path"]
     assert Path(report["json_path"]).exists()
     assert Path(report["markdown_path"]).exists()
-    assert {section["section"] for section in report["sections"]} == {"daily", "intraday:5m"}
+    assert {section["section"] for section in report["sections"]} == {"daily", "intraday:5m", "crypto:binance:spot:1h"}
     assert any(item["symbol"] == "BBB" for item in report["dirty_files"])
     assert any("duplicate_dates" in item["dirty_reasons"] for item in report["dirty_files"] if item["symbol"] == "BBB")
     assert any("unknown_currency_rows" in item["dirty_reasons"] for item in report["dirty_files"] if item["symbol"] == "BBB")
@@ -100,10 +134,12 @@ def test_generate_parquet_store_report_detects_dirty_files(tmp_path: Path):
     markdown = render_store_integrity_report_markdown(report)
     assert "Dirty Files" in markdown
     assert "intraday:5m" in markdown
+    assert "crypto:binance:spot:1h" in markdown
 
     json_report = json.loads(Path(report["json_path"]).read_text(encoding="utf-8"))
     assert json_report["json_path"].endswith("parquet_store_report.json")
     assert json_report["markdown_path"].endswith("parquet_store_report.md")
+    assert json_report["crypto_root"].endswith("crypto")
 
 
 def test_generate_parquet_store_report_json_only(tmp_path: Path):
@@ -167,3 +203,58 @@ def test_render_store_integrity_report_markdown_has_stable_sections(tmp_path: Pa
     assert "## Section Details" in markdown
     assert "## Dirty Files" in markdown
     assert "## Daily Parquet Sanity" in markdown
+
+
+def test_generate_parquet_store_report_flags_crypto_dirty_files(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    cfg = Config.load(config_path)
+    _write_crypto_parquet(
+        tmp_path / "crypto" / "binance" / "spot" / "1h" / "BTC_USDT.parquet",
+        timestamps=["2026-03-27T01:00:00", "2026-03-27T00:00:00", "2026-03-27T00:00:00"],
+        quote_asset=["", "USDT", "USDT"],
+    )
+
+    report = generate_parquet_store_report(cfg)
+
+    btc = next(item for item in report["dirty_files"] if item["symbol"] == "BTC_USDT")
+    assert btc["section"] == "crypto:binance:spot:1h"
+    assert "duplicate_timestamps" in btc["dirty_reasons"]
+    assert "unsorted_timestamps" in btc["dirty_reasons"]
+    assert "missing_quote_asset_rows" in btc["dirty_reasons"]
+
+
+def test_generate_parquet_store_report_flags_crypto_gap_zero_volume_and_metadata_drift(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    cfg = Config.load(config_path)
+    path = tmp_path / "crypto" / "binance" / "spot" / "1h" / "BTC_USDT.parquet"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        {
+            "timestamp": ["2026-03-27T00:00:00", "2026-03-27T03:00:00"],
+            "open": [30.0, 31.0],
+            "high": [30.5, 31.5],
+            "low": [29.5, 30.5],
+            "close": [30.2, 31.2],
+            "volume": [0.0, 700.0],
+            "provider": ["ccxt", "ccxt"],
+            "exchange": ["binance", "kraken"],
+            "market_type": ["spot", "spot"],
+            "symbol": ["BTC_USDT", "BTC_USDT"],
+            "base_asset": ["BTC", "BTC"],
+            "quote_asset": ["USDT", "USDT"],
+            "interval": ["1h", "1h"],
+            "is_closed": [True, True],
+            "ingested_at": ["2026-03-27T09:00:00", "2026-03-27T09:00:00"],
+            "source_symbol": ["BTC/USDT", "BTC/USDT"],
+        }
+    ).with_columns(
+        pl.col("timestamp").str.strptime(pl.Datetime, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    ).write_parquet(path)
+
+    report = generate_parquet_store_report(cfg)
+
+    btc = next(item for item in report["dirty_files"] if item["symbol"] == "BTC_USDT")
+    assert "large_continuity_gap" in btc["dirty_reasons"]
+    assert "zero_volume_rows" in btc["dirty_reasons"]
+    assert "metadata_inconsistency" in btc["dirty_reasons"]

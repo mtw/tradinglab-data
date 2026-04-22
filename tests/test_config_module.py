@@ -5,9 +5,13 @@ from pathlib import Path
 
 import pytest
 
-import tradinglab_data.config as config_mod
+from tradinglab_data import config as config_mod
 from tradinglab_data.config import (
     Config,
+    crypto_metadata_root_path,
+    crypto_registry_path,
+    crypto_root_path,
+    crypto_universe_dir_path,
     default_config_path,
     intraday_root_path,
     packaged_config_example_text,
@@ -16,6 +20,7 @@ from tradinglab_data.config import (
     ticker_overrides_path,
     universe_dir_path,
     update_log_path,
+    update_warning_state_path,
 )
 
 
@@ -131,8 +136,13 @@ def test_config_derived_paths(tmp_path: Path):
     cfg = Config.load(cfg_file)
     assert universe_dir_path(cfg) == tmp_path / "meta" / "universes"
     assert update_log_path(cfg) == tmp_path / "meta" / "update_log.csv"
+    assert update_warning_state_path(cfg) == tmp_path / "meta" / "update_warning_state.json"
     assert ticker_overrides_path(cfg) == tmp_path / "meta" / "ticker_overrides.csv"
     assert intraday_root_path(cfg) == tmp_path / "parquet" / "intraday"
+    assert crypto_root_path(cfg) == tmp_path / "parquet" / "crypto"
+    assert crypto_metadata_root_path(cfg) == tmp_path / "meta" / "crypto"
+    assert crypto_registry_path(cfg) == tmp_path / "meta" / "crypto" / "registry.json"
+    assert crypto_universe_dir_path(cfg) == tmp_path / "meta" / "crypto" / "universes"
     assert registry_root_path(cfg) == tmp_path / "runs" / "runs_registry"
 
 

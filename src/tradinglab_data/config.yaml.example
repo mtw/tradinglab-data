@@ -3,7 +3,12 @@ paths:
   universe_dir: "/absolute/path/to/market-data-store/meta/universes"
   ticker_overrides_csv: "/absolute/path/to/market-data-store/meta/ticker_overrides.csv"
   update_log_csv: "/absolute/path/to/market-data-store/meta/update_log.csv"
+  update_warning_state_json: "/absolute/path/to/market-data-store/meta/update_warning_state.json"
   parquet_root: "/absolute/path/to/market-data-store/parquet/daily"
+  crypto_root: "/absolute/path/to/market-data-store/parquet/crypto"
+  crypto_metadata_root: "/absolute/path/to/market-data-store/meta/crypto"
+  crypto_registry_json: "/absolute/path/to/market-data-store/meta/crypto/registry.json"
+  crypto_universe_dir: "/absolute/path/to/market-data-store/meta/crypto/universes"
   runs_root: "/absolute/path/to/market-data-runs/maintenance"
   registry_root: "/absolute/path/to/market-data-runs/maintenance/runs_registry"
 
@@ -30,12 +35,37 @@ extended_hours:
   intraday_root: "/absolute/path/to/market-data-store/parquet/intraday"
   preferred_interval: "5m"
   fallback_interval: "1m"
-  retention_days: 10
+  retention_days: 0
   prepost: true
   chunk_size: 20
   sleep_seconds: 1.0
   max_retries: 5
   backoff_max_seconds: 120.0
   threads: false
+  log_repeat_cooldown_hours: 24.0
   pct_move_threshold: 2.0
   min_volume: 0
+
+crypto:
+  provider: "binance"
+  exchange: "binance"
+  market_type: "spot"
+  default_universe: "crypto_majors"
+  quote_assets:
+    - "USDT"
+  max_batch_limit: 1000
+  incremental_lookback_bars: 500
+  full_backfill_limit: 5000
+  validate_continuity: true
+  universe_refresh_provider: "coingecko"
+  universe_refresh_limit: 25
+  universe_refresh_pages: 2
+  universe_refresh_min_market_cap: 0
+  universe_refresh_min_volume: 0
+  stablecoin_ids:
+    - "tether"
+    - "usd-coin"
+    - "dai"
+  excluded_symbols: []
+  excluded_ids: []
+  exclude_wrapped_assets: true

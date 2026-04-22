@@ -12,6 +12,10 @@ def _base_cfg(dummy_cfg_factory, *, history_provider: str = "yfinance"):
         {
             "timeframe": "1d",
             "lookback_days": 30,
+            "paths": {
+                "universe_csv": "/tmp/meta/universe.csv",
+                "update_log_csv": "/tmp/meta/update_log.csv",
+            },
             "update": {
                 "history_provider": history_provider,
                 "recent_provider": "yfinance",
@@ -155,3 +159,145 @@ def test_monitor_extended_hours_from_config_uses_shared_artifact_writer(
             "session_filter": "post",
         }
     ]
+
+
+def test_read_intraday_config_defaults_to_append_only(dummy_cfg_factory):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": "/tmp/daily",
+                "universe_csv": "/tmp/meta/universe.csv",
+            },
+            "extended_hours": {
+                "enabled": True,
+            }
+        }
+    )
+
+    intraday_cfg = workflows._read_intraday_config(cfg)
+    assert intraday_cfg.retention_days == 0
+    assert intraday_cfg.warning_state_path == Path("/tmp/meta/update_warning_state.json")
+
+
+def test_backfill_extended_hours_from_config_dispatches(dummy_cfg_factory, monkeypatch):
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflows, "_load_active_symbols_from_cfg", lambda cfg, symbols_override=None: ["AAA"])
+    monkeypatch.setattr(
+        workflows,
+        "backfill_intraday_interval_store",
+        lambda **kwargs: calls.append(kwargs) or {"interval": kwargs["interval"], "symbols": 1, "written": 1, "root": "/tmp/intraday/5m"},
+    )
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": "/tmp/daily",
+                "runs_root": "/tmp/runs",
+                "update_log_csv": "/tmp/meta/update_log.csv",
+            },
+            "extended_hours": {
+                "enabled": True,
+                "intraday_root": "/tmp/intraday",
+                "retention_days": 0,
+            },
+        }
+    )
+
+    result = workflows.backfill_extended_hours_from_config(cfg, interval="5m")
+
+    assert result["written"] == 1
+    assert calls == [
+        {
+            "symbols": ["AAA"],
+            "intraday_root": "/tmp/intraday",
+            "interval": "5m",
+            "retention_days": 0,
+            "prepost": True,
+            "chunk_size": 20,
+            "sleep_seconds": 1.0,
+            "max_retries": 5,
+            "backoff_max_seconds": 120.0,
+            "threads": False,
+            "warning_state_path": Path("/tmp/meta/update_warning_state.json"),
+            "log_repeat_cooldown_hours": 24.0,
+            "log_path": Path("/tmp/meta/update_log.csv"),
+        }
+    ]
+
+
+def test_strict_symbol_update_preserves_existing_older_rows(
+    monkeypatch,
+    patch_workflow_common_paths,
+    dummy_cfg_factory,
+    history_frame_factory,
+):
+    parquet_root, _, _, _ = patch_workflow_common_paths(workflows, symbols=["BAS.VI"])
+    parquet_root.mkdir(parents=True, exist_ok=True)
+    history_frame_factory(
+        dates=["2026-01-15", "2026-01-16"],
+        close_start=8.0,
+        currency="EUR",
+    ).write_parquet(parquet_root / "BAS.VI.parquet")
+
+    monkeypatch.setattr(
+        workflows,
+        "fetch_yfinance_history_bulk",
+        lambda symbols, **kwargs: {"BAS.VI": history_frame_factory(dates=["2026-03-25", "2026-03-26"], close_start=10.0)},
+    )
+    monkeypatch.setattr(workflows, "fetch_symbol_currency", lambda symbol: "EUR")
+
+    workflows.update_from_config(_base_cfg(dummy_cfg_factory))
+    written = _read_symbol(parquet_root / "BAS.VI.parquet").sort("date")
+
+    assert written.height == 4
+    assert written.get_column("date").min().isoformat().startswith("2026-01-15")
+
+
+def test_stooq_refresh_all_preserves_existing_older_rows(
+    monkeypatch,
+    patch_workflow_common_paths,
+    dummy_cfg_factory,
+    history_frame_factory,
+):
+    parquet_root, _, _, _ = patch_workflow_common_paths(workflows, symbols=["AAA"])
+    parquet_root.mkdir(parents=True, exist_ok=True)
+    history_frame_factory(
+        dates=["2026-01-15", "2026-01-16"],
+        close_start=8.0,
+        currency="EUR",
+    ).write_parquet(parquet_root / "AAA.parquet")
+
+    monkeypatch.setattr(
+        workflows,
+        "fetch_stooq_history",
+        lambda spec: history_frame_factory(dates=["2026-03-25", "2026-03-26"], close_start=10.0),
+    )
+    monkeypatch.setattr(workflows, "infer_currency_from_symbol", lambda symbol: "EUR")
+    monkeypatch.setattr(workflows, "fetch_yfinance_history_bulk", lambda symbols, **kwargs: {})
+
+    cfg = dummy_cfg_factory(
+        {
+            "timeframe": "1d",
+            "lookback_days": 30,
+            "paths": {
+                "parquet_root": str(parquet_root),
+                "runs_root": "/tmp/runs",
+                "update_log_csv": "/tmp/meta/update_log.csv",
+            },
+            "update": {
+                "history_provider": "stooq",
+                "recent_provider": "yfinance",
+                "recent_days": 0,
+                "incremental_days": 14,
+                "assert_postwrite_integrity": True,
+                "stooq_refresh_all": True,
+            },
+            "extended_hours": {"enabled": False},
+        }
+    )
+    monkeypatch.setattr(workflows, "_load_active_symbols_from_cfg", lambda cfg, symbols_override=None: ["AAA"])
+
+    workflows.update_from_config(cfg)
+    written = _read_symbol(parquet_root / "AAA.parquet").sort("date")
+
+    assert written.height == 4
+    assert written.get_column("date").min().isoformat().startswith("2026-01-15")

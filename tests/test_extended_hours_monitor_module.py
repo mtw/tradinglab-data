@@ -245,6 +245,59 @@ def test_update_intraday_interval_is_testable_in_isolation(tmp_path: Path):
     assert stored.get_column("currency").to_list() == ["USD", "USD"]
 
 
+def test_update_intraday_interval_preserves_old_rows_when_retention_disabled(tmp_path: Path):
+    now = datetime.now().replace(microsecond=0)
+    out_dir = tmp_path / "intraday" / "5m"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    old_frame = pl.DataFrame(
+        {
+            "date": [now - timedelta(days=21)],
+            "open": [90.0],
+            "high": [91.0],
+            "low": [89.0],
+            "close": [90.5],
+            "adj_close": [90.5],
+            "volume": [50.0],
+            "currency": ["USD"],
+        }
+    )
+    old_path = out_dir / "AAA.parquet"
+    old_frame.write_parquet(old_path)
+    fetched = pl.DataFrame(
+        {
+            "date": [now - timedelta(minutes=5), now],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.5, 101.5],
+            "adj_close": [100.5, 101.5],
+            "volume": [100.0, 200.0],
+        }
+    )
+
+    eh._update_intraday_interval(
+        ["AAA"],
+        "5m",
+        "10d",
+        out_dir,
+        retention_days=0,
+        prepost=True,
+        chunk_size=20,
+        sleep_seconds=0.0,
+        max_retries=1,
+        backoff_max_seconds=1.0,
+        threads=False,
+        log_path=None,
+        fetch_intraday_fn=lambda **kwargs: {"AAA": fetched},
+        read_frame_fn=lambda path: pl.read_parquet(path),
+        fetch_currency_fn=lambda symbol: "USD",
+    )
+
+    stored = pl.read_parquet(old_path).sort("date")
+    assert stored.height == 3
+    assert stored.get_column("date").min() == old_frame.get_column("date").min()
+
+
 def test_update_extended_hours_store_rejects_unsupported_interval(tmp_path: Path):
     daily_root = tmp_path / "daily"
     daily_root.mkdir(parents=True, exist_ok=True)
@@ -259,6 +312,66 @@ def test_update_extended_hours_store_rejects_unsupported_interval(tmp_path: Path
             retention_days=10,
             pct_move_threshold=2.0,
         )
+
+
+def test_backfill_intraday_interval_store_merges_full_window_without_trimming(tmp_path: Path, monkeypatch):
+    now = datetime.now().replace(microsecond=0)
+    intraday_root = tmp_path / "intraday"
+    existing_path = intraday_root / "5m" / "AAA.parquet"
+    existing_path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        {
+            "date": [now - timedelta(days=40)],
+            "open": [90.0],
+            "high": [91.0],
+            "low": [89.0],
+            "close": [90.5],
+            "adj_close": [90.5],
+            "volume": [50.0],
+            "currency": ["USD"],
+        }
+    ).write_parquet(existing_path)
+
+    called: list[tuple[str, str]] = []
+
+    def _fake_fetch(symbols, interval, period, **kwargs):
+        called.append((interval, period))
+        return {
+            "AAA": pl.DataFrame(
+                {
+                    "date": [now - timedelta(minutes=5), now],
+                    "open": [100.0, 101.0],
+                    "high": [101.0, 102.0],
+                    "low": [99.0, 100.0],
+                    "close": [100.5, 101.5],
+                    "adj_close": [100.5, 101.5],
+                    "volume": [100.0, 200.0],
+                }
+            )
+        }
+
+    monkeypatch.setattr(eh, "fetch_extended_intraday", _fake_fetch)
+    monkeypatch.setattr(eh, "fetch_symbol_currency", lambda symbol: "USD")
+
+    result = eh.backfill_intraday_interval_store(
+        symbols=["AAA"],
+        intraday_root=intraday_root,
+        interval="5m",
+        retention_days=0,
+        prepost=True,
+        chunk_size=20,
+        sleep_seconds=0.0,
+        max_retries=1,
+        backoff_max_seconds=1.0,
+        threads=False,
+        log_path=None,
+    )
+
+    stored = pl.read_parquet(existing_path).sort("date")
+    assert called == [("5m", "60d")]
+    assert result["written"] == 1
+    assert stored.height == 3
+    assert stored.get_column("date").min() == now - timedelta(days=40)
 
 
 def test_fetch_intraday_bulk_classifies_dns_failure_without_delisted_noise(monkeypatch, tmp_path: Path, capsys):
@@ -290,3 +403,74 @@ def test_fetch_intraday_bulk_classifies_dns_failure_without_delisted_noise(monke
     log_text = log_path.read_text(encoding="utf-8")
     assert "intraday_5m_yahoo_connectivity_error: could not resolve host guce.yahoo.com" in log_text
     assert "possibly delisted" not in log_text
+
+
+def test_fetch_intraday_bulk_throttles_repeated_symbol_warning_logs(monkeypatch, tmp_path: Path):
+    log_path = tmp_path / "update_log.csv"
+    state_path = tmp_path / "update_warning_state.json"
+
+    def fake_download(*args, **kwargs):
+        print("$DBX1.SG: possibly delisted; no timezone found", file=sys.stderr)
+        print("\n1 Failed download:\n['DBX1.SG']: possibly delisted; no timezone found", file=sys.stderr)
+        return None
+
+    monkeypatch.setattr(intraday_fetch.yf, "download", fake_download)
+
+    intraday_fetch.fetch_intraday_bulk(
+        ["DBX1.SG"],
+        interval="5m",
+        period="10d",
+        sleep_seconds=0.0,
+        log_path=log_path,
+        warning_state_path=state_path,
+        log_repeat_cooldown_hours=24.0,
+    )
+    intraday_fetch.fetch_intraday_bulk(
+        ["DBX1.SG"],
+        interval="5m",
+        period="10d",
+        sleep_seconds=0.0,
+        log_path=log_path,
+        warning_state_path=state_path,
+        log_repeat_cooldown_hours=24.0,
+    )
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    assert "intraday_5m_yahoo_symbol_warning: possibly delisted or no timezone found" in lines[1]
+    assert state_path.exists()
+
+
+def test_fetch_extended_intraday_throttles_repeated_single_symbol_errors(monkeypatch, tmp_path: Path):
+    log_path = tmp_path / "update_log.csv"
+    state_path = tmp_path / "update_warning_state.json"
+
+    monkeypatch.setattr(intraday_fetch, "fetch_intraday_bulk", lambda **kwargs: {})
+    monkeypatch.setattr(
+        intraday_fetch,
+        "_fetch_intraday_one_result",
+        lambda symbol, **kwargs: (_ for _ in ()).throw(RuntimeError("single path failure")),
+    )
+
+    intraday_fetch.fetch_extended_intraday(
+        ["AAA"],
+        interval="5m",
+        period="10d",
+        sleep_seconds=0.0,
+        log_path=log_path,
+        warning_state_path=state_path,
+        log_repeat_cooldown_hours=24.0,
+    )
+    intraday_fetch.fetch_extended_intraday(
+        ["AAA"],
+        interval="5m",
+        period="10d",
+        sleep_seconds=0.0,
+        log_path=log_path,
+        warning_state_path=state_path,
+        log_repeat_cooldown_hours=24.0,
+    )
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    assert "intraday_5m_single_error:single path failure" in lines[1]

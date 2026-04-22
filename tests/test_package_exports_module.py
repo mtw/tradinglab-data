@@ -14,12 +14,22 @@ def test_top_level_exports_include_public_helpers():
     assert pkg.build_universe is not None
     assert pkg.compatibility_manifest is not None
     assert pkg.generate_parquet_store_report is not None
+    assert pkg.generate_universe_consistency_report is not None
+    assert pkg.backfill_extended_hours_from_config is not None
+    assert pkg.crypto_backfill_from_config is not None
+    assert pkg.crypto_show_universe_from_config is not None
+    assert pkg.crypto_diff_universe_from_config is not None
+    assert pkg.crypto_inspect_from_config is not None
+    assert pkg.crypto_prune_from_config is not None
+    assert pkg.crypto_refresh_universe_from_config is not None
     assert pkg.CompatibilityManifest is not None
     assert pkg.StoreIntegrityReport is not None
     assert pkg.StoreIntegritySection is not None
     assert pkg.run_parquet_sanity_checks is not None
+    assert pkg.render_universe_consistency_markdown is not None
     assert pkg.validate_daily_frame is not None
-    assert pkg.ARTIFACT_SCHEMA_VERSION == "v0.1.0"
+    assert pkg.validate_crypto_frame is not None
+    assert pkg.ARTIFACT_SCHEMA_VERSION == "v0.2.0"
 
 
 def test_clear_currency_cache_clears_module_cache():

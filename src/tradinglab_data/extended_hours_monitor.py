@@ -45,7 +45,9 @@ def _update_intraday_interval(
     max_retries: int,
     backoff_max_seconds: float,
     threads: bool,
-    log_path: Path | None,
+    log_repeat_cooldown_hours: float = 24.0,
+    log_path: Path | None = None,
+    warning_state_path: Path | None = None,
     fetch_intraday_fn=None,
     read_frame_fn=None,
     fetch_currency_fn=None,
@@ -66,7 +68,9 @@ def _update_intraday_interval(
         max_retries=max_retries,
         backoff_max_seconds=backoff_max_seconds,
         threads=threads,
+        log_repeat_cooldown_hours=log_repeat_cooldown_hours,
         log_path=log_path,
+        warning_state_path=warning_state_path,
     )
     resolved: list[str] = []
     for sym in target_symbols:
@@ -132,7 +136,7 @@ def update_extended_hours_store(
     daily_root: str | Path,
     preferred_interval: str = "5m",
     fallback_interval: str = "1m",
-    retention_days: int = 10,
+    retention_days: int = 0,
     prepost: bool = True,
     pct_move_threshold: float = 2.0,
     min_volume: float = 0.0,
@@ -142,7 +146,9 @@ def update_extended_hours_store(
     max_retries: int = 5,
     backoff_max_seconds: float = 120.0,
     threads: bool = False,
+    log_repeat_cooldown_hours: float = 24.0,
     log_path: Path | None = None,
+    warning_state_path: Path | None = None,
 ) -> ExtendedHoursResult:
     root = Path(intraday_root)
     pref_dir = root / preferred_interval
@@ -170,7 +176,9 @@ def update_extended_hours_store(
         max_retries=max_retries,
         backoff_max_seconds=backoff_max_seconds,
         threads=threads,
+        log_repeat_cooldown_hours=log_repeat_cooldown_hours,
         log_path=log_path,
+        warning_state_path=warning_state_path,
     )
     pref_resolved_existing = _update_intraday_interval(
         pref_existing,
@@ -184,7 +192,9 @@ def update_extended_hours_store(
         max_retries=max_retries,
         backoff_max_seconds=backoff_max_seconds,
         threads=threads,
+        log_repeat_cooldown_hours=log_repeat_cooldown_hours,
         log_path=log_path,
+        warning_state_path=warning_state_path,
     )
     unresolved = [s for s in symbols if s not in set(pref_resolved_missing) | set(pref_resolved_existing)]
 
@@ -207,7 +217,9 @@ def update_extended_hours_store(
         max_retries=max_retries,
         backoff_max_seconds=backoff_max_seconds,
         threads=threads,
+        log_repeat_cooldown_hours=log_repeat_cooldown_hours,
         log_path=log_path,
+        warning_state_path=warning_state_path,
     )
     fb_resolved_existing = _update_intraday_interval(
         fb_existing,
@@ -221,7 +233,9 @@ def update_extended_hours_store(
         max_retries=max_retries,
         backoff_max_seconds=backoff_max_seconds,
         threads=threads,
+        log_repeat_cooldown_hours=log_repeat_cooldown_hours,
         log_path=log_path,
+        warning_state_path=warning_state_path,
     )
 
     latest_frames: dict[str, pl.DataFrame] = {}
@@ -260,4 +274,46 @@ def update_extended_hours_store(
         "alerts_path": str(alert_file) if alert_file is not None else "",
         "moves_df": moves_df,
         "alerts_df": alerts,
+    }
+
+
+def backfill_intraday_interval_store(
+    symbols: list[str],
+    intraday_root: str | Path,
+    interval: str = "5m",
+    retention_days: int = 0,
+    prepost: bool = True,
+    chunk_size: int = 20,
+    sleep_seconds: float = 1.0,
+    max_retries: int = 5,
+    backoff_max_seconds: float = 120.0,
+    threads: bool = False,
+    log_repeat_cooldown_hours: float = 24.0,
+    log_path: Path | None = None,
+    warning_state_path: Path | None = None,
+) -> dict[str, object]:
+    root = Path(intraday_root)
+    out_dir = root / interval
+    out_dir.mkdir(parents=True, exist_ok=True)
+    resolved = _update_intraday_interval(
+        symbols,
+        interval,
+        period_for_interval(interval, MAX_PERIOD_BY_INTERVAL, purpose="intraday backfill"),
+        out_dir,
+        retention_days=retention_days,
+        prepost=prepost,
+        chunk_size=chunk_size,
+        sleep_seconds=sleep_seconds,
+        max_retries=max_retries,
+        backoff_max_seconds=backoff_max_seconds,
+        threads=threads,
+        log_repeat_cooldown_hours=log_repeat_cooldown_hours,
+        log_path=log_path,
+        warning_state_path=warning_state_path,
+    )
+    return {
+        "interval": interval,
+        "symbols": len(symbols),
+        "written": len(set(resolved)),
+        "root": str(out_dir),
     }

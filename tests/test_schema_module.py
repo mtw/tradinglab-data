@@ -9,6 +9,7 @@ from tradinglab_data.schema import (
     render_schema_markdown,
     schema_manifest,
     validate_alerts_frame,
+    validate_crypto_frame,
     validate_daily_frame,
     validate_moves_frame,
 )
@@ -18,8 +19,10 @@ def test_schema_manifest_has_daily_and_intraday():
     manifest = schema_manifest()
     assert "daily" in manifest
     assert "intraday" in manifest
+    assert "crypto" in manifest
     assert "date" in manifest["daily"]
-    assert manifest["artifact_schema_version"] == "v0.1.0"
+    assert "timestamp" in manifest["crypto"]
+    assert manifest["artifact_schema_version"] == "v0.2.0"
     assert "package_version" in manifest
 
 
@@ -32,6 +35,7 @@ def test_render_schema_markdown_contains_header():
 def test_render_schema_json_contains_adj_close():
     text = render_schema_json()
     assert '"adj_close"' in text
+    assert '"crypto"' in text
     assert '"package_version"' in text
     assert '"artifact_schema_version"' in text
 
@@ -57,6 +61,31 @@ def test_validate_moves_frame_rejects_missing_columns():
     df = pl.DataFrame({"symbol": ["AAPL"], "pct_move": [2.0]})
     with pytest.raises(ValueError, match="missing="):
         validate_moves_frame(df)
+
+
+def test_validate_crypto_frame_accepts_canonical_schema():
+    df = pl.DataFrame(
+        {
+            "timestamp": [None],
+            "open": [1.0],
+            "high": [1.1],
+            "low": [0.9],
+            "close": [1.0],
+            "volume": [100.0],
+            "provider": ["ccxt"],
+            "exchange": ["binance"],
+            "market_type": ["spot"],
+            "symbol": ["BTC_USDT"],
+            "base_asset": ["BTC"],
+            "quote_asset": ["USDT"],
+            "interval": ["1h"],
+            "is_closed": [True],
+            "ingested_at": [None],
+            "source_symbol": ["BTC/USDT"],
+        },
+        schema_overrides={"timestamp": pl.Datetime, "ingested_at": pl.Datetime},
+    )
+    validate_crypto_frame(df)
 
 
 def test_validate_daily_frame_rejects_wrong_dtype():
@@ -95,15 +124,16 @@ def test_validate_alerts_frame_rejects_wrong_dtype():
 
 def test_schema_manifest_contains_artifact_schema_version():
     manifest = schema_manifest()
-    assert manifest["artifact_schema_version"] == "v0.1.0"
+    assert manifest["artifact_schema_version"] == "v0.2.0"
 
 
 def test_compatibility_manifest_separates_package_and_artifact_versions():
     manifest = compatibility_manifest()
     assert manifest["package_name"] == "tradinglab-data"
     assert manifest["python_package_name"] == "tradinglab_data"
-    assert manifest["artifact_schema_version"] == "v0.1.0"
+    assert manifest["artifact_schema_version"] == "v0.2.0"
     assert "daily_parquet" in manifest["artifact_families"]
+    assert "crypto_parquet" in manifest["artifact_families"]
     assert manifest["artifact_families"]["daily_parquet"]["category"] == "parquet"
     assert manifest["artifact_families"]["parquet_store_report_markdown"]["category"] == "markdown"
     assert set(manifest) == {

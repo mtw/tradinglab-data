@@ -27,10 +27,30 @@ OHLC_SCHEMA: dict[str, SchemaDtype] = {
     "currency": pl.String,
 }
 
+CRYPTO_OHLC_SCHEMA: dict[str, SchemaDtype] = {
+    "timestamp": pl.Datetime,
+    "open": pl.Float64,
+    "high": pl.Float64,
+    "low": pl.Float64,
+    "close": pl.Float64,
+    "volume": pl.Float64,
+    "provider": pl.String,
+    "exchange": pl.String,
+    "market_type": pl.String,
+    "symbol": pl.String,
+    "base_asset": pl.String,
+    "quote_asset": pl.String,
+    "interval": pl.String,
+    "is_closed": pl.Boolean,
+    "ingested_at": pl.Datetime,
+    "source_symbol": pl.String,
+}
+
 
 OHLC_PARQUET_SCHEMA: dict[str, SchemaDtype] = OHLC_SCHEMA
 DAILY_PARQUET_SCHEMA: dict[str, SchemaDtype] = OHLC_SCHEMA
 INTRADAY_PARQUET_SCHEMA: dict[str, SchemaDtype] = OHLC_SCHEMA
+CRYPTO_PARQUET_SCHEMA: dict[str, SchemaDtype] = CRYPTO_OHLC_SCHEMA
 MOVE_ALERT_FRAME_SCHEMA: dict[str, SchemaDtype] = {
     "symbol": pl.String,
     "ref_close": pl.Float64,
@@ -45,13 +65,22 @@ MOVE_ALERT_FRAME_SCHEMA: dict[str, SchemaDtype] = {
 
 SCHEMA_NOTES = {
     "partitioning": "One parquet file per symbol. Daily store: <paths.parquet_root>/<SYMBOL>.parquet. Intraday store: <extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet.",
+    "crypto_partitioning": "Crypto store: <paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet.",
     "semantics": "OHLC columns are raw vendor OHLC. adj_close is adjusted close when supplied by the upstream provider. currency is the listing currency when known.",
+    "crypto_semantics": "Crypto parquet persists closed exchange-native OHLCV bars with explicit exchange, market type, interval, and canonical symbol metadata.",
     "timestamps": "date is stored as Polars Datetime. Daily bars represent session dates. Intraday bars should be normalized to UTC internally and written without mixed timezone types.",
+    "crypto_timestamps": "Crypto timestamp columns are UTC-normalized bar-open timestamps; ingested_at records the last local write time in UTC.",
     "constraints": [
         "Rows must be sorted by date ascending.",
         "date values must be unique within a file.",
         "open/high/low/close must be non-null and positive for valid rows.",
         "high must be >= open, close, low. low must be <= open, close.",
+    ],
+    "crypto_constraints": [
+        "Rows must be sorted by timestamp ascending.",
+        "timestamp values must be unique within a file.",
+        "Only closed bars belong in the canonical crypto parquet history.",
+        "exchange, market_type, symbol, interval, and source_symbol must be populated on every row.",
     ],
 }
 
@@ -80,6 +109,12 @@ def compatibility_manifest() -> CompatibilityManifest:
                 "category": "parquet",
                 "path_pattern": "<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet",
                 "schema_name": "intraday_ohlc",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "crypto_parquet": {
+                "category": "parquet",
+                "path_pattern": "<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet",
+                "schema_name": "crypto_ohlcv",
                 "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
             },
             "extended_hours_alerts_csv": {
@@ -115,6 +150,7 @@ def schema_manifest() -> dict[str, object]:
         **compatibility_manifest(),
         "daily": {k: str(v) for k, v in DAILY_PARQUET_SCHEMA.items()},
         "intraday": {k: str(v) for k, v in INTRADAY_PARQUET_SCHEMA.items()},
+        "crypto": {k: str(v) for k, v in CRYPTO_PARQUET_SCHEMA.items()},
         "notes": SCHEMA_NOTES,
     }
 
@@ -134,11 +170,18 @@ def render_schema_markdown() -> str:
         + _table("Daily", DAILY_PARQUET_SCHEMA)
         + "\n"
         + _table("Intraday", INTRADAY_PARQUET_SCHEMA)
+        + "\n"
+        + _table("Crypto", CRYPTO_PARQUET_SCHEMA)
         + "\n## Notes\n\n"
         + f"- {SCHEMA_NOTES['partitioning']}\n"
+        + f"- {SCHEMA_NOTES['crypto_partitioning']}\n"
         + f"- {SCHEMA_NOTES['semantics']}\n"
+        + f"- {SCHEMA_NOTES['crypto_semantics']}\n"
         + f"- {SCHEMA_NOTES['timestamps']}\n"
+        + f"- {SCHEMA_NOTES['crypto_timestamps']}\n"
         + notes
+        + "\n"
+        + "\n".join(f"- {item}" for item in SCHEMA_NOTES["crypto_constraints"])
         + "\n"
     )
 
@@ -184,6 +227,10 @@ def validate_daily_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) 
 
 def validate_intraday_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
     validate_frame_schema(df, INTRADAY_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+
+
+def validate_crypto_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
+    validate_frame_schema(df, CRYPTO_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
 
 
 def validate_moves_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:

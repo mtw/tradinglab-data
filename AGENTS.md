@@ -36,8 +36,11 @@ Those remain out of scope for this package.
 - package code: `src/tradinglab_data/`
 - tests: `tests/`
 - schema contract: `docs/PARQUET_SCHEMA.md`
+- downstream consumer contract: `docs/API_CONTRACT.md`
 - architecture overview: `ARCHITECTURE.md`
 - release process: `RELEASE.md`
+
+For sibling packages and agentic consumers, treat `docs/API_CONTRACT.md` as the primary published statement of what this package provides and what downstream code may rely on.
 
 ## Commands To Run Before Finishing Changes
 

@@ -26,11 +26,13 @@ from .config import (
     universe_csv_path,
     universe_dir_path,
     update_log_path,
+    update_warning_state_path,
 )
 from .contracts import ExtendedHoursResult, MonitorExtendedHoursResult, UpdateResult
 from .data_stooq import StooqDownloadSpec, fetch_stooq_history, infer_currency_from_symbol
 from .data_yf import append_update_log, fetch_symbol_currency, fetch_yfinance_history_bulk, read_parquet_if_exists
 from .extended_hours_monitor import (
+    backfill_intraday_interval_store,
     persist_extended_hours_report_html,
     summarize_gap_report,
     update_extended_hours_store,
@@ -54,6 +56,8 @@ class _IntradayConfig:
     max_retries: int
     backoff_max_seconds: float
     threads: bool
+    warning_state_path: Path
+    log_repeat_cooldown_hours: float
     pct_move_threshold: float
     min_volume: float
 
@@ -97,13 +101,15 @@ def _read_intraday_config(cfg: ConfigLike) -> _IntradayConfig:
         root=str(intraday_root_path(cfg)),
         preferred_interval=str(cfg.get("extended_hours", "preferred_interval", default="5m")).strip() or "5m",
         fallback_interval=str(cfg.get("extended_hours", "fallback_interval", default="1m")).strip() or "1m",
-        retention_days=int(cfg.get("extended_hours", "retention_days", default=10)),
+        retention_days=int(cfg.get("extended_hours", "retention_days", default=0)),
         prepost=bool(cfg.get("extended_hours", "prepost", default=True)),
         chunk_size=int(cfg.get("extended_hours", "chunk_size", default=20)),
         sleep_seconds=float(cfg.get("extended_hours", "sleep_seconds", default=1.0)),
         max_retries=int(cfg.get("extended_hours", "max_retries", default=5)),
         backoff_max_seconds=float(cfg.get("extended_hours", "backoff_max_seconds", default=120.0)),
         threads=bool(cfg.get("extended_hours", "threads", default=False)),
+        warning_state_path=update_warning_state_path(cfg),
+        log_repeat_cooldown_hours=float(cfg.get("extended_hours", "log_repeat_cooldown_hours", default=24.0)),
         pct_move_threshold=float(cfg.get("extended_hours", "pct_move_threshold", default=2.0)),
         min_volume=float(cfg.get("extended_hours", "min_volume", default=0.0)),
     )
@@ -262,7 +268,9 @@ def _execute_intraday_update(
         max_retries=intraday_cfg.max_retries,
         backoff_max_seconds=intraday_cfg.backoff_max_seconds,
         threads=intraday_cfg.threads,
+        log_repeat_cooldown_hours=intraday_cfg.log_repeat_cooldown_hours,
         log_path=log_path,
+        warning_state_path=intraday_cfg.warning_state_path,
     )
     report_path = _write_extended_hours_artifacts(
         intraday_res,
@@ -323,6 +331,31 @@ def monitor_extended_hours_from_config(
     return {**res, "report_html": str(report_path)}
 
 
+def backfill_extended_hours_from_config(
+    cfg: ConfigLike,
+    *,
+    interval: str,
+    symbols_override: list[str] | None = None,
+) -> dict[str, object]:
+    symbols = _load_active_symbols_from_cfg(cfg, symbols_override=symbols_override)
+    intraday_cfg = _read_intraday_config(cfg)
+    return backfill_intraday_interval_store(
+        symbols=symbols,
+        intraday_root=intraday_cfg.root,
+        interval=interval,
+        retention_days=intraday_cfg.retention_days,
+        prepost=intraday_cfg.prepost,
+        chunk_size=intraday_cfg.chunk_size,
+        sleep_seconds=intraday_cfg.sleep_seconds,
+        max_retries=intraday_cfg.max_retries,
+        backoff_max_seconds=intraday_cfg.backoff_max_seconds,
+        threads=intraday_cfg.threads,
+        log_repeat_cooldown_hours=intraday_cfg.log_repeat_cooldown_hours,
+        log_path=update_log_path(cfg),
+        warning_state_path=intraday_cfg.warning_state_path,
+    )
+
+
 def update_from_config(cfg: ConfigLike, symbols_override: list[str] | None = None) -> UpdateResult:
     update_cfg = _read_update_config(cfg)
     symbols = _load_active_symbols_from_cfg(cfg, symbols_override=symbols_override)
@@ -356,18 +389,13 @@ def _run_stooq_update(update_cfg: _UpdateConfig, symbols: list[str]) -> Extended
             cur = infer_currency_from_symbol(sym)
             df_hist = ensure_currency(fetched_hist, cur)
             out_path = root / f"{sym}.parquet"
-            sanitized_hist = sanitize_ohlc_df(df_hist)
-            if sanitized_hist is None or sanitized_hist.is_empty():
-                append_update_log(update_cfg.log_path, sym, "stooq_empty_after_sanitize", 1)
-                continue
-            sanitized_hist.write_parquet(str(out_path))
-            assert_postwrite_integrity(
+            _upsert_symbol_parquet(
                 out_path,
                 sym,
-                enabled=update_cfg.postwrite_integrity_enabled,
-                read_frame=read_parquet_if_exists,
-                append_log=append_update_log,
-                log_path=update_cfg.log_path,
+                df_hist,
+                currency=cur,
+                cfg=update_cfg,
+                empty_reason="stooq_empty_after_sanitize",
             )
         except Exception as e:
             append_update_log(update_cfg.log_path, sym, f"stooq_error:{e}", 1)
@@ -605,7 +633,7 @@ def _fetch_and_write_strict_symbols(
             df_new = strict_map.get(sym)
             cur = resolve_currency(sym, fetch_symbol_currency, df_hint=df_new, cache=currency_cache)
             out_path = root / f"{sym}.parquet"
-            _write_symbol_parquet(
+            _upsert_symbol_parquet(
                 out_path,
                 sym,
                 df_new,
@@ -685,6 +713,49 @@ def _write_symbol_parquet(
         return False
     if sort_before_write:
         prepared = prepared.sort("date")
+    prepared.write_parquet(str(path))
+    assert_postwrite_integrity(
+        path,
+        symbol,
+        enabled=cfg.postwrite_integrity_enabled,
+        read_frame=read_parquet_if_exists,
+        append_log=append_update_log,
+        log_path=cfg.log_path,
+    )
+    return True
+
+
+def _upsert_symbol_parquet(
+    path: Path,
+    symbol: str,
+    df: pl.DataFrame | None,
+    *,
+    currency: str,
+    cfg: _UpdateConfig,
+    empty_reason: str,
+    sort_before_write: bool = False,
+) -> bool:
+    prepared = _prepare_history_frame(df, currency)
+    if prepared is None:
+        append_update_log(cfg.log_path, symbol, empty_reason, 1)
+        return False
+    existing = read_parquet_if_exists(path)
+    existing_prepared = _prepare_history_frame(existing, currency)
+    if existing_prepared is not None:
+        existing_prepared, prepared = align_for_concat(
+            existing_prepared,
+            prepared,
+            schema=DAILY_PARQUET_SCHEMA,
+            preferred_columns=DAILY_SCHEMA_COLUMNS,
+        )
+        prepared = (
+            pl.concat([existing_prepared, prepared], how="vertical")
+            .unique(subset=["date"], keep="last")
+            .sort("date")
+        )
+    elif sort_before_write:
+        prepared = prepared.sort("date")
+    path.parent.mkdir(parents=True, exist_ok=True)
     prepared.write_parquet(str(path))
     assert_postwrite_integrity(
         path,

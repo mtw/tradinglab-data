@@ -6,7 +6,7 @@ import polars as pl
 
 PACKAGE_NAME = "tradinglab-data"
 PYTHON_PACKAGE_NAME = "tradinglab_data"
-ARTIFACT_SCHEMA_VERSION = "v0.1.0"
+ARTIFACT_SCHEMA_VERSION = "v0.2.0"
 
 SessionLabel = Literal["pre", "regular", "post", "closed", "unknown"]
 VerifyStatus = Literal["ok", "fail"]
@@ -138,11 +138,76 @@ class UpdateResult(TypedDict):
     intraday: ExtendedHoursResult | None
 
 
+class CryptoRegistryEntry(TypedDict):
+    symbol_canonical: str
+    source_symbol: str
+    exchange: str
+    market_type: str
+    base_asset: str
+    quote_asset: str
+    is_active: bool
+    universe_tags: list[str]
+
+
+class CryptoMetadataEntry(TypedDict):
+    coingecko_id: str
+    symbol_canonical: str
+    source_symbol: str
+    name: str
+    base_asset: str
+    quote_asset: str
+    market_cap_rank: int | None
+    market_cap: float | None
+    total_volume: float | None
+    exchange: str
+    market_type: str
+    is_active: bool
+    universe_tags: list[str]
+
+
+class CryptoSyncResult(TypedDict):
+    exchange: str
+    market_type: str
+    interval: str
+    universe: str
+    symbols: list[str]
+    files_written: int
+    rows_written: int
+    unchanged_symbols: list[str]
+    skipped_symbols: list[str]
+    pruned_files: list[str]
+    root: str
+
+
+class CryptoValidateResult(TypedDict):
+    ok: bool
+    exchange: str
+    market_type: str
+    interval: str
+    universe: str
+    root: str
+    files_checked: int
+    dirty_files: list[str]
+    errors: list[str]
+
+
+class CryptoUniverseRefreshResult(TypedDict):
+    provider: str
+    exchange: str
+    market_type: str
+    universe: str
+    registry_path: str
+    universe_path: str
+    candidates_seen: int
+    symbols_selected: list[str]
+
+
 class StoreIntegrityReport(TypedDict):
     generated_at: str
     config_path: str
     daily_root: str
     intraday_root: str
+    crypto_root: str
     sections: list[StoreIntegritySection]
     dirty_files: list[StoreIntegrityFileIssue]
     parquet_sanity: VerifyResult

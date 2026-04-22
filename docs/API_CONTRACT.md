@@ -11,7 +11,7 @@ The package now uses a simpler model:
 
 Consumers should not depend on a second standalone API-version number.
 
-Current package version in [`pyproject.toml`](../pyproject.toml): `0.1.0`
+Current package version in [`pyproject.toml`](../pyproject.toml): `0.2.0`
 
 ## Compatibility Model
 
@@ -19,10 +19,10 @@ Use these signals for different needs:
 
 - package version
   - use this for dependency pins and Python/CLI compatibility
-  - example: `tradinglab-data>=0.1,<0.2`
+  - example: `tradinglab-data>=0.2,<0.3`
 - artifact schema version
   - use this when consuming parquet files or generated reports across package releases
-  - current value: `v0.1.0`
+  - current value: `v0.2.0`
 
 Programmatic surface:
 
@@ -37,6 +37,48 @@ Recommended consumer model:
 - depend on package version ranges for installed-package compatibility
 - inspect `ARTIFACT_SCHEMA_VERSION` when validating data-store compatibility
 - add consumer compatibility tests when another package depends on this one
+
+## For Downstream Agents
+
+This section is the shortest accurate description of what sibling packages and agents should assume about `tradinglab-data`.
+
+What this package provides:
+
+- canonical local data artifacts for daily stock/ETF history
+- canonical local data artifacts for extended-hours intraday stock/ETF history
+- canonical local data artifacts for crypto OHLCV history
+- universe metadata artifacts and ticker normalization behavior
+- verification, integrity reporting, and maintenance wrappers around those artifacts
+
+What downstream packages may rely on:
+
+- daily parquet under `<paths.parquet_root>/<SYMBOL>.parquet`
+- intraday parquet under `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
+- crypto parquet under `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
+- published parquet schemas in `docs/PARQUET_SCHEMA.md`
+- public CLI entrypoints documented in this file
+- public Python exports documented in this file
+- additive config keys documented in this file
+- `ARTIFACT_SCHEMA_VERSION` as the compatibility signal for on-disk parquet and report artifacts
+
+What downstream packages must not assume:
+
+- that internal helper functions, fetch sequencing, retries, or repair logic are stable
+- that report JSON keys or dirty-reason enums are closed to additive extension unless explicitly guaranteed here
+- that all crypto universes are static; dynamic universes may be refreshed and persisted locally
+- that maintenance wrappers are pure fetch commands; they may perform verification, repair, and gate failures
+- that this package owns signal generation, screening, plotting UX, or research logic
+
+What downstream packages should do:
+
+- treat this package as the source of truth for maintained market-data artifacts
+- consume the published artifact paths and schemas rather than re-deriving provider-specific formats
+- tolerate additive fields and additive CLI/config surface where this document does not promise exact closure
+- pin package versions for Python/CLI compatibility
+- check `ARTIFACT_SCHEMA_VERSION` when validating artifact compatibility
+- keep their own integration tests that exercise their real usage of this package
+
+If a sibling package needs to know whether a behavior is safe to depend on, this document is the primary source of truth, with `docs/PARQUET_SCHEMA.md` as the schema-level companion.
 
 ## Stability Boundary
 
@@ -73,6 +115,7 @@ Current top-level keys:
 
 - `daily`
 - `intraday`
+- `crypto`
 - `notes`
 
 Migration note:
@@ -100,6 +143,7 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 - `cli`
 - `config`
 - `contracts`
+- `crypto`
 - `data_stooq`
 - `data_yf`
 - `extended_hours_monitor`
@@ -123,7 +167,16 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `render_schema_json`
 - `render_schema_markdown`
 - `generate_parquet_store_report`
+- `crypto_backfill_from_config`
+- `crypto_diff_universe_from_config`
+- `crypto_inspect_from_config`
+- `crypto_list_symbols_from_config`
+- `crypto_prune_from_config`
+- `crypto_refresh_universe_from_config`
+- `crypto_show_universe_from_config`
+- `crypto_validate_from_config`
 - `validate_daily_frame`
+- `validate_crypto_frame`
 - `validate_intraday_frame`
 - `validate_moves_frame`
 - `validate_alerts_frame`
@@ -154,7 +207,7 @@ Global option:
     - `./config.yaml`
     - `./configs/config.yaml`
 - is not required for `schema`
-- is required in practice for `update`, `monitor-extended-hours`, `build-universe`, and `report-parquet-store` because those code paths load `Config`
+- is required in practice for `update`, `monitor-extended-hours`, `build-universe`, `report-parquet-store`, and `crypto ...` because those code paths load `Config`
 
 Subcommands:
 
@@ -241,10 +294,135 @@ Contract:
 
 - scans the full daily parquet store
 - scans intraday parquet stores by interval directory when present
+- scans crypto parquet stores by exchange/market-type/interval directory when present
 - writes integrity reports under `<paths.runs_root>/YYYY-MM-DD/integrity/` unless `--out-dir` is given
 - report filenames are `parquet_store_report.json` and `parquet_store_report.md`
 - JSON report shape follows `StoreIntegrityReport`
 - markdown report includes section summaries, retained-history detail, dirty files, and daily parquet sanity status
+
+### `crypto list-symbols`
+
+Usage:
+
+```bash
+tradinglab-data crypto list-symbols [--exchange EXCHANGE]
+```
+
+Contract:
+
+- prints one canonical crypto symbol per line
+- currently supports Binance, Kraken, and Coinbase spot through CCXT
+
+### `crypto backfill`
+
+Usage:
+
+```bash
+tradinglab-data crypto backfill --interval 1d|1h|15m [--exchange EXCHANGE] [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- writes crypto parquet under `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
+- keeps only closed bars in canonical history
+- deduplicates on `timestamp`
+- atomically replaces each parquet file after validation
+
+### `crypto update`
+
+Usage:
+
+```bash
+tradinglab-data crypto update --interval 1d|1h|15m [--exchange EXCHANGE] [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- reads existing crypto parquet when present
+- fetches a recent overlap window and rewrites the merged file under the same artifact path
+- skips symbols no longer tradable on the selected exchange instead of failing the batch
+- leaves the local file unchanged when the overlap fetch produces no new closed bars
+
+### `crypto validate`
+
+Usage:
+
+```bash
+tradinglab-data crypto validate --interval 1d|1h|15m [--exchange EXCHANGE] [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- validates the local crypto parquet store against the crypto OHLCV contract
+- exits non-zero when files are missing or invalid
+
+### `crypto refresh-universe`
+
+Usage:
+
+```bash
+tradinglab-data crypto refresh-universe [--exchange EXCHANGE] [--provider coingecko] [--universe NAME] [--limit N]
+```
+
+Contract:
+
+- fetches ranked crypto metadata from CoinGecko
+- filters out configured stablecoins, excluded ids/symbols, and optionally wrapped assets
+- intersects candidates with configured exchange tradability for the configured quote asset
+- writes the merged dynamic registry JSON and a per-universe JSON file
+
+### `crypto show-universe`
+
+Usage:
+
+```bash
+tradinglab-data crypto show-universe [--exchange EXCHANGE] [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- resolves the selected crypto universe or explicit symbol override set
+- prints one canonical symbol per line
+
+### `crypto diff-universe`
+
+Usage:
+
+```bash
+tradinglab-data crypto diff-universe [--exchange EXCHANGE] --left-universe NAME --right-universe NAME
+```
+
+Contract:
+
+- compares two resolved crypto universes after exchange and quote-asset filtering
+- prints left-only, right-only, and shared canonical symbol sets
+
+### `crypto inspect`
+
+Usage:
+
+```bash
+tradinglab-data crypto inspect --interval 1d|1h|15m [--exchange EXCHANGE] [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- inspects local parquet presence and retained timestamp range for the resolved symbol set
+- prints one line per symbol with existence, row count, bounds, and target path
+
+### `crypto prune`
+
+Usage:
+
+```bash
+tradinglab-data crypto prune --interval 1d|1h|15m [--exchange EXCHANGE] [--universe NAME] [--symbols SYMBOL ...] [--apply]
+```
+
+Contract:
+
+- identifies local parquet files for the selected interval that are not present in the resolved symbol set
+- prints candidate file paths always
+- deletes them only when `--apply` is passed
 
 ## Config Contract
 
@@ -279,8 +457,18 @@ Derived path defaults:
   - defaults to `<meta_root>/universes`
 - `paths.update_log_csv`
   - defaults to `<meta_root>/update_log.csv`
+- `paths.update_warning_state_json`
+  - defaults to `<meta_root>/update_warning_state.json`
 - `paths.ticker_overrides_csv`
   - defaults to `<meta_root>/ticker_overrides.csv`
+- `paths.crypto_root`
+  - defaults to sibling directory of daily parquet root: `<parent(paths.parquet_root)>/crypto`
+- `paths.crypto_metadata_root`
+  - defaults to `<meta_root>/crypto`
+- `paths.crypto_registry_json`
+  - defaults to `<paths.crypto_metadata_root>/registry.json`
+- `paths.crypto_universe_dir`
+  - defaults to `<paths.crypto_metadata_root>/universes`
 - `extended_hours.intraday_root`
   - defaults to sibling directory of daily parquet root: `<parent(paths.parquet_root)>/intraday`
 - `paths.registry_root`
@@ -316,13 +504,40 @@ Operational keys currently consumed by workflows:
   - `max_retries`
   - `backoff_max_seconds`
   - `threads`
+  - `log_repeat_cooldown_hours`
   - `pct_move_threshold`
   - `min_volume`
+- `crypto.*`:
+  - `provider`
+  - `exchange`
+  - `market_type`
+  - `default_universe`
+  - `quote_assets`
+  - `max_batch_limit`
+  - `incremental_lookback_bars`
+  - `full_backfill_limit`
+  - `validate_continuity`
+  - `universe_refresh_provider`
+  - `universe_refresh_limit`
+  - `universe_refresh_pages`
+  - `universe_refresh_min_market_cap`
+  - `universe_refresh_min_volume`
+  - `stablecoin_ids`
+  - `excluded_symbols`
+  - `excluded_ids`
+  - `exclude_wrapped_assets`
 
 Current interval support:
 
 - `extended_hours.preferred_interval`
   - supported values: `5m`, `1m`
+
+Intraday retention semantics:
+
+- `extended_hours.retention_days: 0` means keep the full accumulated local intraday history
+- positive values apply a rolling truncation window at write time
+- default behavior is append-only local accumulation, bounded only by upstream fetch windows for newly missing history
+- repeated Yahoo intraday symbol warnings are throttled through `<paths.update_warning_state_json>` using `extended_hours.log_repeat_cooldown_hours`
 - `extended_hours.fallback_interval`
   - supported values: `5m`, `1m`
 - unsupported values raise a clear `ValueError` at workflow runtime
@@ -336,7 +551,7 @@ Reference template:
 
 Artifact schema version for the produced data-store and report families:
 
-- `v0.1.0`
+- `v0.2.0`
 
 Machine-readable sources:
 
@@ -411,6 +626,59 @@ Current invariants:
 - rolling retention window is applied
 - rows with all OHLC values null are removed
 - daily close comparison reads whichever interval file has the latest timestamp, preferring the preferred interval on ties
+
+### Crypto Parquet Store
+
+Primary path:
+
+- `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
+
+Current intervals used by workflow code:
+
+- `1d`
+- `1h`
+- `15m`
+
+Schema:
+
+| Column | Type |
+|---|---|
+| `timestamp` | `Datetime` |
+| `open` | `Float64` |
+| `high` | `Float64` |
+| `low` | `Float64` |
+| `close` | `Float64` |
+| `volume` | `Float64` |
+| `provider` | `String` |
+| `exchange` | `String` |
+| `market_type` | `String` |
+| `symbol` | `String` |
+| `base_asset` | `String` |
+| `quote_asset` | `String` |
+| `interval` | `String` |
+| `is_closed` | `Boolean` |
+| `ingested_at` | `Datetime` |
+| `source_symbol` | `String` |
+
+Current invariants:
+
+- one symbol per file
+- one exchange, market type, and interval per directory subtree
+- rows are sorted by `timestamp`
+- `timestamp` is unique within a file
+- canonical history persists closed bars only
+
+### Crypto Metadata Registry
+
+Primary paths:
+
+- `<paths.crypto_registry_json>`
+- `<paths.crypto_universe_dir>/<UNIVERSE>.json`
+
+Contract:
+
+- registry JSON stores merged dynamic crypto metadata entries keyed by canonical symbol
+- universe JSON stores the selected symbols and refresh metadata for one dynamic universe
 
 ### Universe CSV
 
@@ -554,6 +822,7 @@ JSON report top-level keys:
 - `config_path`
 - `daily_root`
 - `intraday_root`
+- `crypto_root`
 - `sections`
 - `dirty_files`
 - `parquet_sanity`
@@ -581,6 +850,7 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `update_log_path(cfg) -> Path`
 - `ticker_overrides_path(cfg) -> Path`
 - `parquet_root_path(cfg) -> Path`
+- `crypto_root_path(cfg) -> Path`
 - `intraday_root_path(cfg) -> Path`
 - `runs_root_path(cfg) -> Path`
 - `registry_root_path(cfg) -> Path`
@@ -593,9 +863,26 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `render_schema_markdown() -> str`
 - `validate_frame_schema(df, expected_schema, allow_extra_columns=True) -> None`
 - `validate_daily_frame(df, allow_extra_columns=True) -> None`
+- `validate_crypto_frame(df, allow_extra_columns=True) -> None`
 - `validate_intraday_frame(df, allow_extra_columns=True) -> None`
 - `validate_moves_frame(df, allow_extra_columns=True) -> None`
 - `validate_alerts_frame(df, allow_extra_columns=True) -> None`
+
+### `tradinglab_data.crypto`
+
+- `CRYPTO_UNIVERSES`
+- `load_crypto_registry(exchange="binance", market_type="spot", quote_assets=("USDT",)) -> list[CryptoRegistryEntry]`
+- `load_crypto_universes(cfg=None) -> dict[str, tuple[str, ...]]`
+- `normalize_crypto_symbol(symbol) -> str`
+- `resolve_crypto_universe(universe, exchange="binance", market_type="spot", quote_assets=("USDT",)) -> list[CryptoRegistryEntry]`
+- `crypto_backfill_from_config(cfg, exchange=None, interval=..., universe=None, symbols_override=None, incremental=False) -> CryptoSyncResult`
+- `crypto_diff_universe_from_config(cfg, exchange=None, left_universe=..., right_universe=...) -> dict[str, object]`
+- `crypto_inspect_from_config(cfg, exchange=None, interval=..., universe=None, symbols_override=None) -> list[dict[str, object]]`
+- `crypto_list_symbols_from_config(cfg, exchange=None) -> list[str]`
+- `crypto_prune_from_config(cfg, exchange=None, interval=..., universe=None, symbols_override=None, apply=False) -> list[str]`
+- `crypto_refresh_universe_from_config(cfg, exchange=None, provider_name=None, universe=None, limit=None) -> CryptoUniverseRefreshResult`
+- `crypto_show_universe_from_config(cfg, exchange=None, universe=None, symbols_override=None) -> list[str]`
+- `crypto_validate_from_config(cfg, exchange=None, interval=..., universe=None, symbols_override=None) -> CryptoValidateResult`
 
 ### `tradinglab_data.universe`
 
@@ -656,6 +943,11 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `ArtifactFamilyEntry`
 - `CompatibilityManifest`
 - `CoverageEntry`
+- `CryptoMetadataEntry`
+- `CryptoRegistryEntry`
+- `CryptoSyncResult`
+- `CryptoUniverseRefreshResult`
+- `CryptoValidateResult`
 - `DailyCloseInfo`
 - `ExtendedHoursResult`
 - `MonitorExtendedHoursResult`
@@ -691,6 +983,7 @@ Typed result note:
 ### `tradinglab_data.workflows`
 
 - `monitor_extended_hours_from_config(cfg, symbols_override=None, top_n=25, session_filter="all") -> MonitorExtendedHoursResult`
+- `backfill_extended_hours_from_config(cfg, interval, symbols_override=None) -> dict[str, object]`
 - `update_from_config(cfg, symbols_override=None) -> UpdateResult`
 
 ## Behavioral Notes That Matter For Compatibility
@@ -701,6 +994,7 @@ Typed result note:
 - In Stooq mode, full history can come from Stooq while recent bars can still be merged from Yahoo Finance.
 - The extended-hours workflow compares intraday last price to the latest daily regular-session close and assigns a session label of `pre`, `regular`, `post`, or `closed`.
 - Current strict full-refresh handling is suffix-based and only applies to symbols ending in `.VI`.
+- Crypto workflows currently support Binance, Kraken, and Coinbase spot through CCXT, with Binance remaining the default config path.
 - Installed package config discovery no longer assumes a source checkout; the wheel ships a bundled `config.yaml.example` template and typed marker file `py.typed`.
 
 ## Non-Goals Of This Contract

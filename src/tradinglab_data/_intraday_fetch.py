@@ -17,7 +17,7 @@ from ._yf_utils import (
     run_yf_download,
     split_bulk_download,
 )
-from .data_yf import append_update_log
+from .data_yf import append_update_log, append_update_log_throttled
 from .schema import SchemaDtype
 
 INTRADAY_SCHEMA: dict[str, SchemaDtype] = {
@@ -94,6 +94,8 @@ def fetch_intraday_bulk(
     backoff_max_seconds: float = 120.0,
     threads: bool = False,
     log_path: Path | None = None,
+    warning_state_path: Path | None = None,
+    log_repeat_cooldown_hours: float = 24.0,
     show_progress: bool = False,
     progress_desc: str = "extended-hours fetch",
 ) -> dict[str, pl.DataFrame]:
@@ -126,7 +128,14 @@ def fetch_intraday_bulk(
                 if issue is not None and not chunk_map:
                     if log_path is not None:
                         for sym in chunk:
-                            append_update_log(log_path, sym, f"intraday_{interval}_{issue}", attempt + 1)
+                            append_update_log_throttled(
+                                log_path,
+                                sym,
+                                f"intraday_{interval}_{issue}",
+                                attempt + 1,
+                                cooldown_hours=log_repeat_cooldown_hours,
+                                state_path=warning_state_path,
+                            )
                     break
                 out_chunk: dict[str, pl.DataFrame] = {}
                 for sym, df_one in chunk_map.items():
@@ -155,6 +164,17 @@ def fetch_intraday_one(
     period: str,
     prepost: bool = True,
 ) -> pl.DataFrame:
+    frame, _ = _fetch_intraday_one_result(symbol, interval=interval, period=period, prepost=prepost)
+    return frame
+
+
+def _fetch_intraday_one_result(
+    symbol: str,
+    *,
+    interval: str,
+    period: str,
+    prepost: bool,
+) -> tuple[pl.DataFrame, str | None]:
     df_pd, output, exc = run_yf_download(
         yf.download,
         symbol,
@@ -170,8 +190,8 @@ def fetch_intraday_one(
     if exc is not None and issue is None:
         raise exc
     if df_pd is None or len(df_pd) == 0:
-        return pl.DataFrame(schema=INTRADAY_SCHEMA)
-    return normalize_intraday_pd(df_pd)
+        return pl.DataFrame(schema=INTRADAY_SCHEMA), issue
+    return normalize_intraday_pd(df_pd), issue
 
 
 def fetch_extended_intraday(
@@ -185,6 +205,8 @@ def fetch_extended_intraday(
     backoff_max_seconds: float = 120.0,
     threads: bool = False,
     log_path: Path | None = None,
+    warning_state_path: Path | None = None,
+    log_repeat_cooldown_hours: float = 24.0,
 ) -> dict[str, pl.DataFrame]:
     out = fetch_intraday_bulk(
         symbols=symbols,
@@ -197,23 +219,43 @@ def fetch_extended_intraday(
         backoff_max_seconds=backoff_max_seconds,
         threads=threads,
         log_path=log_path,
+        warning_state_path=warning_state_path,
+        log_repeat_cooldown_hours=log_repeat_cooldown_hours,
         show_progress=True,
         progress_desc=f"YF intraday {interval}",
     )
     missing = [s for s in symbols if s not in out or out[s].is_empty()]
     for sym in missing:
         try:
-            df = fetch_intraday_one(sym, interval=interval, period=period, prepost=prepost)
+            df, issue = _fetch_intraday_one_result(sym, interval=interval, period=period, prepost=prepost)
             if not df.is_empty():
                 out[sym] = df
+            elif issue is not None and log_path is not None:
+                append_update_log_throttled(
+                    log_path,
+                    sym,
+                    f"intraday_{interval}_{issue}",
+                    1,
+                    cooldown_hours=log_repeat_cooldown_hours,
+                    state_path=warning_state_path,
+                )
         except Exception as e:
             if log_path is not None:
-                append_update_log(log_path, sym, f"intraday_{interval}_single_error:{e}", 1)
+                append_update_log_throttled(
+                    log_path,
+                    sym,
+                    f"intraday_{interval}_single_error:{e}",
+                    1,
+                    cooldown_hours=log_repeat_cooldown_hours,
+                    state_path=warning_state_path,
+                )
     return out
 
 
 def trim_rolling_window(df: pl.DataFrame, retention_days: int) -> pl.DataFrame:
     if df.is_empty():
         return df
+    if retention_days <= 0:
+        return df.sort("date")
     cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=max(1, retention_days))
     return df.filter(pl.col("date") >= pl.lit(cutoff)).sort("date")

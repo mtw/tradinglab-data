@@ -6,6 +6,7 @@
 
 1. Universe inputs define the target symbol set.
 2. Provider adapters fetch daily and intraday history.
+2.1. Crypto provider adapters fetch exchange-native OHLCV into a dedicated crypto parquet store.
 3. Normalization enforces the canonical schema.
 4. Per-symbol parquet files are written and verified.
 5. Extended-hours monitoring computes moves and writes alerts/reports.
@@ -15,6 +16,7 @@
 
 - `src/tradinglab_data/data_yf.py`: Yahoo Finance history and log helpers
 - `src/tradinglab_data/data_stooq.py`: Stooq history and CSV parsing helpers
+- `src/tradinglab_data/crypto/`: crypto registry, provider adapters, CoinGecko metadata refresh, storage, validation, and workflows
 - `src/tradinglab_data/ticker_map.py`: ticker normalization and overrides
 - `src/tradinglab_data/universe.py`: universe loading and canonicalization
 - `src/tradinglab_data/universe_build.py`: index fetchers and merged universe construction
@@ -38,4 +40,5 @@
 
 - Per-symbol parquet files are the primary persistence layer.
 - Intraday data is stored under interval-specific directories.
+- Crypto data is stored under exchange/market-type/interval-specific directories.
 - Provider adapters are isolated behind normalization helpers for consistency.

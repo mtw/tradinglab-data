@@ -178,6 +178,16 @@ def update_log_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "update_log_csv") or (meta_root_path(cfg) / "update_log.csv")
 
 
+def update_warning_state_path(cfg: ConfigLike) -> Path:
+    explicit = cfg.path("paths", "update_warning_state_json")
+    if explicit is not None:
+        return explicit
+    update_log = cfg.path("paths", "update_log_csv")
+    if update_log is not None:
+        return update_log.parent / "update_warning_state.json"
+    return meta_root_path(cfg) / "update_warning_state.json"
+
+
 def ticker_overrides_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "ticker_overrides_csv") or (meta_root_path(cfg) / "ticker_overrides.csv")
 
@@ -188,6 +198,22 @@ def parquet_root_path(cfg: ConfigLike) -> Path:
 
 def intraday_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("extended_hours", "intraday_root") or (parquet_root_path(cfg).parent / "intraday")
+
+
+def crypto_root_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "crypto_root") or (parquet_root_path(cfg).parent / "crypto")
+
+
+def crypto_metadata_root_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "crypto_metadata_root") or (meta_root_path(cfg) / "crypto")
+
+
+def crypto_registry_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "crypto_registry_json") or (crypto_metadata_root_path(cfg) / "registry.json")
+
+
+def crypto_universe_dir_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "crypto_universe_dir") or (crypto_metadata_root_path(cfg) / "universes")
 
 
 def runs_root_path(cfg: ConfigLike) -> Path:

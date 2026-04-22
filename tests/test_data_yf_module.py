@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -75,6 +76,38 @@ def test_append_update_log_writes_csv(tmp_path: Path):
     text = log.read_text(encoding="utf-8")
     assert "timestamp,symbol,error,attempt_count" in text
     assert "AAPL,x,1" in text
+
+
+def test_append_update_log_throttled_suppresses_recent_duplicate(tmp_path: Path):
+    log = tmp_path / "update_log.csv"
+    state = tmp_path / "warning_state.json"
+    data_yf.append_update_log_throttled(log, "AAPL", "issue_a", 1, cooldown_hours=24.0, state_path=state)
+    wrote = data_yf.append_update_log_throttled(log, "AAPL", "issue_a", 1, cooldown_hours=24.0, state_path=state)
+    text = log.read_text(encoding="utf-8").strip().splitlines()
+
+    assert wrote is False
+    assert len(text) == 2
+    assert state.exists()
+
+
+def test_warning_state_write_prunes_old_entries(tmp_path: Path, monkeypatch):
+    state = tmp_path / "warning_state.json"
+    now = datetime.now(tz=data_yf.timezone.utc)
+    stale = now - timedelta(days=31)
+    fresh = now - timedelta(days=1)
+    monkeypatch.setattr(data_yf, "_WARNING_STATE_TTL_DAYS", 30)
+
+    data_yf._write_warning_state(
+        state,
+        {
+            ("AAPL", "issue_old"): stale,
+            ("MSFT", "issue_new"): fresh,
+        },
+    )
+
+    payload = json.loads(state.read_text(encoding="utf-8"))
+    assert "AAPL␟issue_old" not in payload
+    assert "MSFT␟issue_new" in payload
 
 
 def test_upsert_symbol_parquet_uses_recent_age_for_incremental_fetch(monkeypatch, tmp_path: Path):
