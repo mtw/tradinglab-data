@@ -96,6 +96,18 @@ pip install -e /path/to/tradinglab-data
   - verify crypto coverage, file health, and stale-bar conditions for one interval and universe
   - optionally repair dirty symbols by rerunning crypto backfill/update logic
 
+- `scripts/bootstrap_stooq_history.py`
+  - bootstrap full daily history from Stooq across configured universe CSVs
+  - optionally merge a short recent yfinance tail after the bulk bootstrap
+
+- `scripts/normalize_universe_schema.py`
+  - rewrite per-universe CSVs to the canonical schema
+  - rebuild the merged master universe CSV at `paths.universe_csv`
+
+- `scripts/build_index_override.py`
+  - build one-off index override CSVs from TradingView/Wikipedia source tables
+  - useful when a source-specific override needs to be regenerated manually
+
 Operational verifier:
 
 ```bash
