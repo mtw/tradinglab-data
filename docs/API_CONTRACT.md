@@ -46,6 +46,7 @@ What this package provides:
 
 - canonical local data artifacts for daily stock/ETF history
 - canonical local data artifacts for extended-hours intraday stock/ETF history
+- canonical local data artifacts for regular-session intraday research stock/ETF history
 - canonical local data artifacts for crypto OHLCV history
 - universe metadata artifacts and ticker normalization behavior
 - verification, integrity reporting, and maintenance wrappers around those artifacts
@@ -54,6 +55,7 @@ What downstream packages may rely on:
 
 - daily parquet under `<paths.parquet_root>/<SYMBOL>.parquet`
 - intraday parquet under `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
+- intraday research parquet under `<intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet`
 - crypto parquet under `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
 - published parquet schemas in `docs/PARQUET_SCHEMA.md`
 - public CLI entrypoints documented in this file
@@ -115,6 +117,7 @@ Current top-level keys:
 
 - `daily`
 - `intraday`
+- `intraday_research`
 - `crypto`
 - `notes`
 
@@ -147,6 +150,7 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 - `data_stooq`
 - `data_yf`
 - `extended_hours_monitor`
+- `intraday_research`
 - `parquet_verify`
 - `schema`
 - `store_report`
@@ -178,9 +182,13 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `validate_daily_frame`
 - `validate_crypto_frame`
 - `validate_intraday_frame`
+- `validate_intraday_research_frame`
 - `validate_moves_frame`
 - `validate_alerts_frame`
 - `update_from_config`
+- `intraday_research_update_from_config`
+- `intraday_research_validate_from_config`
+- `intraday_research_inspect_from_config`
 - `monitor_extended_hours_from_config`
 - `UniverseRow`
 - `UpdateResult`
@@ -207,7 +215,7 @@ Global option:
     - `./config.yaml`
     - `./configs/config.yaml`
 - is not required for `schema`
-- is required in practice for `update`, `monitor-extended-hours`, `build-universe`, `report-parquet-store`, and `crypto ...` because those code paths load `Config`
+- is required in practice for `update`, `intraday ...`, `monitor-extended-hours`, `build-universe`, `report-parquet-store`, and `crypto ...` because those code paths load `Config`
 
 Subcommands:
 
@@ -266,6 +274,60 @@ Contract:
 - may also write intraday parquet and extended-hours artifacts when `extended_hours.enabled` is true
 - accepts an optional symbol subset; unknown requested symbols are skipped with a warning, and an all-missing selection exits with an error
 - returns a dict from the Python entrypoint `update_from_config(...)`; CLI itself returns exit code `0` when no exception is raised
+
+### `intraday backfill`
+
+Usage:
+
+```bash
+tradinglab-data intraday backfill [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- writes the dedicated intraday research parquet store under `<intraday.research_root>/5m/`
+- uses the provider's full allowed `5m` window for both missing and existing symbols
+- preserves older locally accumulated rows when `intraday.retention_days` is `0`
+
+### `intraday update`
+
+Usage:
+
+```bash
+tradinglab-data intraday update [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- resolves a pilot universe from `paths.universe_dir/<NAME>.csv` unless `--symbols` is provided
+- currently supports only `5m`, `regular`, and `yahoo`
+- normalizes UTC `timestamp` and exchange-local `session_date`
+- incrementally refreshes existing files while keeping the research store separate from the extended-hours cache
+
+### `intraday validate`
+
+Usage:
+
+```bash
+tradinglab-data intraday validate [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- validates local intraday research parquet files against the research-store schema and metadata rules
+- exits non-zero when files are missing or invalid
+
+### `intraday inspect`
+
+Usage:
+
+```bash
+tradinglab-data intraday inspect [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- prints one line per symbol with existence, row count, validity, bounds, and target path
 
 ### `monitor-extended-hours`
 
@@ -471,6 +533,8 @@ Derived path defaults:
   - defaults to `<paths.crypto_metadata_root>/universes`
 - `extended_hours.intraday_root`
   - defaults to sibling directory of daily parquet root: `<parent(paths.parquet_root)>/intraday`
+- `intraday.research_root`
+  - defaults to sibling directory of daily parquet root: `<parent(paths.parquet_root)>/intraday_research`
 - `paths.registry_root`
   - defaults to `<paths.runs_root>/runs_registry`
 
@@ -507,6 +571,21 @@ Operational keys currently consumed by workflows:
   - `log_repeat_cooldown_hours`
   - `pct_move_threshold`
   - `min_volume`
+- `intraday.*`:
+  - `enabled`
+  - `research_root`
+  - `interval`
+  - `provider`
+  - `session`
+  - `exchange_timezone`
+  - `default_universe`
+  - `retention_days`
+  - `chunk_size`
+  - `sleep_seconds`
+  - `max_retries`
+  - `backoff_max_seconds`
+  - `threads`
+  - `log_repeat_cooldown_hours`
 - `crypto.*`:
   - `provider`
   - `exchange`
@@ -531,6 +610,8 @@ Current interval support:
 
 - `extended_hours.preferred_interval`
   - supported values: `5m`, `1m`
+- `intraday.interval`
+  - supported value in the first implementation: `5m`
 
 Intraday retention semantics:
 
@@ -626,6 +707,47 @@ Current invariants:
 - rolling retention window is applied
 - rows with all OHLC values null are removed
 - daily close comparison reads whichever interval file has the latest timestamp, preferring the preferred interval on ties
+
+### Intraday Research Parquet Store
+
+Primary path:
+
+- `<intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet`
+
+Current first-iteration scope:
+
+- interval: `5m`
+- session: `regular`
+- provider: `yahoo`
+
+Schema:
+
+| Column | Type |
+|---|---|
+| `timestamp` | `Datetime` |
+| `open` | `Float64` |
+| `high` | `Float64` |
+| `low` | `Float64` |
+| `close` | `Float64` |
+| `volume` | `Float64` |
+| `currency` | `String` |
+| `symbol` | `String` |
+| `interval` | `String` |
+| `provider` | `String` |
+| `session` | `String` |
+| `session_date` | `Date` |
+| `is_regular_session` | `Boolean` |
+| `ingested_at` | `Datetime` |
+
+Current invariants:
+
+- one symbol per file
+- rows are sorted by `timestamp`
+- `timestamp` is unique within a file
+- `session` is `regular`
+- `is_regular_session` is `true`
+- `timestamp` and `ingested_at` are UTC-normalized datetimes
+- `session_date` is derived in `America/New_York`
 
 ### Crypto Parquet Store
 
@@ -852,6 +974,7 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `parquet_root_path(cfg) -> Path`
 - `crypto_root_path(cfg) -> Path`
 - `intraday_root_path(cfg) -> Path`
+- `intraday_research_root_path(cfg) -> Path`
 - `runs_root_path(cfg) -> Path`
 - `registry_root_path(cfg) -> Path`
 
@@ -865,8 +988,16 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `validate_daily_frame(df, allow_extra_columns=True) -> None`
 - `validate_crypto_frame(df, allow_extra_columns=True) -> None`
 - `validate_intraday_frame(df, allow_extra_columns=True) -> None`
+- `validate_intraday_research_frame(df, allow_extra_columns=True) -> None`
 - `validate_moves_frame(df, allow_extra_columns=True) -> None`
 - `validate_alerts_frame(df, allow_extra_columns=True) -> None`
+
+### `tradinglab_data.intraday_research`
+
+- `normalize_intraday_research_frame(...) -> pl.DataFrame`
+- `update_intraday_research_store(...) -> IntradayResearchSyncResult`
+- `inspect_intraday_research_store(...) -> list[dict[str, object]]`
+- `validate_intraday_research_store(...) -> IntradayResearchValidateResult`
 
 ### `tradinglab_data.crypto`
 
@@ -950,6 +1081,8 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `CryptoValidateResult`
 - `DailyCloseInfo`
 - `ExtendedHoursResult`
+- `IntradayResearchSyncResult`
+- `IntradayResearchValidateResult`
 - `MonitorExtendedHoursResult`
 - `StoreHistoryEntry`
 - `StoreIntegritySection`
@@ -985,6 +1118,9 @@ Typed result note:
 - `monitor_extended_hours_from_config(cfg, symbols_override=None, top_n=25, session_filter="all") -> MonitorExtendedHoursResult`
 - `backfill_extended_hours_from_config(cfg, interval, symbols_override=None) -> dict[str, object]`
 - `update_from_config(cfg, symbols_override=None) -> UpdateResult`
+- `intraday_research_update_from_config(cfg, universe=None, symbols_override=None, full_window=False) -> IntradayResearchSyncResult`
+- `intraday_research_validate_from_config(cfg, universe=None, symbols_override=None) -> IntradayResearchValidateResult`
+- `intraday_research_inspect_from_config(cfg, universe=None, symbols_override=None) -> list[dict[str, object]]`
 
 ## Behavioral Notes That Matter For Compatibility
 

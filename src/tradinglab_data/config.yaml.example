@@ -46,6 +46,22 @@ extended_hours:
   pct_move_threshold: 2.0
   min_volume: 0
 
+intraday:
+  enabled: true
+  research_root: "/absolute/path/to/market-data-store/parquet/intraday_research"
+  interval: "5m"
+  provider: "yahoo"
+  session: "regular"
+  exchange_timezone: "America/New_York"
+  default_universe: "intraday_pilot"
+  retention_days: 0
+  chunk_size: 20
+  sleep_seconds: 1.0
+  max_retries: 5
+  backoff_max_seconds: 120.0
+  threads: false
+  log_repeat_cooldown_hours: 24.0
+
 crypto:
   provider: "binance"
   exchange: "binance"

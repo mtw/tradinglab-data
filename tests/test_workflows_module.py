@@ -224,6 +224,84 @@ def test_backfill_extended_hours_from_config_dispatches(dummy_cfg_factory, monke
     ]
 
 
+def test_read_intraday_research_config_defaults(dummy_cfg_factory):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": "/tmp/daily",
+                "universe_csv": "/tmp/meta/universe.csv",
+            },
+            "intraday": {
+                "enabled": True,
+            },
+        }
+    )
+
+    intraday_cfg = workflows._read_intraday_research_config(cfg)
+    assert intraday_cfg.root == "/tmp/intraday_research"
+    assert intraday_cfg.default_universe == "intraday_pilot"
+    assert intraday_cfg.interval == "5m"
+
+
+def test_intraday_research_update_from_config_dispatches(dummy_cfg_factory, monkeypatch):
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflows, "_load_intraday_research_symbols_from_cfg", lambda cfg, intraday_cfg, **kwargs: ["SPY", "QQQ"])
+    monkeypatch.setattr(
+        workflows,
+        "update_intraday_research_store",
+        lambda symbols, **kwargs: calls.append({"symbols": symbols, **kwargs})
+        or {
+            "interval": "5m",
+            "universe": "intraday_pilot",
+            "root": "/tmp/intraday_research/5m",
+            "symbols": list(symbols),
+            "files_written": 2,
+            "rows_written": 10,
+            "unchanged_symbols": [],
+            "skipped_symbols": [],
+        },
+    )
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": "/tmp/daily",
+                "runs_root": "/tmp/runs",
+                "update_log_csv": "/tmp/meta/update_log.csv",
+                "universe_csv": "/tmp/meta/universe.csv",
+            },
+            "intraday": {
+                "enabled": True,
+                "research_root": "/tmp/intraday_research",
+            },
+        }
+    )
+
+    result = workflows.intraday_research_update_from_config(cfg, universe="intraday_pilot", full_window=True)
+
+    assert result["files_written"] == 2
+    assert calls == [
+        {
+            "symbols": ["SPY", "QQQ"],
+            "research_root": "/tmp/intraday_research",
+            "interval": "5m",
+            "provider": "yahoo",
+            "session": "regular",
+            "exchange_timezone": "America/New_York",
+            "universe_name": "intraday_pilot",
+            "retention_days": 0,
+            "full_window": True,
+            "chunk_size": 20,
+            "sleep_seconds": 1.0,
+            "max_retries": 5,
+            "backoff_max_seconds": 120.0,
+            "threads": False,
+            "log_repeat_cooldown_hours": 24.0,
+            "log_path": Path("/tmp/meta/update_log.csv"),
+            "warning_state_path": Path("/tmp/meta/update_warning_state.json"),
+        }
+    ]
+
+
 def test_strict_symbol_update_preserves_existing_older_rows(
     monkeypatch,
     patch_workflow_common_paths,

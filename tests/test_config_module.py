@@ -13,6 +13,7 @@ from tradinglab_data.config import (
     crypto_root_path,
     crypto_universe_dir_path,
     default_config_path,
+    intraday_research_root_path,
     intraday_root_path,
     packaged_config_example_text,
     registry_root_path,
@@ -139,6 +140,7 @@ def test_config_derived_paths(tmp_path: Path):
     assert update_warning_state_path(cfg) == tmp_path / "meta" / "update_warning_state.json"
     assert ticker_overrides_path(cfg) == tmp_path / "meta" / "ticker_overrides.csv"
     assert intraday_root_path(cfg) == tmp_path / "parquet" / "intraday"
+    assert intraday_research_root_path(cfg) == tmp_path / "parquet" / "intraday_research"
     assert crypto_root_path(cfg) == tmp_path / "parquet" / "crypto"
     assert crypto_metadata_root_path(cfg) == tmp_path / "meta" / "crypto"
     assert crypto_registry_path(cfg) == tmp_path / "meta" / "crypto" / "registry.json"

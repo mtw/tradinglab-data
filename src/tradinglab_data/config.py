@@ -200,6 +200,10 @@ def intraday_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("extended_hours", "intraday_root") or (parquet_root_path(cfg).parent / "intraday")
 
 
+def intraday_research_root_path(cfg: ConfigLike) -> Path:
+    return cfg.path("intraday", "research_root") or (parquet_root_path(cfg).parent / "intraday_research")
+
+
 def crypto_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "crypto_root") or (parquet_root_path(cfg).parent / "crypto")
 

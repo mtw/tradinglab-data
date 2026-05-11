@@ -99,25 +99,39 @@ Supported crypto intervals for this workflow:
 - `1h`
 - `15m`
 
-## Planned General Intraday 5m Research Workflow
+## Intraday Research Workflow
 
-This workflow is not fully implemented yet.
-The target contract is documented in [INTRADAY_5M_CONTRACT.md](INTRADAY_5M_CONTRACT.md).
+Primary commands:
 
-Intended behavior:
+```bash
+tradinglab-data --config /path/to/config.yaml intraday backfill --universe intraday_pilot
+tradinglab-data --config /path/to/config.yaml intraday update --universe intraday_pilot
+tradinglab-data --config /path/to/config.yaml intraday validate --universe intraday_pilot
+tradinglab-data --config /path/to/config.yaml intraday inspect --universe intraday_pilot
+```
 
-1. ingest regular-session `5m` bars for a curated pilot universe
-2. persist them under a dedicated research intraday root rather than the extended-hours monitoring cache
-3. normalize timestamps to UTC while preserving exchange-local `session_date` semantics
-4. validate continuity, duplicates, OHLC quality, and stale coverage
-5. expose a stable parquet contract for downstream `tradinglab` intraday research
+Current behavior:
 
-Recommended first implementation scope:
+1. resolve a pilot universe CSV from `paths.universe_dir/<UNIVERSE>.csv`
+2. limit the first implementation to `5m` regular-session stock/ETF symbols
+3. fetch Yahoo intraday bars with `prepost=False`
+4. normalize timestamps to UTC and derive exchange-local `session_date` in `America/New_York`
+5. persist parquet under a dedicated research root rather than the extended-hours monitoring cache
+6. merge append-style history per symbol, preserving older local rows when retention is disabled
+7. validate ordering, uniqueness, metadata consistency, and OHLC quality before write
+
+Outputs:
+
+- intraday research parquet under `intraday.research_root/5m/`
+
+Current first-iteration scope:
 
 - regular session only
 - interval `5m` only
-- US stocks and ETFs
-- pilot universe before full-universe rollout
+- Yahoo provider only
+- pilot universe CSV required unless `--symbols` is passed
+
+The target contract and longer-term roadmap remain documented in [INTRADAY_5M_CONTRACT.md](INTRADAY_5M_CONTRACT.md).
 
 ## Extended-Hours Monitoring Workflow
 

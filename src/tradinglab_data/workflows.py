@@ -19,6 +19,7 @@ from ._ohlc_utils import (
 )
 from .config import (
     ConfigLike,
+    intraday_research_root_path,
     intraday_root_path,
     parquet_root_path,
     runs_root_path,
@@ -36,6 +37,14 @@ from .extended_hours_monitor import (
     persist_extended_hours_report_html,
     summarize_gap_report,
     update_extended_hours_store,
+)
+from .intraday_research import (
+    DEFAULT_EXCHANGE_TIMEZONE,
+    SUPPORTED_PROVIDER,
+    SUPPORTED_SESSION,
+    inspect_intraday_research_store,
+    update_intraday_research_store,
+    validate_intraday_research_store,
 )
 from .schema import DAILY_PARQUET_SCHEMA
 from .universe import canonicalize_symbol, load_ticker_overrides, load_universe_frame
@@ -81,6 +90,25 @@ class _UpdateConfig:
     stooq_refresh_all: bool
     runs_root: str | Path
     intraday: _IntradayConfig
+
+
+@dataclass(frozen=True)
+class _IntradayResearchConfig:
+    enabled: bool
+    root: str
+    interval: str
+    provider: str
+    session: str
+    exchange_timezone: str
+    default_universe: str
+    retention_days: int
+    chunk_size: int
+    sleep_seconds: float
+    max_retries: int
+    backoff_max_seconds: float
+    threads: bool
+    warning_state_path: Path
+    log_repeat_cooldown_hours: float
 
 
 def _run_dir(runs_root: str | Path) -> Path:
@@ -137,6 +165,27 @@ def _read_update_config(cfg: ConfigLike) -> _UpdateConfig:
     )
 
 
+def _read_intraday_research_config(cfg: ConfigLike) -> _IntradayResearchConfig:
+    return _IntradayResearchConfig(
+        enabled=bool(cfg.get("intraday", "enabled", default=True)),
+        root=str(intraday_research_root_path(cfg)),
+        interval=str(cfg.get("intraday", "interval", default="5m")).strip() or "5m",
+        provider=str(cfg.get("intraday", "provider", default=SUPPORTED_PROVIDER)).strip().lower() or SUPPORTED_PROVIDER,
+        session=str(cfg.get("intraday", "session", default=SUPPORTED_SESSION)).strip().lower() or SUPPORTED_SESSION,
+        exchange_timezone=str(cfg.get("intraday", "exchange_timezone", default=DEFAULT_EXCHANGE_TIMEZONE)).strip()
+        or DEFAULT_EXCHANGE_TIMEZONE,
+        default_universe=str(cfg.get("intraday", "default_universe", default="intraday_pilot")).strip() or "intraday_pilot",
+        retention_days=int(cfg.get("intraday", "retention_days", default=0)),
+        chunk_size=int(cfg.get("intraday", "chunk_size", default=20)),
+        sleep_seconds=float(cfg.get("intraday", "sleep_seconds", default=1.0)),
+        max_retries=int(cfg.get("intraday", "max_retries", default=5)),
+        backoff_max_seconds=float(cfg.get("intraday", "backoff_max_seconds", default=120.0)),
+        threads=bool(cfg.get("intraday", "threads", default=False)),
+        warning_state_path=update_warning_state_path(cfg),
+        log_repeat_cooldown_hours=float(cfg.get("intraday", "log_repeat_cooldown_hours", default=24.0)),
+    )
+
+
 def _load_active_symbols_from_cfg(cfg: ConfigLike, symbols_override: list[str] | None = None) -> list[str]:
     universe_csv = universe_csv_path(cfg)
     universe_dir = universe_dir_path(cfg)
@@ -166,6 +215,48 @@ def _load_active_symbols_from_cfg(cfg: ConfigLike, symbols_override: list[str] |
             if not selected:
                 raise SystemExit("No requested symbols found in active universe.")
             symbols = selected
+    return symbols
+
+
+def _load_intraday_research_symbols_from_cfg(
+    cfg: ConfigLike,
+    intraday_cfg: _IntradayResearchConfig,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+) -> list[str]:
+    universe_name = str(universe or intraday_cfg.default_universe).strip()
+    overrides_path = ticker_overrides_path(cfg)
+    if universe_name:
+        universe_path = universe_dir_path(cfg) / f"{universe_name}.csv"
+        if not universe_path.exists():
+            raise FileNotFoundError(
+                f"Intraday pilot universe not found: {universe_path}. "
+                "Create a CSV under paths.universe_dir or pass --symbols."
+            )
+        frame = load_universe_frame(universe_path, ticker_overrides_path=overrides_path)
+    else:
+        frame = load_universe_frame(
+            universe_csv_path(cfg),
+            universe_dir=universe_dir_path(cfg),
+            ticker_overrides_path=overrides_path,
+        )
+    if "source" in frame.columns:
+        frame = frame.filter(pl.col("source").fill_null("").str.to_lowercase() != "exchange")
+    if "instrument_type" in frame.columns:
+        frame = frame.filter(pl.col("instrument_type").cast(pl.String, strict=False).str.to_lowercase().is_in(["stock", "etf"]))
+    symbols = frame.get_column("symbol").to_list()
+    if symbols_override:
+        requested = [canonicalize_symbol(str(symbol), overrides=load_ticker_overrides(overrides_path)) for symbol in symbols_override]
+        selected = [symbol for symbol in symbols if symbol in set(requested)]
+        missing = [symbol for symbol in requested if symbol and symbol not in set(symbols)]
+        if missing:
+            print("[WARN] intraday symbols not present in selected universe and will be skipped: " + ",".join(missing))
+        if not selected:
+            raise SystemExit("No requested symbols found in selected intraday universe.")
+        symbols = selected
+    if not symbols:
+        raise SystemExit("No symbols resolved for the intraday research workflow.")
     return symbols
 
 
@@ -371,6 +462,69 @@ def update_from_config(cfg: ConfigLike, symbols_override: list[str] | None = Non
         intraday_res = _run_yfinance_update(update_cfg, symbols)
     print("Done.")
     return {"symbols": symbols, "parquet_root": str(update_cfg.parquet_root), "intraday": intraday_res}
+
+
+def intraday_research_update_from_config(
+    cfg: ConfigLike,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+    full_window: bool = False,
+):
+    intraday_cfg = _read_intraday_research_config(cfg)
+    if not intraday_cfg.enabled:
+        raise SystemExit("Intraday research workflow is disabled in config.")
+    symbols = _load_intraday_research_symbols_from_cfg(cfg, intraday_cfg, universe=universe, symbols_override=symbols_override)
+    return update_intraday_research_store(
+        symbols,
+        research_root=intraday_cfg.root,
+        interval=intraday_cfg.interval,
+        provider=intraday_cfg.provider,
+        session=intraday_cfg.session,
+        exchange_timezone=intraday_cfg.exchange_timezone,
+        universe_name=str(universe or intraday_cfg.default_universe or ""),
+        retention_days=intraday_cfg.retention_days,
+        full_window=full_window,
+        chunk_size=intraday_cfg.chunk_size,
+        sleep_seconds=intraday_cfg.sleep_seconds,
+        max_retries=intraday_cfg.max_retries,
+        backoff_max_seconds=intraday_cfg.backoff_max_seconds,
+        threads=intraday_cfg.threads,
+        log_repeat_cooldown_hours=intraday_cfg.log_repeat_cooldown_hours,
+        log_path=update_log_path(cfg),
+        warning_state_path=intraday_cfg.warning_state_path,
+    )
+
+
+def intraday_research_validate_from_config(
+    cfg: ConfigLike,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+):
+    intraday_cfg = _read_intraday_research_config(cfg)
+    symbols = _load_intraday_research_symbols_from_cfg(cfg, intraday_cfg, universe=universe, symbols_override=symbols_override)
+    return validate_intraday_research_store(
+        symbols,
+        research_root=intraday_cfg.root,
+        interval=intraday_cfg.interval,
+        universe_name=str(universe or intraday_cfg.default_universe or ""),
+    )
+
+
+def intraday_research_inspect_from_config(
+    cfg: ConfigLike,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+):
+    intraday_cfg = _read_intraday_research_config(cfg)
+    symbols = _load_intraday_research_symbols_from_cfg(cfg, intraday_cfg, universe=universe, symbols_override=symbols_override)
+    return inspect_intraday_research_store(
+        symbols,
+        research_root=intraday_cfg.root,
+        interval=intraday_cfg.interval,
+    )
 
 
 def _run_stooq_update(update_cfg: _UpdateConfig, symbols: list[str]) -> ExtendedHoursResult | None:

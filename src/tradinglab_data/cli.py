@@ -23,7 +23,14 @@ from .crypto.workflows import (
 from .schema import render_schema_json, render_schema_markdown
 from .store_report import generate_parquet_store_report
 from .universe_build import build_universe
-from .workflows import backfill_extended_hours_from_config, monitor_extended_hours_from_config, update_from_config
+from .workflows import (
+    backfill_extended_hours_from_config,
+    intraday_research_inspect_from_config,
+    intraday_research_update_from_config,
+    intraday_research_validate_from_config,
+    monitor_extended_hours_from_config,
+    update_from_config,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -42,6 +49,25 @@ def main(argv: list[str] | None = None) -> int:
     p_backfill_intraday = sub.add_parser("backfill-extended-hours", help="Backfill extended-hours intraday parquet for one interval using the provider's full allowed window")
     p_backfill_intraday.add_argument("--interval", required=True, choices=["5m", "1m"])
     p_backfill_intraday.add_argument("--symbols", nargs="*", default=None, help="Optional symbol subset")
+
+    p_intraday = sub.add_parser("intraday", help="General intraday research-store workflows")
+    intraday_sub = p_intraday.add_subparsers(dest="intraday_cmd", required=True)
+
+    p_intraday_backfill = intraday_sub.add_parser("backfill", help="Backfill the intraday research store using the provider's full allowed window")
+    p_intraday_backfill.add_argument("--universe", default="")
+    p_intraday_backfill.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_update = intraday_sub.add_parser("update", help="Incrementally refresh the intraday research store")
+    p_intraday_update.add_argument("--universe", default="")
+    p_intraday_update.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_validate = intraday_sub.add_parser("validate", help="Validate the local intraday research parquet files")
+    p_intraday_validate.add_argument("--universe", default="")
+    p_intraday_validate.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_inspect = intraday_sub.add_parser("inspect", help="Inspect local intraday research parquet coverage")
+    p_intraday_inspect.add_argument("--universe", default="")
+    p_intraday_inspect.add_argument("--symbols", nargs="*", default=None)
 
     p_build = sub.add_parser("build-universe", help="Build a merged universe CSV from index sources/overrides")
     p_build.add_argument("--indices", nargs="+", required=True, help="Indices to include, e.g. sp500 djia dax mdax atx")
@@ -131,6 +157,40 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     cfg = Config.load(args.config)
+
+    if args.cmd == "intraday":
+        universe = str(getattr(args, "universe", "") or "").strip() or None
+        symbols = getattr(args, "symbols", None)
+        if args.intraday_cmd == "backfill":
+            result = intraday_research_update_from_config(cfg, universe=universe, symbols_override=symbols, full_window=True)
+            print(
+                f"[INTRADAY_BACKFILL] interval={result['interval']} files_written={result['files_written']} "
+                f"symbols={len(result['symbols'])} root={result['root']} universe={result['universe']}"
+            )
+            return 0
+        if args.intraday_cmd == "update":
+            result = intraday_research_update_from_config(cfg, universe=universe, symbols_override=symbols, full_window=False)
+            print(
+                f"[INTRADAY_UPDATE] interval={result['interval']} files_written={result['files_written']} "
+                f"symbols={len(result['symbols'])} root={result['root']} universe={result['universe']}"
+            )
+            return 0
+        if args.intraday_cmd == "validate":
+            result = intraday_research_validate_from_config(cfg, universe=universe, symbols_override=symbols)
+            if not result["ok"]:
+                raise SystemExit("\n".join(result["errors"] or ["intraday research validation failed"]))
+            print(
+                f"[INTRADAY_VALIDATE] interval={result['interval']} files_checked={result['files_checked']} "
+                f"root={result['root']} universe={result['universe']}"
+            )
+            return 0
+        if args.intraday_cmd == "inspect":
+            for item in intraday_research_inspect_from_config(cfg, universe=universe, symbols_override=symbols):
+                print(
+                    f"{item['symbol']} exists={item['exists']} rows={item['rows']} valid={item['valid']} "
+                    f"start={item['start'] or '-'} end={item['end'] or '-'} path={item['path']}"
+                )
+            return 0
 
     if args.cmd == "build-universe":
         build_universe(

@@ -1,9 +1,9 @@
 # Intraday 5m Contract
 
-Status: design target for future general intraday research support.
+Status: first usable pilot implementation now exists for `5m` regular-session research storage.
 
-This document does not describe a fully implemented workflow yet.
-It defines the preferred data contract for adding a reusable `5m` intraday store to `tradinglab-data` without conflating it with the existing extended-hours monitoring cache.
+This document still defines the preferred long-term contract for a reusable `5m` intraday store in `tradinglab-data` without conflating it with the existing extended-hours monitoring cache.
+The current implementation intentionally covers only the first narrow slice: separate research root, `5m`, regular session, Yahoo-backed pilot universe flow, parquet persistence, UTC/session-date normalization, validation, and inspection commands.
 
 ## Purpose
 

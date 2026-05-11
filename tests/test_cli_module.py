@@ -165,3 +165,41 @@ def test_cli_backfill_extended_hours_dispatch(monkeypatch, tmp_path: Path, capsy
 
     assert rc == 0
     assert "[BACKFILL_EXTENDED_HOURS] interval=5m written=3 symbols=5 root=/tmp/intraday/5m" in out
+
+
+def test_cli_intraday_update_dispatch(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  universe_csv: {tmp_path / 'meta' / 'merged.csv'}",
+                f"  parquet_root: {tmp_path / 'daily'}",
+                f"  runs_root: {tmp_path / 'runs'}",
+                "intraday:",
+                f"  research_root: {tmp_path / 'intraday_research'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli,
+        "intraday_research_update_from_config",
+        lambda cfg, universe=None, symbols_override=None, full_window=False: {
+            "interval": "5m",
+            "universe": universe or "intraday_pilot",
+            "root": "/tmp/intraday_research/5m",
+            "symbols": ["SPY", "QQQ"],
+            "files_written": 2,
+            "rows_written": 100,
+            "unchanged_symbols": [],
+            "skipped_symbols": [],
+        },
+    )
+
+    rc = cli.main(["--config", str(config_path), "intraday", "update", "--universe", "intraday_pilot"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "[INTRADAY_UPDATE] interval=5m files_written=2 symbols=2 root=/tmp/intraday_research/5m universe=intraday_pilot" in out

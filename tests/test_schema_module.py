@@ -11,6 +11,7 @@ from tradinglab_data.schema import (
     validate_alerts_frame,
     validate_crypto_frame,
     validate_daily_frame,
+    validate_intraday_research_frame,
     validate_moves_frame,
 )
 
@@ -19,6 +20,7 @@ def test_schema_manifest_has_daily_and_intraday():
     manifest = schema_manifest()
     assert "daily" in manifest
     assert "intraday" in manifest
+    assert "intraday_research" in manifest
     assert "crypto" in manifest
     assert "date" in manifest["daily"]
     assert "timestamp" in manifest["crypto"]
@@ -103,6 +105,56 @@ def test_validate_daily_frame_rejects_wrong_dtype():
     )
     with pytest.raises(ValueError, match="dtype="):
         validate_daily_frame(df)
+
+
+def test_validate_intraday_research_frame_accepts_canonical_schema():
+    df = pl.DataFrame(
+        {
+            "timestamp": ["2026-03-27T13:30:00"],
+            "open": [1.0],
+            "high": [1.1],
+            "low": [0.9],
+            "close": [1.0],
+            "volume": [100.0],
+            "currency": ["USD"],
+            "symbol": ["SPY"],
+            "interval": ["5m"],
+            "provider": ["yahoo"],
+            "session": ["regular"],
+            "session_date": ["2026-03-27"],
+            "is_regular_session": [True],
+            "ingested_at": ["2026-03-27T20:01:00"],
+        },
+    ).with_columns(
+        pl.col("timestamp").str.strptime(pl.Datetime, strict=False),
+        pl.col("session_date").str.strptime(pl.Date, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    )
+    validate_intraday_research_frame(df)
+
+
+def test_validate_intraday_research_frame_rejects_bad_metadata():
+    df = pl.DataFrame(
+        {
+            "timestamp": [None, None],
+            "open": [1.0, 1.1],
+            "high": [1.2, 1.3],
+            "low": [0.9, 1.0],
+            "close": [1.1, 1.2],
+            "volume": [100.0, 110.0],
+            "currency": ["USD", "USD"],
+            "symbol": ["SPY", "QQQ"],
+            "interval": ["5m", "5m"],
+            "provider": ["yahoo", "yahoo"],
+            "session": ["regular", "pre"],
+            "session_date": [None, None],
+            "is_regular_session": [True, False],
+            "ingested_at": [None, None],
+        },
+        schema_overrides={"timestamp": pl.Datetime, "session_date": pl.Date, "ingested_at": pl.Datetime},
+    )
+    with pytest.raises(ValueError, match="Intraday research frame does not match contract"):
+        validate_intraday_research_frame(df)
 
 
 def test_validate_alerts_frame_rejects_wrong_dtype():

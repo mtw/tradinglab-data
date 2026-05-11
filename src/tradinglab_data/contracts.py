@@ -138,6 +138,27 @@ class UpdateResult(TypedDict):
     intraday: ExtendedHoursResult | None
 
 
+class IntradayResearchSyncResult(TypedDict):
+    interval: str
+    universe: str
+    root: str
+    symbols: list[str]
+    files_written: int
+    rows_written: int
+    unchanged_symbols: list[str]
+    skipped_symbols: list[str]
+
+
+class IntradayResearchValidateResult(TypedDict):
+    ok: bool
+    interval: str
+    universe: str
+    root: str
+    files_checked: int
+    dirty_files: list[str]
+    errors: list[str]
+
+
 class CryptoRegistryEntry(TypedDict):
     symbol_canonical: str
     source_symbol: str
