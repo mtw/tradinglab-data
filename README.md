@@ -131,7 +131,8 @@ Provider caveat:
 - daily parquet
   - `<paths.parquet_root>/<SYMBOL>.parquet`
 - intraday parquet
-  - `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
+  - current extended-hours cache: `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
+  - planned general `5m` research contract: see `docs/INTRADAY_5M_CONTRACT.md`
 - crypto parquet
   - `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
 - crypto metadata registry

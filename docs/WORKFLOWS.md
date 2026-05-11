@@ -99,6 +99,26 @@ Supported crypto intervals for this workflow:
 - `1h`
 - `15m`
 
+## Planned General Intraday 5m Research Workflow
+
+This workflow is not fully implemented yet.
+The target contract is documented in [INTRADAY_5M_CONTRACT.md](INTRADAY_5M_CONTRACT.md).
+
+Intended behavior:
+
+1. ingest regular-session `5m` bars for a curated pilot universe
+2. persist them under a dedicated research intraday root rather than the extended-hours monitoring cache
+3. normalize timestamps to UTC while preserving exchange-local `session_date` semantics
+4. validate continuity, duplicates, OHLC quality, and stale coverage
+5. expose a stable parquet contract for downstream `tradinglab` intraday research
+
+Recommended first implementation scope:
+
+- regular session only
+- interval `5m` only
+- US stocks and ETFs
+- pilot universe before full-universe rollout
+
 ## Extended-Hours Monitoring Workflow
 
 Primary command:

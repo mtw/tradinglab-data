@@ -22,6 +22,10 @@ Machine-readable sources:
 
 ## Intraday
 
+This section describes the current implemented intraday parquet store used by the extended-hours workflow.
+For the planned general-purpose `5m` research store, see [INTRADAY_5M_CONTRACT.md](INTRADAY_5M_CONTRACT.md).
+
+
 | Column | Type |
 |---|---|
 | `date` | `Datetime` |
