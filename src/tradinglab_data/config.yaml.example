@@ -62,6 +62,21 @@ intraday:
   threads: false
   log_repeat_cooldown_hours: 24.0
 
+intraday_live:
+  enabled: true
+  live_root: "/absolute/path/to/market-data-store/parquet/intraday_live"
+  interval: "5m"
+  provider: "yahoo"
+  exchange_timezone: "America/New_York"
+  default_universe: "intraday_live_core"
+  retention_days: 0
+  chunk_size: 20
+  sleep_seconds: 1.0
+  max_retries: 5
+  backoff_max_seconds: 120.0
+  threads: false
+  log_repeat_cooldown_hours: 24.0
+
 crypto:
   provider: "binance"
   exchange: "binance"

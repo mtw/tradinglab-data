@@ -25,9 +25,13 @@ from .store_report import generate_parquet_store_report
 from .universe_build import build_universe
 from .workflows import (
     backfill_extended_hours_from_config,
+    intraday_live_inspect_from_config,
+    intraday_live_update_from_config,
+    intraday_live_validate_from_config,
     intraday_research_inspect_from_config,
     intraday_research_update_from_config,
     intraday_research_validate_from_config,
+    intraday_sync_from_config,
     monitor_extended_hours_from_config,
     update_from_config,
 )
@@ -68,6 +72,36 @@ def main(argv: list[str] | None = None) -> int:
     p_intraday_inspect = intraday_sub.add_parser("inspect", help="Inspect local intraday research parquet coverage")
     p_intraday_inspect.add_argument("--universe", default="")
     p_intraday_inspect.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_live = sub.add_parser("intraday-live", help="Session-aware live intraday store workflows")
+    intraday_live_sub = p_intraday_live.add_subparsers(dest="intraday_live_cmd", required=True)
+
+    p_intraday_live_backfill = intraday_live_sub.add_parser("backfill", help="Backfill the live intraday store using the provider's full allowed window")
+    p_intraday_live_backfill.add_argument("--universe", default="")
+    p_intraday_live_backfill.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_live_update = intraday_live_sub.add_parser("update", help="Incrementally refresh the live intraday store")
+    p_intraday_live_update.add_argument("--universe", default="")
+    p_intraday_live_update.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_live_validate = intraday_live_sub.add_parser("validate", help="Validate the local live intraday parquet files")
+    p_intraday_live_validate.add_argument("--universe", default="")
+    p_intraday_live_validate.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_live_inspect = intraday_live_sub.add_parser("inspect", help="Inspect local live intraday parquet coverage")
+    p_intraday_live_inspect.add_argument("--universe", default="")
+    p_intraday_live_inspect.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_sync = sub.add_parser("intraday-sync", help="Fetch once and write both the session-aware live store and regular-session research store")
+    intraday_sync_sub = p_intraday_sync.add_subparsers(dest="intraday_sync_cmd", required=True)
+
+    p_intraday_sync_backfill = intraday_sync_sub.add_parser("backfill", help="Backfill live and research stores using the provider's full allowed window")
+    p_intraday_sync_backfill.add_argument("--universe", default="")
+    p_intraday_sync_backfill.add_argument("--symbols", nargs="*", default=None)
+
+    p_intraday_sync_update = intraday_sync_sub.add_parser("update", help="Incrementally refresh live and research stores from one shared fetch")
+    p_intraday_sync_update.add_argument("--universe", default="")
+    p_intraday_sync_update.add_argument("--symbols", nargs="*", default=None)
 
     p_build = sub.add_parser("build-universe", help="Build a merged universe CSV from index sources/overrides")
     p_build.add_argument("--indices", nargs="+", required=True, help="Indices to include, e.g. sp500 djia dax mdax atx")
@@ -190,6 +224,66 @@ def main(argv: list[str] | None = None) -> int:
                     f"{item['symbol']} exists={item['exists']} rows={item['rows']} valid={item['valid']} "
                     f"start={item['start'] or '-'} end={item['end'] or '-'} path={item['path']}"
                 )
+            return 0
+
+    if args.cmd == "intraday-live":
+        universe = str(getattr(args, "universe", "") or "").strip() or None
+        symbols = getattr(args, "symbols", None)
+        if args.intraday_live_cmd == "backfill":
+            result = intraday_live_update_from_config(cfg, universe=universe, symbols_override=symbols, full_window=True)
+            print(
+                f"[INTRADAY_LIVE_BACKFILL] interval={result['interval']} files_written={result['files_written']} "
+                f"symbols={len(result['symbols'])} root={result['root']} universe={result['universe']}"
+            )
+            return 0
+        if args.intraday_live_cmd == "update":
+            result = intraday_live_update_from_config(cfg, universe=universe, symbols_override=symbols, full_window=False)
+            print(
+                f"[INTRADAY_LIVE_UPDATE] interval={result['interval']} files_written={result['files_written']} "
+                f"symbols={len(result['symbols'])} root={result['root']} universe={result['universe']}"
+            )
+            return 0
+        if args.intraday_live_cmd == "validate":
+            result = intraday_live_validate_from_config(cfg, universe=universe, symbols_override=symbols)
+            if not result["ok"]:
+                raise SystemExit("\n".join(result["errors"] or ["intraday live validation failed"]))
+            print(
+                f"[INTRADAY_LIVE_VALIDATE] interval={result['interval']} files_checked={result['files_checked']} "
+                f"root={result['root']} universe={result['universe']}"
+            )
+            return 0
+        if args.intraday_live_cmd == "inspect":
+            for item in intraday_live_inspect_from_config(cfg, universe=universe, symbols_override=symbols):
+                print(
+                    f"{item['symbol']} exists={item['exists']} rows={item['rows']} valid={item['valid']} "
+                    f"start={item['start'] or '-'} end={item['end'] or '-'} path={item['path']}"
+                )
+            return 0
+
+    if args.cmd == "intraday-sync":
+        universe = str(getattr(args, "universe", "") or "").strip() or None
+        symbols = getattr(args, "symbols", None)
+        if args.intraday_sync_cmd == "backfill":
+            result = intraday_sync_from_config(cfg, universe=universe, symbols_override=symbols, full_window=True)
+            print(
+                f"[INTRADAY_SYNC_BACKFILL] interval={result['interval']} "
+                f"live_files_written={result['live']['files_written']} "
+                f"research_files_written={result['research']['files_written']} "
+                f"symbols={len(result['symbols'])} fetched_symbols={result['fetched_symbols']} "
+                f"live_root={result['live']['root']} research_root={result['research']['root']} "
+                f"universe={result['universe']}"
+            )
+            return 0
+        if args.intraday_sync_cmd == "update":
+            result = intraday_sync_from_config(cfg, universe=universe, symbols_override=symbols, full_window=False)
+            print(
+                f"[INTRADAY_SYNC_UPDATE] interval={result['interval']} "
+                f"live_files_written={result['live']['files_written']} "
+                f"research_files_written={result['research']['files_written']} "
+                f"symbols={len(result['symbols'])} fetched_symbols={result['fetched_symbols']} "
+                f"live_root={result['live']['root']} research_root={result['research']['root']} "
+                f"universe={result['universe']}"
+            )
             return 0
 
     if args.cmd == "build-universe":
@@ -351,3 +445,7 @@ def main(argv: list[str] | None = None) -> int:
             print(frame.write_csv())
         return 0
     return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

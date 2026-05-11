@@ -159,6 +159,36 @@ class IntradayResearchValidateResult(TypedDict):
     errors: list[str]
 
 
+class IntradayLiveSyncResult(TypedDict):
+    interval: str
+    universe: str
+    root: str
+    symbols: list[str]
+    files_written: int
+    rows_written: int
+    unchanged_symbols: list[str]
+    skipped_symbols: list[str]
+
+
+class IntradayLiveValidateResult(TypedDict):
+    ok: bool
+    interval: str
+    universe: str
+    root: str
+    files_checked: int
+    dirty_files: list[str]
+    errors: list[str]
+
+
+class IntradayDualSyncResult(TypedDict):
+    interval: str
+    universe: str
+    symbols: list[str]
+    fetched_symbols: int
+    live: IntradayLiveSyncResult
+    research: IntradayResearchSyncResult
+
+
 class CryptoRegistryEntry(TypedDict):
     symbol_canonical: str
     source_symbol: str

@@ -16,6 +16,8 @@ def test_top_level_exports_include_public_helpers():
     assert pkg.generate_parquet_store_report is not None
     assert pkg.generate_universe_consistency_report is not None
     assert pkg.backfill_extended_hours_from_config is not None
+    assert pkg.intraday_live_update_from_config is not None
+    assert pkg.intraday_sync_from_config is not None
     assert pkg.intraday_research_update_from_config is not None
     assert pkg.crypto_backfill_from_config is not None
     assert pkg.crypto_show_universe_from_config is not None
@@ -30,6 +32,7 @@ def test_top_level_exports_include_public_helpers():
     assert pkg.render_universe_consistency_markdown is not None
     assert pkg.validate_daily_frame is not None
     assert pkg.validate_crypto_frame is not None
+    assert pkg.validate_intraday_live_frame is not None
     assert pkg.validate_intraday_research_frame is not None
     assert pkg.ARTIFACT_SCHEMA_VERSION == "v0.2.0"
 

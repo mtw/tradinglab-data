@@ -63,11 +63,30 @@ INTRADAY_RESEARCH_SCHEMA: dict[str, SchemaDtype] = {
     "ingested_at": pl.Datetime,
 }
 
+INTRADAY_LIVE_SCHEMA: dict[str, SchemaDtype] = {
+    "timestamp": pl.Datetime,
+    "open": pl.Float64,
+    "high": pl.Float64,
+    "low": pl.Float64,
+    "close": pl.Float64,
+    "volume": pl.Float64,
+    "currency": pl.String,
+    "symbol": pl.String,
+    "interval": pl.String,
+    "provider": pl.String,
+    "session": pl.String,
+    "session_date": pl.Date,
+    "is_regular_session": pl.Boolean,
+    "is_closed_bar": pl.Boolean,
+    "ingested_at": pl.Datetime,
+}
+
 
 OHLC_PARQUET_SCHEMA: dict[str, SchemaDtype] = OHLC_SCHEMA
 DAILY_PARQUET_SCHEMA: dict[str, SchemaDtype] = OHLC_SCHEMA
 INTRADAY_PARQUET_SCHEMA: dict[str, SchemaDtype] = OHLC_SCHEMA
 INTRADAY_RESEARCH_PARQUET_SCHEMA: dict[str, SchemaDtype] = INTRADAY_RESEARCH_SCHEMA
+INTRADAY_LIVE_PARQUET_SCHEMA: dict[str, SchemaDtype] = INTRADAY_LIVE_SCHEMA
 CRYPTO_PARQUET_SCHEMA: dict[str, SchemaDtype] = CRYPTO_OHLC_SCHEMA
 MOVE_ALERT_FRAME_SCHEMA: dict[str, SchemaDtype] = {
     "symbol": pl.String,
@@ -85,11 +104,14 @@ SCHEMA_NOTES = {
     "partitioning": "One parquet file per symbol. Daily store: <paths.parquet_root>/<SYMBOL>.parquet. Intraday store: <extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet.",
     "crypto_partitioning": "Crypto store: <paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet.",
     "intraday_research_partitioning": "Intraday research store: <intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet.",
+    "intraday_live_partitioning": "Intraday live store: <intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet.",
     "semantics": "OHLC columns are raw vendor OHLC. adj_close is adjusted close when supplied by the upstream provider. currency is the listing currency when known.",
     "intraday_research_semantics": "Intraday research parquet persists regular-session raw OHLCV bars with explicit UTC timestamp, session_date, provider, and symbol metadata.",
+    "intraday_live_semantics": "Intraday live parquet persists session-aware raw OHLCV bars for pre, regular, and post sessions with explicit closed-bar and session metadata.",
     "crypto_semantics": "Crypto parquet persists closed exchange-native OHLCV bars with explicit exchange, market type, interval, and canonical symbol metadata.",
     "timestamps": "date is stored as Polars Datetime. Daily bars represent session dates. Intraday bars should be normalized to UTC internally and written without mixed timezone types.",
     "intraday_research_timestamps": "Intraday research timestamp and ingested_at are stored as UTC-normalized datetimes; session_date is the exchange-local trading date.",
+    "intraday_live_timestamps": "Intraday live timestamp and ingested_at are stored as UTC-normalized datetimes; session_date is the exchange-local trading date.",
     "crypto_timestamps": "Crypto timestamp columns are UTC-normalized bar-open timestamps; ingested_at records the last local write time in UTC.",
     "constraints": [
         "Rows must be sorted by date ascending.",
@@ -108,6 +130,12 @@ SCHEMA_NOTES = {
         "timestamp values must be unique within a file.",
         "session must be regular and is_regular_session must be true in the first implementation.",
         "interval, provider, and symbol metadata must be populated on every row and remain file-consistent.",
+    ],
+    "intraday_live_constraints": [
+        "Rows must be sorted by timestamp ascending.",
+        "timestamp values must be unique within a file.",
+        "session must be one of pre, regular, post, or unknown.",
+        "interval, provider, symbol, and is_closed_bar metadata must be populated on every row and remain file-consistent.",
     ],
 }
 
@@ -142,6 +170,12 @@ def compatibility_manifest() -> CompatibilityManifest:
                 "category": "parquet",
                 "path_pattern": "<intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet",
                 "schema_name": "intraday_research_ohlcv",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "intraday_live_parquet": {
+                "category": "parquet",
+                "path_pattern": "<intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet",
+                "schema_name": "intraday_live_ohlcv",
                 "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
             },
             "crypto_parquet": {
@@ -184,6 +218,7 @@ def schema_manifest() -> dict[str, object]:
         "daily": {k: str(v) for k, v in DAILY_PARQUET_SCHEMA.items()},
         "intraday": {k: str(v) for k, v in INTRADAY_PARQUET_SCHEMA.items()},
         "intraday_research": {k: str(v) for k, v in INTRADAY_RESEARCH_PARQUET_SCHEMA.items()},
+        "intraday_live": {k: str(v) for k, v in INTRADAY_LIVE_PARQUET_SCHEMA.items()},
         "crypto": {k: str(v) for k, v in CRYPTO_PARQUET_SCHEMA.items()},
         "notes": SCHEMA_NOTES,
     }
@@ -207,20 +242,27 @@ def render_schema_markdown() -> str:
         + "\n"
         + _table("Intraday Research", INTRADAY_RESEARCH_PARQUET_SCHEMA)
         + "\n"
+        + _table("Intraday Live", INTRADAY_LIVE_PARQUET_SCHEMA)
+        + "\n"
         + _table("Crypto", CRYPTO_PARQUET_SCHEMA)
         + "\n## Notes\n\n"
         + f"- {SCHEMA_NOTES['partitioning']}\n"
         + f"- {SCHEMA_NOTES['intraday_research_partitioning']}\n"
+        + f"- {SCHEMA_NOTES['intraday_live_partitioning']}\n"
         + f"- {SCHEMA_NOTES['crypto_partitioning']}\n"
         + f"- {SCHEMA_NOTES['semantics']}\n"
         + f"- {SCHEMA_NOTES['intraday_research_semantics']}\n"
+        + f"- {SCHEMA_NOTES['intraday_live_semantics']}\n"
         + f"- {SCHEMA_NOTES['crypto_semantics']}\n"
         + f"- {SCHEMA_NOTES['timestamps']}\n"
         + f"- {SCHEMA_NOTES['intraday_research_timestamps']}\n"
+        + f"- {SCHEMA_NOTES['intraday_live_timestamps']}\n"
         + f"- {SCHEMA_NOTES['crypto_timestamps']}\n"
         + notes
         + "\n"
         + "\n".join(f"- {item}" for item in SCHEMA_NOTES["intraday_research_constraints"])
+        + "\n"
+        + "\n".join(f"- {item}" for item in SCHEMA_NOTES["intraday_live_constraints"])
         + "\n"
         + "\n".join(f"- {item}" for item in SCHEMA_NOTES["crypto_constraints"])
         + "\n"
@@ -327,6 +369,55 @@ def validate_intraday_research_frame(df: pl.DataFrame, *, allow_extra_columns: b
         problems.append(f"invalid_metadata_rows={off_session}")
     if problems:
         raise ValueError("Intraday research frame does not match contract: " + "; ".join(problems))
+
+
+def validate_intraday_live_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
+    validate_frame_schema(df, INTRADAY_LIVE_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+    if df.is_empty():
+        return
+    problems: list[str] = []
+    if not bool(df.get_column("timestamp").is_sorted()):
+        problems.append("timestamps_not_sorted")
+    duplicate_timestamps = int(df.height - df.select(pl.col("timestamp").n_unique()).item())
+    if duplicate_timestamps > 0:
+        problems.append(f"duplicate_timestamps={duplicate_timestamps}")
+    invalid_rows = int(
+        df.select(
+            (
+                pl.col("timestamp").is_null()
+                | pl.col("session_date").is_null()
+                | pl.col("open").is_null()
+                | pl.col("high").is_null()
+                | pl.col("low").is_null()
+                | pl.col("close").is_null()
+                | (pl.col("open") <= 0)
+                | (pl.col("high") <= 0)
+                | (pl.col("low") <= 0)
+                | (pl.col("close") <= 0)
+                | (pl.col("high") < pl.col("low"))
+                | (pl.col("high") < pl.col("open"))
+                | (pl.col("high") < pl.col("close"))
+                | (pl.col("low") > pl.col("open"))
+                | (pl.col("low") > pl.col("close"))
+                | (~pl.col("session").is_in(["pre", "regular", "post", "unknown"]))
+                | (pl.col("provider") == "")
+                | (pl.col("symbol") == "")
+                | (pl.col("interval") == "")
+            ).sum()
+        ).item()
+    )
+    if invalid_rows > 0:
+        problems.append(f"invalid_rows={invalid_rows}")
+    metadata_columns = ["symbol", "interval", "provider", "currency"]
+    inconsistent = []
+    for column in metadata_columns:
+        unique_count = int(df.select(pl.col(column).drop_nulls().n_unique()).item())
+        if unique_count > 1:
+            inconsistent.append(column)
+    if inconsistent:
+        problems.append("metadata_inconsistent=" + ",".join(inconsistent))
+    if problems:
+        raise ValueError("Intraday live frame does not match contract: " + "; ".join(problems))
 
 
 def validate_crypto_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:

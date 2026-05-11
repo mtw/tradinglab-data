@@ -204,6 +204,10 @@ def intraday_research_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("intraday", "research_root") or (parquet_root_path(cfg).parent / "intraday_research")
 
 
+def intraday_live_root_path(cfg: ConfigLike) -> Path:
+    return cfg.path("intraday_live", "live_root") or (parquet_root_path(cfg).parent / "intraday_live")
+
+
 def crypto_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "crypto_root") or (parquet_root_path(cfg).parent / "crypto")
 

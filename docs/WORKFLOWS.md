@@ -133,6 +133,40 @@ Current first-iteration scope:
 
 The target contract and longer-term roadmap remain documented in [INTRADAY_5M_CONTRACT.md](INTRADAY_5M_CONTRACT.md).
 
+## Intraday Live Workflow
+
+Primary commands:
+
+```bash
+tradinglab-data --config /path/to/config.yaml intraday-live backfill --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-live update --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-sync backfill --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-sync update --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-live validate --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-live inspect --universe intraday_live_core
+```
+
+Current behavior:
+
+1. resolve a stock/ETF live universe from `paths.universe_dir/<UNIVERSE>.csv`
+2. fetch Yahoo `5m` bars with `prepost=True`
+3. normalize timestamps to UTC and derive exchange-local `session_date` in `America/New_York`
+4. label each bar as `pre`, `regular`, `post`, or `unknown`
+5. persist a separate session-aware live store under `intraday_live.live_root/5m/`
+6. validate ordering, uniqueness, metadata consistency, and OHLC quality before write
+
+Outputs:
+
+- intraday live parquet under `intraday_live.live_root/5m/`
+
+Shared-sync behavior:
+
+1. resolve the live universe once
+2. fetch Yahoo `5m` bars once with `prepost=True`
+3. write the session-aware live store under `intraday_live.live_root/5m/`
+4. derive the regular-session research store from the same fetched frames under `intraday.research_root/5m/`
+5. avoid duplicate provider pulls when both stores should be refreshed together
+
 ## Extended-Hours Monitoring Workflow
 
 Primary command:

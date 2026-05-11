@@ -63,6 +63,7 @@ The dedicated general-purpose `5m` research store is described separately below 
 - Daily parquet path: `<paths.parquet_root>/<SYMBOL>.parquet`
 - Intraday parquet path: `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
 - Intraday research parquet path: `<intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet`
+- Intraday live parquet path: `<intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet`
 - Crypto parquet path: `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
 - One symbol per file
 - Rows sorted ascending by `date`
@@ -76,6 +77,7 @@ The dedicated general-purpose `5m` research store is described separately below 
 - Daily bars represent regular-session daily history
 - Intraday bars may include pre-market and after-hours data when `prepost=True`
 - Intraday research bars are currently regular-session-only `5m` US stock/ETF bars with explicit UTC/session metadata
+- Intraday live bars are session-aware `5m` US stock/ETF bars with explicit `pre`/`regular`/`post` labeling
 - Crypto bars are exchange-native OHLCV bars with explicit exchange, market type, interval, and canonical symbol metadata
 - Canonical crypto parquet persists closed bars only
 
@@ -108,6 +110,36 @@ Current first-iteration constraints:
 - `timestamp` unique within a file
 - `session` must be `regular`
 - `is_regular_session` must be `true`
+- `timestamp` and `ingested_at` are UTC-normalized datetimes
+- `session_date` is the exchange-local `America/New_York` trading date
+
+## Intraday Live
+
+| Column | Type |
+|---|---|
+| `timestamp` | `Datetime` |
+| `open` | `Float64` |
+| `high` | `Float64` |
+| `low` | `Float64` |
+| `close` | `Float64` |
+| `volume` | `Float64` |
+| `currency` | `String` |
+| `symbol` | `String` |
+| `interval` | `String` |
+| `provider` | `String` |
+| `session` | `String` |
+| `session_date` | `Date` |
+| `is_regular_session` | `Boolean` |
+| `is_closed_bar` | `Boolean` |
+| `ingested_at` | `Datetime` |
+
+Current first-iteration constraints:
+
+- Path: `<intraday_live.live_root>/5m/<SYMBOL>.parquet`
+- One symbol per file
+- Rows sorted ascending by `timestamp`
+- `timestamp` unique within a file
+- `session` labeled as `pre`, `regular`, `post`, or `unknown`
 - `timestamp` and `ingested_at` are UTC-normalized datetimes
 - `session_date` is the exchange-local `America/New_York` trading date
 

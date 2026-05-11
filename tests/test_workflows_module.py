@@ -302,6 +302,169 @@ def test_intraday_research_update_from_config_dispatches(dummy_cfg_factory, monk
     ]
 
 
+def test_read_intraday_live_config_defaults(dummy_cfg_factory):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": "/tmp/daily",
+                "universe_csv": "/tmp/meta/universe.csv",
+            },
+            "intraday_live": {"enabled": True},
+        }
+    )
+    intraday_cfg = workflows._read_intraday_live_config(cfg)
+    assert intraday_cfg.root == "/tmp/intraday_live"
+    assert intraday_cfg.default_universe == "intraday_live_core"
+    assert intraday_cfg.interval == "5m"
+
+
+def test_intraday_live_update_from_config_dispatches(dummy_cfg_factory, monkeypatch):
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflows, "_load_intraday_live_symbols_from_cfg", lambda cfg, intraday_cfg, **kwargs: ["SPY", "QQQ"])
+    monkeypatch.setattr(
+        workflows,
+        "update_intraday_live_store",
+        lambda symbols, **kwargs: calls.append({"symbols": symbols, **kwargs})
+        or {
+            "interval": "5m",
+            "universe": "intraday_live_core",
+            "root": "/tmp/intraday_live/5m",
+            "symbols": list(symbols),
+            "files_written": 2,
+            "rows_written": 10,
+            "unchanged_symbols": [],
+            "skipped_symbols": [],
+        },
+    )
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": "/tmp/daily",
+                "runs_root": "/tmp/runs",
+                "update_log_csv": "/tmp/meta/update_log.csv",
+                "universe_csv": "/tmp/meta/universe.csv",
+            },
+            "intraday_live": {
+                "enabled": True,
+                "live_root": "/tmp/intraday_live",
+            },
+        }
+    )
+
+    result = workflows.intraday_live_update_from_config(cfg, universe="intraday_live_core", full_window=True)
+    assert result["files_written"] == 2
+    assert calls == [
+        {
+            "symbols": ["SPY", "QQQ"],
+            "live_root": "/tmp/intraday_live",
+            "interval": "5m",
+            "provider": "yahoo",
+            "exchange_timezone": "America/New_York",
+            "universe_name": "intraday_live_core",
+            "retention_days": 0,
+            "full_window": True,
+            "chunk_size": 20,
+            "sleep_seconds": 1.0,
+            "max_retries": 5,
+            "backoff_max_seconds": 120.0,
+            "threads": False,
+            "log_repeat_cooldown_hours": 24.0,
+            "log_path": Path("/tmp/meta/update_log.csv"),
+            "warning_state_path": Path("/tmp/meta/update_warning_state.json"),
+        }
+    ]
+
+
+def test_intraday_sync_from_config_fetches_once_and_writes_both_stores(dummy_cfg_factory, monkeypatch):
+    fetch_calls: list[dict[str, object]] = []
+    live_calls: list[dict[str, object]] = []
+    research_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(workflows, "_load_intraday_live_symbols_from_cfg", lambda cfg, intraday_cfg, **kwargs: ["SPY", "QQQ"])
+    monkeypatch.setattr(
+        workflows,
+        "fetch_extended_intraday",
+        lambda **kwargs: fetch_calls.append(kwargs)
+        or {
+            "SPY": pl.DataFrame({"date": [], "open": [], "high": [], "low": [], "close": [], "adj_close": [], "volume": []}),
+            "QQQ": pl.DataFrame({"date": [], "open": [], "high": [], "low": [], "close": [], "adj_close": [], "volume": []}),
+        },
+    )
+    monkeypatch.setattr(workflows, "fetch_symbol_currency", lambda symbol: "USD")
+    monkeypatch.setattr(
+        workflows,
+        "update_intraday_live_store",
+        lambda symbols, **kwargs: live_calls.append({"symbols": symbols, **kwargs})
+        or {
+            "interval": "5m",
+            "universe": "intraday_live_core",
+            "root": "/tmp/intraday_live/5m",
+            "symbols": list(symbols),
+            "files_written": 2,
+            "rows_written": 20,
+            "unchanged_symbols": [],
+            "skipped_symbols": [],
+        },
+    )
+    monkeypatch.setattr(
+        workflows,
+        "update_intraday_research_store",
+        lambda symbols, **kwargs: research_calls.append({"symbols": symbols, **kwargs})
+        or {
+            "interval": "5m",
+            "universe": "intraday_live_core",
+            "root": "/tmp/intraday_research/5m",
+            "symbols": list(symbols),
+            "files_written": 2,
+            "rows_written": 10,
+            "unchanged_symbols": [],
+            "skipped_symbols": [],
+        },
+    )
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": "/tmp/daily",
+                "runs_root": "/tmp/runs",
+                "update_log_csv": "/tmp/meta/update_log.csv",
+                "universe_csv": "/tmp/meta/universe.csv",
+            },
+            "intraday": {
+                "enabled": True,
+                "research_root": "/tmp/intraday_research",
+            },
+            "intraday_live": {
+                "enabled": True,
+                "live_root": "/tmp/intraday_live",
+            },
+        }
+    )
+
+    result = workflows.intraday_sync_from_config(cfg, universe="intraday_live_core", full_window=False)
+
+    assert result["fetched_symbols"] == 2
+    assert fetch_calls == [
+        {
+            "symbols": ["SPY", "QQQ"],
+            "interval": "5m",
+            "period": "60d",
+            "prepost": True,
+            "chunk_size": 20,
+            "sleep_seconds": 1.0,
+            "max_retries": 5,
+            "backoff_max_seconds": 120.0,
+            "threads": False,
+            "log_repeat_cooldown_hours": 24.0,
+            "log_path": Path("/tmp/meta/update_log.csv"),
+            "warning_state_path": Path("/tmp/meta/update_warning_state.json"),
+        }
+    ]
+    assert live_calls[0]["universe_name"] == "intraday_live_core"
+    assert research_calls[0]["universe_name"] == "intraday_live_core"
+    assert callable(live_calls[0]["fetch_intraday_fn"])
+    assert callable(research_calls[0]["fetch_intraday_fn"])
+
+
 def test_strict_symbol_update_preserves_existing_older_rows(
     monkeypatch,
     patch_workflow_common_paths,

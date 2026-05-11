@@ -56,6 +56,7 @@ What downstream packages may rely on:
 - daily parquet under `<paths.parquet_root>/<SYMBOL>.parquet`
 - intraday parquet under `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
 - intraday research parquet under `<intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet`
+- intraday live parquet under `<intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet`
 - crypto parquet under `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
 - published parquet schemas in `docs/PARQUET_SCHEMA.md`
 - public CLI entrypoints documented in this file
@@ -118,6 +119,7 @@ Current top-level keys:
 - `daily`
 - `intraday`
 - `intraday_research`
+- `intraday_live`
 - `crypto`
 - `notes`
 
@@ -151,6 +153,7 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 - `data_yf`
 - `extended_hours_monitor`
 - `intraday_research`
+- `intraday_live`
 - `parquet_verify`
 - `schema`
 - `store_report`
@@ -183,16 +186,22 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `validate_crypto_frame`
 - `validate_intraday_frame`
 - `validate_intraday_research_frame`
+- `validate_intraday_live_frame`
 - `validate_moves_frame`
 - `validate_alerts_frame`
 - `update_from_config`
 - `intraday_research_update_from_config`
 - `intraday_research_validate_from_config`
 - `intraday_research_inspect_from_config`
+- `intraday_live_update_from_config`
+- `intraday_live_validate_from_config`
+- `intraday_live_inspect_from_config`
+- `intraday_sync_from_config`
 - `monitor_extended_hours_from_config`
 - `UniverseRow`
 - `UpdateResult`
 - `ExtendedHoursResult`
+- `IntradayDualSyncResult`
 - `MonitorExtendedHoursResult`
 - `VerifyResult`
 - `StoreIntegrityReport`
@@ -303,6 +312,78 @@ Contract:
 - currently supports only `5m`, `regular`, and `yahoo`
 - normalizes UTC `timestamp` and exchange-local `session_date`
 - incrementally refreshes existing files while keeping the research store separate from the extended-hours cache
+
+### `intraday-live backfill`
+
+Usage:
+
+```bash
+tradinglab-data intraday-live backfill [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- writes the session-aware intraday live parquet store under `<intraday_live.live_root>/5m/`
+- uses `prepost=True`
+- uses the provider's full allowed `5m` window for both missing and existing symbols
+
+### `intraday-live update`
+
+Usage:
+
+```bash
+tradinglab-data intraday-live update [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- resolves a stock/ETF live universe from `paths.universe_dir/<NAME>.csv` unless `--symbols` is provided
+- currently supports only `5m` and `yahoo`
+- persists explicit session labeling via `session` and `is_regular_session`
+
+### `intraday-sync backfill`
+
+Usage:
+
+```bash
+tradinglab-data intraday-sync backfill [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- performs one shared Yahoo `5m` fetch with `prepost=True`
+- writes both `<intraday_live.live_root>/5m/` and `<intraday.research_root>/5m/`
+- derives the research store from the same fetched frames rather than issuing a second provider call
+
+### `intraday-sync update`
+
+Usage:
+
+```bash
+tradinglab-data intraday-sync update [--universe NAME] [--symbols SYMBOL ...]
+```
+
+Contract:
+
+- uses the configured live universe resolution path
+- refreshes both live and research stores from one fetched symbol map
+- requires matching `intraday_live` and `intraday` interval/provider/timezone settings
+
+### `intraday-live validate`
+
+Usage:
+
+```bash
+tradinglab-data intraday-live validate [--universe NAME] [--symbols SYMBOL ...]
+```
+
+### `intraday-live inspect`
+
+Usage:
+
+```bash
+tradinglab-data intraday-live inspect [--universe NAME] [--symbols SYMBOL ...]
+```
 
 ### `intraday validate`
 
@@ -535,6 +616,8 @@ Derived path defaults:
   - defaults to sibling directory of daily parquet root: `<parent(paths.parquet_root)>/intraday`
 - `intraday.research_root`
   - defaults to sibling directory of daily parquet root: `<parent(paths.parquet_root)>/intraday_research`
+- `intraday_live.live_root`
+  - defaults to sibling directory of daily parquet root: `<parent(paths.parquet_root)>/intraday_live`
 - `paths.registry_root`
   - defaults to `<paths.runs_root>/runs_registry`
 
@@ -586,6 +669,20 @@ Operational keys currently consumed by workflows:
   - `backoff_max_seconds`
   - `threads`
   - `log_repeat_cooldown_hours`
+- `intraday_live.*`:
+  - `enabled`
+  - `live_root`
+  - `interval`
+  - `provider`
+  - `exchange_timezone`
+  - `default_universe`
+  - `retention_days`
+  - `chunk_size`
+  - `sleep_seconds`
+  - `max_retries`
+  - `backoff_max_seconds`
+  - `threads`
+  - `log_repeat_cooldown_hours`
 - `crypto.*`:
   - `provider`
   - `exchange`
@@ -611,6 +708,8 @@ Current interval support:
 - `extended_hours.preferred_interval`
   - supported values: `5m`, `1m`
 - `intraday.interval`
+  - supported value in the first implementation: `5m`
+- `intraday_live.interval`
   - supported value in the first implementation: `5m`
 
 Intraday retention semantics:
@@ -748,6 +847,32 @@ Current invariants:
 - `is_regular_session` is `true`
 - `timestamp` and `ingested_at` are UTC-normalized datetimes
 - `session_date` is derived in `America/New_York`
+
+### Intraday Live Parquet Store
+
+Primary path:
+
+- `<intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet`
+
+Schema:
+
+| Column | Type |
+|---|---|
+| `timestamp` | `Datetime` |
+| `open` | `Float64` |
+| `high` | `Float64` |
+| `low` | `Float64` |
+| `close` | `Float64` |
+| `volume` | `Float64` |
+| `currency` | `String` |
+| `symbol` | `String` |
+| `interval` | `String` |
+| `provider` | `String` |
+| `session` | `String` |
+| `session_date` | `Date` |
+| `is_regular_session` | `Boolean` |
+| `is_closed_bar` | `Boolean` |
+| `ingested_at` | `Datetime` |
 
 ### Crypto Parquet Store
 
@@ -975,6 +1100,7 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `crypto_root_path(cfg) -> Path`
 - `intraday_root_path(cfg) -> Path`
 - `intraday_research_root_path(cfg) -> Path`
+- `intraday_live_root_path(cfg) -> Path`
 - `runs_root_path(cfg) -> Path`
 - `registry_root_path(cfg) -> Path`
 
@@ -989,6 +1115,7 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `validate_crypto_frame(df, allow_extra_columns=True) -> None`
 - `validate_intraday_frame(df, allow_extra_columns=True) -> None`
 - `validate_intraday_research_frame(df, allow_extra_columns=True) -> None`
+- `validate_intraday_live_frame(df, allow_extra_columns=True) -> None`
 - `validate_moves_frame(df, allow_extra_columns=True) -> None`
 - `validate_alerts_frame(df, allow_extra_columns=True) -> None`
 
@@ -998,6 +1125,13 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `update_intraday_research_store(...) -> IntradayResearchSyncResult`
 - `inspect_intraday_research_store(...) -> list[dict[str, object]]`
 - `validate_intraday_research_store(...) -> IntradayResearchValidateResult`
+
+### `tradinglab_data.intraday_live`
+
+- `normalize_intraday_live_frame(...) -> pl.DataFrame`
+- `update_intraday_live_store(...) -> IntradayLiveSyncResult`
+- `inspect_intraday_live_store(...) -> list[dict[str, object]]`
+- `validate_intraday_live_store(...) -> IntradayLiveValidateResult`
 
 ### `tradinglab_data.crypto`
 
@@ -1083,6 +1217,8 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `ExtendedHoursResult`
 - `IntradayResearchSyncResult`
 - `IntradayResearchValidateResult`
+- `IntradayLiveSyncResult`
+- `IntradayLiveValidateResult`
 - `MonitorExtendedHoursResult`
 - `StoreHistoryEntry`
 - `StoreIntegritySection`
@@ -1121,6 +1257,10 @@ Typed result note:
 - `intraday_research_update_from_config(cfg, universe=None, symbols_override=None, full_window=False) -> IntradayResearchSyncResult`
 - `intraday_research_validate_from_config(cfg, universe=None, symbols_override=None) -> IntradayResearchValidateResult`
 - `intraday_research_inspect_from_config(cfg, universe=None, symbols_override=None) -> list[dict[str, object]]`
+- `intraday_live_update_from_config(cfg, universe=None, symbols_override=None, full_window=False) -> IntradayLiveSyncResult`
+- `intraday_live_validate_from_config(cfg, universe=None, symbols_override=None) -> IntradayLiveValidateResult`
+- `intraday_live_inspect_from_config(cfg, universe=None, symbols_override=None) -> list[dict[str, object]]`
+- `intraday_sync_from_config(cfg, universe=None, symbols_override=None, full_window=False) -> IntradayDualSyncResult`
 
 ## Behavioral Notes That Matter For Compatibility
 

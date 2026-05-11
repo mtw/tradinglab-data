@@ -7,6 +7,12 @@ from pathlib import Path
 import polars as pl
 from tqdm import tqdm
 
+from ._intraday_fetch import (
+    MAX_PERIOD_BY_INTERVAL,
+    UPDATE_PERIOD_BY_INTERVAL,
+    fetch_extended_intraday,
+    period_for_interval,
+)
 from ._ohlc_utils import (
     DAILY_SCHEMA_COLUMNS,
     align_for_concat,
@@ -19,6 +25,7 @@ from ._ohlc_utils import (
 )
 from .config import (
     ConfigLike,
+    intraday_live_root_path,
     intraday_research_root_path,
     intraday_root_path,
     parquet_root_path,
@@ -29,20 +36,38 @@ from .config import (
     update_log_path,
     update_warning_state_path,
 )
-from .contracts import ExtendedHoursResult, MonitorExtendedHoursResult, UpdateResult
+from .contracts import ExtendedHoursResult, IntradayDualSyncResult, MonitorExtendedHoursResult, UpdateResult
 from .data_stooq import StooqDownloadSpec, fetch_stooq_history, infer_currency_from_symbol
-from .data_yf import append_update_log, fetch_symbol_currency, fetch_yfinance_history_bulk, read_parquet_if_exists
+from .data_yf import (
+    append_update_log,
+    fetch_symbol_currency,
+    fetch_yfinance_history_bulk,
+    read_parquet_if_exists,
+)
 from .extended_hours_monitor import (
     backfill_intraday_interval_store,
     persist_extended_hours_report_html,
     summarize_gap_report,
     update_extended_hours_store,
 )
+from .intraday_live import (
+    DEFAULT_EXCHANGE_TIMEZONE as DEFAULT_LIVE_EXCHANGE_TIMEZONE,
+)
+from .intraday_live import (
+    SUPPORTED_PROVIDER as SUPPORTED_LIVE_PROVIDER,
+)
+from .intraday_live import (
+    inspect_intraday_live_store,
+    intraday_live_parquet_path,
+    update_intraday_live_store,
+    validate_intraday_live_store,
+)
 from .intraday_research import (
     DEFAULT_EXCHANGE_TIMEZONE,
     SUPPORTED_PROVIDER,
     SUPPORTED_SESSION,
     inspect_intraday_research_store,
+    intraday_research_parquet_path,
     update_intraday_research_store,
     validate_intraday_research_store,
 )
@@ -99,6 +124,24 @@ class _IntradayResearchConfig:
     interval: str
     provider: str
     session: str
+    exchange_timezone: str
+    default_universe: str
+    retention_days: int
+    chunk_size: int
+    sleep_seconds: float
+    max_retries: int
+    backoff_max_seconds: float
+    threads: bool
+    warning_state_path: Path
+    log_repeat_cooldown_hours: float
+
+
+@dataclass(frozen=True)
+class _IntradayLiveConfig:
+    enabled: bool
+    root: str
+    interval: str
+    provider: str
     exchange_timezone: str
     default_universe: str
     retention_days: int
@@ -186,6 +229,26 @@ def _read_intraday_research_config(cfg: ConfigLike) -> _IntradayResearchConfig:
     )
 
 
+def _read_intraday_live_config(cfg: ConfigLike) -> _IntradayLiveConfig:
+    return _IntradayLiveConfig(
+        enabled=bool(cfg.get("intraday_live", "enabled", default=True)),
+        root=str(intraday_live_root_path(cfg)),
+        interval=str(cfg.get("intraday_live", "interval", default="5m")).strip() or "5m",
+        provider=str(cfg.get("intraday_live", "provider", default=SUPPORTED_LIVE_PROVIDER)).strip().lower() or SUPPORTED_LIVE_PROVIDER,
+        exchange_timezone=str(cfg.get("intraday_live", "exchange_timezone", default=DEFAULT_LIVE_EXCHANGE_TIMEZONE)).strip()
+        or DEFAULT_LIVE_EXCHANGE_TIMEZONE,
+        default_universe=str(cfg.get("intraday_live", "default_universe", default="intraday_live_core")).strip() or "intraday_live_core",
+        retention_days=int(cfg.get("intraday_live", "retention_days", default=0)),
+        chunk_size=int(cfg.get("intraday_live", "chunk_size", default=20)),
+        sleep_seconds=float(cfg.get("intraday_live", "sleep_seconds", default=1.0)),
+        max_retries=int(cfg.get("intraday_live", "max_retries", default=5)),
+        backoff_max_seconds=float(cfg.get("intraday_live", "backoff_max_seconds", default=120.0)),
+        threads=bool(cfg.get("intraday_live", "threads", default=False)),
+        warning_state_path=update_warning_state_path(cfg),
+        log_repeat_cooldown_hours=float(cfg.get("intraday_live", "log_repeat_cooldown_hours", default=24.0)),
+    )
+
+
 def _load_active_symbols_from_cfg(cfg: ConfigLike, symbols_override: list[str] | None = None) -> list[str]:
     universe_csv = universe_csv_path(cfg)
     universe_dir = universe_dir_path(cfg)
@@ -257,6 +320,47 @@ def _load_intraday_research_symbols_from_cfg(
         symbols = selected
     if not symbols:
         raise SystemExit("No symbols resolved for the intraday research workflow.")
+    return symbols
+
+
+def _load_intraday_live_symbols_from_cfg(
+    cfg: ConfigLike,
+    intraday_cfg: _IntradayLiveConfig,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+) -> list[str]:
+    universe_name = str(universe or intraday_cfg.default_universe).strip()
+    overrides_path = ticker_overrides_path(cfg)
+    if universe_name:
+        universe_path = universe_dir_path(cfg) / f"{universe_name}.csv"
+        if not universe_path.exists():
+            raise FileNotFoundError(
+                f"Intraday live universe not found: {universe_path}. Create a CSV under paths.universe_dir or pass --symbols."
+            )
+        frame = load_universe_frame(universe_path, ticker_overrides_path=overrides_path)
+    else:
+        frame = load_universe_frame(
+            universe_csv_path(cfg),
+            universe_dir=universe_dir_path(cfg),
+            ticker_overrides_path=overrides_path,
+        )
+    if "source" in frame.columns:
+        frame = frame.filter(pl.col("source").fill_null("").str.to_lowercase() != "exchange")
+    if "instrument_type" in frame.columns:
+        frame = frame.filter(pl.col("instrument_type").cast(pl.String, strict=False).str.to_lowercase().is_in(["stock", "etf"]))
+    symbols = frame.get_column("symbol").to_list()
+    if symbols_override:
+        requested = [canonicalize_symbol(str(symbol), overrides=load_ticker_overrides(overrides_path)) for symbol in symbols_override]
+        selected = [symbol for symbol in symbols if symbol in set(requested)]
+        missing = [symbol for symbol in requested if symbol and symbol not in set(symbols)]
+        if missing:
+            print("[WARN] intraday live symbols not present in selected universe and will be skipped: " + ",".join(missing))
+        if not selected:
+            raise SystemExit("No requested symbols found in selected intraday live universe.")
+        symbols = selected
+    if not symbols:
+        raise SystemExit("No symbols resolved for the intraday live workflow.")
     return symbols
 
 
@@ -525,6 +629,203 @@ def intraday_research_inspect_from_config(
         research_root=intraday_cfg.root,
         interval=intraday_cfg.interval,
     )
+
+
+def intraday_live_update_from_config(
+    cfg: ConfigLike,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+    full_window: bool = False,
+):
+    intraday_cfg = _read_intraday_live_config(cfg)
+    if not intraday_cfg.enabled:
+        raise SystemExit("Intraday live workflow is disabled in config.")
+    symbols = _load_intraday_live_symbols_from_cfg(cfg, intraday_cfg, universe=universe, symbols_override=symbols_override)
+    return update_intraday_live_store(
+        symbols,
+        live_root=intraday_cfg.root,
+        interval=intraday_cfg.interval,
+        provider=intraday_cfg.provider,
+        exchange_timezone=intraday_cfg.exchange_timezone,
+        universe_name=str(universe or intraday_cfg.default_universe or ""),
+        retention_days=intraday_cfg.retention_days,
+        full_window=full_window,
+        chunk_size=intraday_cfg.chunk_size,
+        sleep_seconds=intraday_cfg.sleep_seconds,
+        max_retries=intraday_cfg.max_retries,
+        backoff_max_seconds=intraday_cfg.backoff_max_seconds,
+        threads=intraday_cfg.threads,
+        log_repeat_cooldown_hours=intraday_cfg.log_repeat_cooldown_hours,
+        log_path=update_log_path(cfg),
+        warning_state_path=intraday_cfg.warning_state_path,
+    )
+
+
+def intraday_live_validate_from_config(
+    cfg: ConfigLike,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+):
+    intraday_cfg = _read_intraday_live_config(cfg)
+    symbols = _load_intraday_live_symbols_from_cfg(cfg, intraday_cfg, universe=universe, symbols_override=symbols_override)
+    return validate_intraday_live_store(
+        symbols,
+        live_root=intraday_cfg.root,
+        interval=intraday_cfg.interval,
+        universe_name=str(universe or intraday_cfg.default_universe or ""),
+    )
+
+
+def intraday_live_inspect_from_config(
+    cfg: ConfigLike,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+):
+    intraday_cfg = _read_intraday_live_config(cfg)
+    symbols = _load_intraday_live_symbols_from_cfg(cfg, intraday_cfg, universe=universe, symbols_override=symbols_override)
+    return inspect_intraday_live_store(
+        symbols,
+        live_root=intraday_cfg.root,
+        interval=intraday_cfg.interval,
+    )
+
+
+def _validate_intraday_dual_store_compatibility(
+    *,
+    live_cfg: _IntradayLiveConfig,
+    research_cfg: _IntradayResearchConfig,
+) -> None:
+    if live_cfg.interval != research_cfg.interval:
+        raise ValueError(
+            "intraday_live.interval and intraday.interval must match for shared intraday sync. "
+            f"Got {live_cfg.interval!r} and {research_cfg.interval!r}."
+        )
+    if live_cfg.provider != research_cfg.provider:
+        raise ValueError(
+            "intraday_live.provider and intraday.provider must match for shared intraday sync. "
+            f"Got {live_cfg.provider!r} and {research_cfg.provider!r}."
+        )
+    if live_cfg.exchange_timezone != research_cfg.exchange_timezone:
+        raise ValueError(
+            "intraday_live.exchange_timezone and intraday.exchange_timezone must match for shared intraday sync. "
+            f"Got {live_cfg.exchange_timezone!r} and {research_cfg.exchange_timezone!r}."
+        )
+
+
+def _prefetched_intraday_fetcher(fetch_map: dict[str, pl.DataFrame]):
+    def _fetch(symbols: list[str], **kwargs) -> dict[str, pl.DataFrame]:
+        return {symbol: fetch_map[symbol] for symbol in symbols if symbol in fetch_map}
+
+    return _fetch
+
+
+def _cached_currency_fetcher(currency_map: dict[str, str]):
+    def _fetch(symbol: str) -> str:
+        return currency_map.get(symbol, "UNKNOWN")
+
+    return _fetch
+
+
+def intraday_sync_from_config(
+    cfg: ConfigLike,
+    *,
+    universe: str | None = None,
+    symbols_override: list[str] | None = None,
+    full_window: bool = False,
+) -> IntradayDualSyncResult:
+    live_cfg = _read_intraday_live_config(cfg)
+    research_cfg = _read_intraday_research_config(cfg)
+    if not live_cfg.enabled:
+        raise SystemExit("Intraday live workflow is disabled in config.")
+    if not research_cfg.enabled:
+        raise SystemExit("Intraday research workflow is disabled in config.")
+    _validate_intraday_dual_store_compatibility(live_cfg=live_cfg, research_cfg=research_cfg)
+    universe_name = str(universe or live_cfg.default_universe or research_cfg.default_universe or "").strip()
+    symbols = _load_intraday_live_symbols_from_cfg(cfg, live_cfg, universe=universe, symbols_override=symbols_override)
+
+    any_missing = full_window
+    if not any_missing:
+        for symbol in symbols:
+            live_path = intraday_live_parquet_path(live_cfg.root, interval=live_cfg.interval, symbol=symbol)
+            research_path = intraday_research_parquet_path(research_cfg.root, interval=research_cfg.interval, symbol=symbol)
+            if not live_path.exists() or not research_path.exists():
+                any_missing = True
+                break
+    period_map = MAX_PERIOD_BY_INTERVAL if any_missing else UPDATE_PERIOD_BY_INTERVAL
+    period = period_for_interval(live_cfg.interval, period_map, purpose="shared intraday sync fetch")
+    fetch_map = fetch_extended_intraday(
+        symbols=symbols,
+        interval=live_cfg.interval,
+        period=period,
+        prepost=True,
+        chunk_size=live_cfg.chunk_size,
+        sleep_seconds=live_cfg.sleep_seconds,
+        max_retries=live_cfg.max_retries,
+        backoff_max_seconds=live_cfg.backoff_max_seconds,
+        threads=live_cfg.threads,
+        log_repeat_cooldown_hours=live_cfg.log_repeat_cooldown_hours,
+        log_path=update_log_path(cfg),
+        warning_state_path=live_cfg.warning_state_path,
+    )
+    currency_fetch = _cached_currency_fetcher(
+        {
+            symbol: (fetch_symbol_currency(symbol) or "UNKNOWN").strip().upper() or "UNKNOWN"
+            for symbol in symbols
+        }
+    )
+    prefetched_fetch = _prefetched_intraday_fetcher(fetch_map)
+    live_result = update_intraday_live_store(
+        symbols,
+        live_root=live_cfg.root,
+        interval=live_cfg.interval,
+        provider=live_cfg.provider,
+        exchange_timezone=live_cfg.exchange_timezone,
+        universe_name=universe_name,
+        retention_days=live_cfg.retention_days,
+        full_window=full_window,
+        chunk_size=live_cfg.chunk_size,
+        sleep_seconds=live_cfg.sleep_seconds,
+        max_retries=live_cfg.max_retries,
+        backoff_max_seconds=live_cfg.backoff_max_seconds,
+        threads=live_cfg.threads,
+        log_repeat_cooldown_hours=live_cfg.log_repeat_cooldown_hours,
+        log_path=update_log_path(cfg),
+        warning_state_path=live_cfg.warning_state_path,
+        fetch_intraday_fn=prefetched_fetch,
+        fetch_currency_fn=currency_fetch,
+    )
+    research_result = update_intraday_research_store(
+        symbols,
+        research_root=research_cfg.root,
+        interval=research_cfg.interval,
+        provider=research_cfg.provider,
+        session=research_cfg.session,
+        exchange_timezone=research_cfg.exchange_timezone,
+        universe_name=universe_name,
+        retention_days=research_cfg.retention_days,
+        full_window=full_window,
+        chunk_size=research_cfg.chunk_size,
+        sleep_seconds=research_cfg.sleep_seconds,
+        max_retries=research_cfg.max_retries,
+        backoff_max_seconds=research_cfg.backoff_max_seconds,
+        threads=research_cfg.threads,
+        log_repeat_cooldown_hours=research_cfg.log_repeat_cooldown_hours,
+        log_path=update_log_path(cfg),
+        warning_state_path=research_cfg.warning_state_path,
+        fetch_intraday_fn=prefetched_fetch,
+        fetch_currency_fn=currency_fetch,
+    )
+    return {
+        "interval": live_cfg.interval,
+        "universe": universe_name,
+        "symbols": list(symbols),
+        "fetched_symbols": len(fetch_map),
+        "live": live_result,
+        "research": research_result,
+    }
 
 
 def _run_stooq_update(update_cfg: _UpdateConfig, symbols: list[str]) -> ExtendedHoursResult | None:

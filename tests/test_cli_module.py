@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import runpy
+import sys
 from pathlib import Path
 
 import polars as pl
@@ -203,3 +205,101 @@ def test_cli_intraday_update_dispatch(monkeypatch, tmp_path: Path, capsys):
 
     assert rc == 0
     assert "[INTRADAY_UPDATE] interval=5m files_written=2 symbols=2 root=/tmp/intraday_research/5m universe=intraday_pilot" in out
+
+
+def test_cli_intraday_live_update_dispatch(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  universe_csv: {tmp_path / 'meta' / 'merged.csv'}",
+                f"  parquet_root: {tmp_path / 'daily'}",
+                f"  runs_root: {tmp_path / 'runs'}",
+                "intraday_live:",
+                f"  live_root: {tmp_path / 'intraday_live'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli,
+        "intraday_live_update_from_config",
+        lambda cfg, universe=None, symbols_override=None, full_window=False: {
+            "interval": "5m",
+            "universe": universe or "intraday_live_core",
+            "root": "/tmp/intraday_live/5m",
+            "symbols": ["SPY", "QQQ"],
+            "files_written": 2,
+            "rows_written": 100,
+            "unchanged_symbols": [],
+            "skipped_symbols": [],
+        },
+    )
+    rc = cli.main(["--config", str(config_path), "intraday-live", "update", "--universe", "intraday_live_core"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[INTRADAY_LIVE_UPDATE] interval=5m files_written=2 symbols=2 root=/tmp/intraday_live/5m universe=intraday_live_core" in out
+
+
+def test_cli_intraday_sync_update_dispatch(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  universe_csv: {tmp_path / 'meta' / 'merged.csv'}",
+                f"  parquet_root: {tmp_path / 'daily'}",
+                f"  runs_root: {tmp_path / 'runs'}",
+                "intraday:",
+                f"  research_root: {tmp_path / 'intraday_research'}",
+                "intraday_live:",
+                f"  live_root: {tmp_path / 'intraday_live'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        cli,
+        "intraday_sync_from_config",
+        lambda cfg, universe=None, symbols_override=None, full_window=False: {
+            "interval": "5m",
+            "universe": universe or "intraday_live_core",
+            "symbols": ["SPY", "QQQ"],
+            "fetched_symbols": 2,
+            "live": {
+                "interval": "5m",
+                "universe": universe or "intraday_live_core",
+                "root": "/tmp/intraday_live/5m",
+                "symbols": ["SPY", "QQQ"],
+                "files_written": 2,
+                "rows_written": 100,
+                "unchanged_symbols": [],
+                "skipped_symbols": [],
+            },
+            "research": {
+                "interval": "5m",
+                "universe": universe or "intraday_live_core",
+                "root": "/tmp/intraday_research/5m",
+                "symbols": ["SPY", "QQQ"],
+                "files_written": 2,
+                "rows_written": 80,
+                "unchanged_symbols": [],
+                "skipped_symbols": [],
+            },
+        },
+    )
+
+    rc = cli.main(["--config", str(config_path), "intraday-sync", "update", "--universe", "intraday_live_core"])
+    out = capsys.readouterr().out
+
+    assert rc == 0
+    assert "[INTRADAY_SYNC_UPDATE] interval=5m live_files_written=2 research_files_written=2 symbols=2 fetched_symbols=2 live_root=/tmp/intraday_live/5m research_root=/tmp/intraday_research/5m universe=intraday_live_core" in out
+
+
+def test_cli_module_invokes_main_when_run_as_module(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["tradinglab-data", "schema", "--format", "json"])
+    with pytest.raises(SystemExit, match="0"):
+        runpy.run_module("tradinglab_data.cli", run_name="__main__")
