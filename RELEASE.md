@@ -24,6 +24,9 @@ Consumers should import `tradinglab_data` from the installed package, not from i
 8. Verify the CLI locally with a real config path, for example:
    - `tradinglab-data --config /path/to/config.yaml update`
    - `tradinglab-data --config /path/to/config.yaml report-parquet-store`
+   - `tradinglab-data --config /path/to/config.yaml intraday-sync update --universe intraday_live_core`
+   - `tradinglab-data --config /path/to/config.yaml intraday-live validate --universe intraday_live_core`
+   - `tradinglab-data --config /path/to/config.yaml intraday validate --universe intraday_live_core`
 9. Publish to TestPyPI
 10. Publish to PyPI
 11. Tag the release in Git

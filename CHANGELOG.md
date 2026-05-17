@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+Release candidate scope since `0.2.0`:
+
+- dedicated regular-session `5m` intraday research parquet store
+- session-aware `5m` intraday live parquet store
+- shared `intraday-sync` workflow that fetches once and writes both intraday stores
+- public CLI, config, schema, workflow, and API-contract documentation for the new intraday stores
+- source-tree config templates aligned with the bundled package config template
+
 ## [0.2.0] - 2026-04-20
 
 Second public release.
