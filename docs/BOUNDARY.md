@@ -7,6 +7,7 @@
 - acquire daily and intraday OHLC data from configured providers
 - normalize provider data into the canonical parquet schema
 - maintain per-symbol parquet history
+- maintain separate extended-hours cache, regular-session intraday research, and session-aware intraday live stores
 - build and merge universe CSVs
 - apply ticker normalization and override mappings
 - generate extended-hours alerts and HTML reports
@@ -18,6 +19,9 @@ Primary artifacts produced by this package:
 
 - daily parquet: `<paths.parquet_root>/<SYMBOL>.parquet`
 - intraday parquet: `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
+- intraday research parquet: `<intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet`
+- intraday live parquet: `<intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet`
+- crypto parquet: `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
 - universe CSV: `<paths.universe_csv>` or `<paths.universe_dir>/*.csv`
 - maintenance log: `<paths.update_log_csv>`
 - extended-hours alerts/report: `<paths.runs_root>/YYYY-MM-DD/monitor/*`

@@ -5,12 +5,13 @@
 ## Data Flow
 
 1. Universe inputs define the target symbol set.
-2. Provider adapters fetch daily and intraday history.
-2.1. Crypto provider adapters fetch exchange-native OHLCV into a dedicated crypto parquet store.
-3. Normalization enforces the canonical schema.
-4. Per-symbol parquet files are written and verified.
-5. Extended-hours monitoring computes moves and writes alerts/reports.
-6. Store-wide audits summarize integrity and coverage.
+2. Provider adapters fetch daily, extended-hours intraday, intraday research, and intraday live history.
+3. Crypto provider adapters fetch exchange-native OHLCV into a dedicated crypto parquet store.
+4. Normalization enforces the canonical schema.
+5. Per-symbol parquet files are written and verified.
+6. Intraday sync can fetch Yahoo `5m` data once and write both live and research stores.
+7. Extended-hours monitoring computes moves and writes alerts/reports.
+8. Store-wide audits summarize integrity and coverage.
 
 ## Module Map
 
@@ -21,6 +22,8 @@
 - `src/tradinglab_data/universe.py`: universe loading and canonicalization
 - `src/tradinglab_data/universe_build.py`: index fetchers and merged universe construction
 - `src/tradinglab_data/extended_hours_monitor.py`: intraday orchestration and alert/report outputs
+- `src/tradinglab_data/intraday_research.py`: regular-session `5m` research parquet normalization, writes, validation, and inspection
+- `src/tradinglab_data/intraday_live.py`: session-aware `5m` live parquet normalization, writes, validation, and inspection
 - `src/tradinglab_data/_intraday_fetch.py`: intraday Yahoo fetch helpers
 - `src/tradinglab_data/_move_compute.py`: move-vs-close computation
 - `src/tradinglab_data/_alert_report.py`: alert filtering and HTML rendering
@@ -39,6 +42,8 @@
 ## Design Notes
 
 - Per-symbol parquet files are the primary persistence layer.
+- Extended-hours, intraday research, and intraday live data are separate stores with separate semantics.
 - Intraday data is stored under interval-specific directories.
+- The shared `intraday-sync` workflow derives regular-session research bars from the same fetched frames used for the live store.
 - Crypto data is stored under exchange/market-type/interval-specific directories.
 - Provider adapters are isolated behind normalization helpers for consistency.

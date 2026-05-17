@@ -5,6 +5,8 @@
 It is designed to be the system of record for:
 - daily OHLC parquet history
 - extended-hours intraday parquet history
+- regular-session intraday research parquet history
+- session-aware intraday live parquet history
 - crypto OHLCV parquet history
 - universe CSVs and ticker overrides
 - store-wide integrity and verification reports
@@ -25,6 +27,9 @@ tradinglab-data build-universe --indices sp500 djia dax mdax atx --out <paths.un
 tradinglab-data --config configs/config.yaml update
 tradinglab-data --config configs/config.yaml monitor-extended-hours --session pre --top-n 25
 tradinglab-data --config configs/config.yaml backfill-extended-hours --interval 5m
+tradinglab-data --config configs/config.yaml intraday backfill --universe intraday_pilot
+tradinglab-data --config configs/config.yaml intraday-live update --universe intraday_live_core
+tradinglab-data --config configs/config.yaml intraday-sync update --universe intraday_live_core
 tradinglab-data --config configs/config.yaml report-parquet-store
 tradinglab-data --config configs/config.yaml report-universe-consistency --dataset daily --instrument-type stock
 tradinglab-data --config configs/config.yaml report-universe-consistency --dataset crypto --interval 1h --universe crypto_core
@@ -68,6 +73,21 @@ pip install -e /path/to/tradinglab-data
 - `tradinglab-data backfill-extended-hours`
   - refetch the provider's full allowed intraday window for one interval
   - merge it into existing local parquet without deleting older locally accumulated rows
+
+- `tradinglab-data intraday`
+  - maintain the dedicated regular-session `5m` research store under `intraday.research_root`
+  - normalize timestamps to UTC with `America/New_York` session dates
+  - validate and inspect per-symbol research parquet coverage
+
+- `tradinglab-data intraday-live`
+  - maintain the session-aware `5m` live store under `intraday_live.live_root`
+  - fetch Yahoo bars with `prepost=True`
+  - label bars as `pre`, `regular`, `post`, or `unknown`
+
+- `tradinglab-data intraday-sync`
+  - fetch Yahoo `5m` data once with `prepost=True`
+  - write the live store and derive the regular-session research store from the same fetched frames
+  - avoid duplicate provider requests when both stores should be refreshed together
 
 - `tradinglab-data build-universe`
   - build a merged universe CSV from supported index sources and fallback overrides
@@ -132,7 +152,10 @@ Provider caveat:
   - `<paths.parquet_root>/<SYMBOL>.parquet`
 - intraday parquet
   - current extended-hours cache: `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
-  - planned general `5m` research contract: see `docs/INTRADAY_5M_CONTRACT.md`
+- intraday research parquet
+  - `<intraday.research_root>/5m/<SYMBOL>.parquet`
+- intraday live parquet
+  - `<intraday_live.live_root>/5m/<SYMBOL>.parquet`
 - crypto parquet
   - `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
 - crypto metadata registry

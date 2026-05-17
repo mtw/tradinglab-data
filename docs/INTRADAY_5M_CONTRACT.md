@@ -1,9 +1,9 @@
 # Intraday 5m Contract
 
-Status: first usable pilot implementation now exists for `5m` regular-session research storage.
+Status: first usable implementation now exists for separate `5m` regular-session research and session-aware live storage.
 
-This document still defines the preferred long-term contract for a reusable `5m` intraday store in `tradinglab-data` without conflating it with the existing extended-hours monitoring cache.
-The current implementation intentionally covers only the first narrow slice: separate research root, `5m`, regular session, Yahoo-backed pilot universe flow, parquet persistence, UTC/session-date normalization, validation, and inspection commands.
+This document defines the long-term contract for reusable `5m` intraday stores in `tradinglab-data` without conflating them with the existing extended-hours monitoring cache.
+The current implementation intentionally covers the first narrow slice: separate research and live roots, Yahoo-backed stock/ETF universe flows, parquet persistence, UTC/session-date normalization, validation, inspection commands, and a shared sync command that fetches once and writes both stores.
 
 ## Purpose
 
@@ -29,31 +29,32 @@ Today the repo already maintains an intraday parquet store under:
 
 That store exists to support the extended-hours monitoring workflow and may mix pre-market, regular-session, and post-market bars depending on provider behavior and `prepost=True` fetches.
 
-The future general intraday research store should be treated as a separate lane with stricter semantics:
+The general intraday research store is a separate lane with stricter semantics:
 
 - default objective: research-grade `5m` bars for repeatable strategy work
 - default session policy: regular session only
 - explicit optional extended-hours mode rather than implicit mixing
 - explicit provider and adjustment policy metadata
 
-The preferred long-term layout is a dedicated root, for example:
+The implemented research layout is:
 
 - `<intraday.research_root>/5m/<SYMBOL>.parquet`
 
-If the project temporarily reuses the current extended-hours root, it should do so only with clearly separated interval or session namespaces so monitoring cache semantics do not leak into research semantics.
+The implemented live layout is:
 
-## Recommended Initial Scope
+- `<intraday_live.live_root>/5m/<SYMBOL>.parquet`
+
+The extended-hours monitoring root should not be reused for these stores; monitoring cache semantics must not leak into research or live semantics.
+
+## Implemented Initial Scope
 
 Start narrow.
 
 - interval: `5m`
 - instrument types: US stocks and ETFs
 - session policy: regular session only
-- pilot symbols:
-  - `SPY`
-  - `QQQ`
-  - `IWM`
-  - 10-20 additional liquid stocks
+- research default universe: `intraday_pilot`
+- live default universe: `intraday_live_core`
 - history goal:
   - accumulate and retain at least `6-12` months locally
 
@@ -61,15 +62,19 @@ Do not start with the full equity universe until the retrieval, storage, and val
 
 ## Canonical Storage Layout
 
-Preferred artifact contract:
+Research artifact contract:
 
 - one symbol per parquet file
 - interval-specific directory level
 - ascending unique timestamps inside each file
 
-Preferred path:
+Research path:
 
 - `<intraday.research_root>/5m/<SYMBOL>.parquet`
+
+Live path:
+
+- `<intraday_live.live_root>/5m/<SYMBOL>.parquet`
 
 Preferred file semantics:
 
@@ -178,25 +183,24 @@ Validation should distinguish between:
 - provider outages or symbol-specific failures
 - missing bars inside regular-session windows
 
-## Recommended Future Commands
+## Implemented Commands
 
-The first-class command surface should remain in `tradinglab-data`.
-
-Suggested future commands:
+The first-class command surface is in `tradinglab-data`.
 
 ```bash
-tradinglab-data --config /path/to/config.yaml intraday backfill --interval 5m --universe intraday_pilot
-tradinglab-data --config /path/to/config.yaml intraday update --interval 5m --universe intraday_pilot
-tradinglab-data --config /path/to/config.yaml intraday validate --interval 5m --universe intraday_pilot
-tradinglab-data --config /path/to/config.yaml intraday inspect --interval 5m --universe intraday_pilot
+tradinglab-data --config /path/to/config.yaml intraday backfill --universe intraday_pilot
+tradinglab-data --config /path/to/config.yaml intraday update --universe intraday_pilot
+tradinglab-data --config /path/to/config.yaml intraday validate --universe intraday_pilot
+tradinglab-data --config /path/to/config.yaml intraday inspect --universe intraday_pilot
+tradinglab-data --config /path/to/config.yaml intraday-live backfill --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-live update --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-live validate --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-live inspect --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-sync backfill --universe intraday_live_core
+tradinglab-data --config /path/to/config.yaml intraday-sync update --universe intraday_live_core
 ```
 
-Supporting maintenance helpers could include:
-
-- `bootstrap_intraday_history.py`
-- `update_intraday_history.py`
-- `validate_intraday_store.py`
-- `summarize_intraday_coverage.py`
+The command surface intentionally omits an interval flag for the first implementation; `5m` is configured through `intraday.interval` and `intraday_live.interval`.
 
 ## Consumer Contract For `tradinglab`
 
@@ -212,13 +216,21 @@ That boundary keeps:
 - retrieval and normalization in `tradinglab-data`
 - strategy/research logic in `tradinglab`
 
-## Recommended Rollout Sequence
+## Rollout State
 
-1. define config and storage root for the pilot intraday research store
-2. ingest `5m` regular-session bars for a small liquid pilot universe
-3. add validation and coverage reporting
-4. verify retention and append behavior across multiple daily updates
-5. only then expand universe size and add optional extended-hours support
+Completed first-slice implementation:
+
+1. define config and storage roots for research and live intraday stores
+2. ingest `5m` regular-session bars for a small research universe
+3. ingest `5m` session-aware bars for a live universe
+4. add validation and inspection commands for both stores
+5. add shared sync to fetch once and write both stores
+
+Next rollout steps:
+
+1. verify retention and append behavior across multiple daily updates
+2. expand universe size only after operational validation remains clean
+3. add optional intervals or additional session policies only through explicit contract changes
 
 ## Non-Goals For The First Iteration
 
@@ -232,6 +244,6 @@ Avoid adding all of this at once:
 - complex corporate-action restatement logic
 - strategy or prediction logic inside `tradinglab-data`
 
-The first success criterion is simple:
+The first success criterion is:
 
 - a clean, durable, validated, regular-session `5m` archive that `tradinglab` can consume reproducibly.

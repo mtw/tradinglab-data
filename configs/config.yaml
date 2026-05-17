@@ -8,6 +8,7 @@ paths:
   crypto_registry_json: "./var/meta/crypto/registry.json"
   crypto_universe_dir: "./var/meta/crypto/universes"
   update_log_csv: "./var/meta/update_log.csv"
+  update_warning_state_json: "./var/meta/update_warning_state.json"
   runs_root: "./var/runs"
   registry_root: "./var/runs/runs_registry"
 
@@ -44,6 +45,37 @@ extended_hours:
   log_repeat_cooldown_hours: 24.0
   pct_move_threshold: 2.0
   min_volume: 0
+
+intraday:
+  enabled: true
+  research_root: "./var/parquet/intraday_research"
+  interval: "5m"
+  provider: "yahoo"
+  session: "regular"
+  exchange_timezone: "America/New_York"
+  default_universe: "intraday_pilot"
+  retention_days: 0
+  chunk_size: 20
+  sleep_seconds: 1.0
+  max_retries: 5
+  backoff_max_seconds: 120.0
+  threads: false
+  log_repeat_cooldown_hours: 24.0
+
+intraday_live:
+  enabled: true
+  live_root: "./var/parquet/intraday_live"
+  interval: "5m"
+  provider: "yahoo"
+  exchange_timezone: "America/New_York"
+  default_universe: "intraday_live_core"
+  retention_days: 0
+  chunk_size: 20
+  sleep_seconds: 1.0
+  max_retries: 5
+  backoff_max_seconds: 120.0
+  threads: false
+  log_repeat_cooldown_hours: 24.0
 
 crypto:
   provider: "binance"
