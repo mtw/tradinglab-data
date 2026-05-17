@@ -353,6 +353,8 @@ def crypto_prune_from_config(
     apply: bool = False,
 ) -> list[str]:
     crypto_cfg = _read_crypto_config(cfg, exchange=exchange)
+    if apply and symbols_override:
+        raise ValueError("crypto prune with apply=True requires a resolved universe; symbols_override is not a complete keep set")
     keep = set(_resolve_symbols(cfg, crypto_cfg, universe=universe, symbols_override=symbols_override))
     root = crypto_cfg.root / crypto_cfg.exchange / crypto_cfg.market_type / interval
     if not root.exists():

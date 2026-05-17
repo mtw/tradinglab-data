@@ -43,6 +43,7 @@ def _normalize_ohlcv_rows(
     base_asset: str,
     quote_asset: str,
     source_symbol: str,
+    effective_time: datetime | None = None,
 ) -> pl.DataFrame:
     if not rows:
         return pl.DataFrame(
@@ -65,7 +66,8 @@ def _normalize_ohlcv_rows(
                 "source_symbol": pl.String,
             }
         )
-    ingested_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    ingested_at = _to_utc_naive(effective_time or datetime.now(timezone.utc))
+    interval_delta = INTERVAL_TO_DELTA[interval]
     frame = pl.DataFrame(
         rows,
         schema=["timestamp_ms", "open", "high", "low", "close", "volume"],
@@ -79,9 +81,10 @@ def _normalize_ohlcv_rows(
         pl.lit(base_asset).alias("base_asset"),
         pl.lit(quote_asset).alias("quote_asset"),
         pl.lit(interval).alias("interval"),
-        pl.lit(True).alias("is_closed"),
         pl.lit(ingested_at).alias("ingested_at"),
         pl.lit(source_symbol).alias("source_symbol"),
+    ).with_columns(
+        (pl.col("timestamp") + interval_delta <= pl.lit(ingested_at)).alias("is_closed"),
     )
     return frame.select(
         [
@@ -103,6 +106,12 @@ def _normalize_ohlcv_rows(
             "source_symbol",
         ]
     )
+
+
+def _to_utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc).replace(tzinfo=None)
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass
@@ -166,8 +175,9 @@ class CCXTExchangeProvider(MarketDataProvider):
         client = self._client_or_create()
         since = None
         if start is not None:
-            since = int(start.replace(tzinfo=timezone.utc).timestamp() * 1000)
+            since = int(_to_utc_naive(start).replace(tzinfo=timezone.utc).timestamp() * 1000)
         rows = client.fetch_ohlcv(source_symbol, timeframe=interval, since=since, limit=limit)
+        effective_time = end or datetime.now(timezone.utc)
         frame = _normalize_ohlcv_rows(
             rows,
             symbol=f"{base_asset}_{quote_asset}",
@@ -178,8 +188,9 @@ class CCXTExchangeProvider(MarketDataProvider):
             base_asset=base_asset,
             quote_asset=quote_asset,
             source_symbol=source_symbol,
+            effective_time=effective_time,
         )
         if end is not None and not frame.is_empty():
-            end_naive = end.replace(tzinfo=timezone.utc).replace(tzinfo=None)
+            end_naive = _to_utc_naive(end)
             frame = frame.filter(pl.col("timestamp") < end_naive)
         return frame

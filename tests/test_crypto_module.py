@@ -71,7 +71,10 @@ def test_resolve_crypto_universe_returns_curated_majors():
 
 def test_normalize_ohlcv_rows_attaches_metadata():
     frame = _normalize_ohlcv_rows(
-        [[1713571200000, 1.0, 2.0, 0.5, 1.5, 100.0]],
+        [
+            [1713571200000, 1.0, 2.0, 0.5, 1.5, 100.0],
+            [1713574800000, 2.0, 3.0, 1.5, 2.5, 200.0],
+        ],
         symbol="BTC_USDT",
         exchange="binance",
         market_type="spot",
@@ -80,6 +83,7 @@ def test_normalize_ohlcv_rows_attaches_metadata():
         base_asset="BTC",
         quote_asset="USDT",
         source_symbol="BTC/USDT",
+        effective_time=datetime(2024, 4, 20, 1, 30, tzinfo=timezone.utc),
     )
     assert frame.columns == [
         "timestamp",
@@ -99,7 +103,8 @@ def test_normalize_ohlcv_rows_attaches_metadata():
         "ingested_at",
         "source_symbol",
     ]
-    assert frame.get_column("symbol").to_list() == ["BTC_USDT"]
+    assert frame.get_column("symbol").to_list() == ["BTC_USDT", "BTC_USDT"]
+    assert frame.get_column("is_closed").to_list() == [True, False]
 
 
 def test_filter_closed_bars_drops_open_bar():
@@ -475,6 +480,12 @@ def test_crypto_show_diff_inspect_and_prune(dummy_cfg_factory, tmp_path: Path):
     assert "DOGE_USDT" in diff["right_only"]
     assert inspect[0]["exists"] is True
     assert any(path.endswith("DOGE_USDT.parquet") for path in pruned)
+
+    try:
+        crypto_prune_from_config(cfg, interval="1h", symbols_override=["BTC_USDT"], apply=True)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "symbols_override is not a complete keep set" in str(exc)
 
 
 def test_crypto_verify_detects_missing_invalid_and_stale(monkeypatch, dummy_cfg_factory, tmp_path: Path):
