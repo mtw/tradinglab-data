@@ -69,6 +69,24 @@ def _infer_instrument_type(file_stem: str, source: str) -> str:
     return "stock"
 
 
+def _normalize_asset_class(raw: str, instrument_type: str) -> str:
+    value = _norm(raw).lower()
+    aliases = {
+        "": "equity",
+        "etf": "equity",
+        "stock": "equity",
+        "stocks": "equity",
+        "equities": "equity",
+        "multi asset": "multi_asset",
+        "multi-asset": "multi_asset",
+    }
+    if value in aliases:
+        return aliases[value]
+    if instrument_type == "etf" and value == "fund":
+        return "multi_asset"
+    return value
+
+
 def _infer_index_memberships(file_stem: str, raw: str) -> str:
     if raw:
         return raw
@@ -116,7 +134,7 @@ def _normalize_row(row: dict[str, str], file_stem: str, asof: str) -> dict[str, 
     out["index_memberships"] = _infer_index_memberships(file_stem, _norm(row.get("index_memberships")))
     out["needs_mapping"] = _norm(row.get("needs_mapping")) or "0"
     out["region"] = _norm_upper(row.get("region")) or _infer_region(country, file_stem)
-    out["asset_class"] = _norm_upper(row.get("asset_class")) or ("ETF" if instrument_type == "etf" else "EQUITY")
+    out["asset_class"] = _normalize_asset_class(_norm(row.get("asset_class")), instrument_type)
     out["domicile"] = _norm_upper(row.get("domicile")) or country
     out["provider"] = _norm(row.get("provider"))
     out["ucits"] = _norm(row.get("ucits"))

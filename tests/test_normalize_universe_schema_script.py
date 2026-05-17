@@ -20,7 +20,7 @@ def test_normalize_row_populates_canonical_fields():
     assert row["symbol"] == "SPY"
     assert row["instrument_type"] == "etf"
     assert row["region"] == "US"
-    assert row["asset_class"] == "ETF"
+    assert row["asset_class"] == "equity"
     assert row["source"] == "etf_us_override"
 
 
