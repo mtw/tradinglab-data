@@ -245,9 +245,11 @@ def update_intraday_research_store(
         if current.is_empty():
             combined = new_rows
         elif new_rows.is_empty():
-            unchanged_symbols.append(symbol)
-            validate_intraday_research_frame(current, allow_extra_columns=False)
-            continue
+            combined = trim_intraday_research_window(current, retention_days=retention_days)
+            validate_intraday_research_frame(combined, allow_extra_columns=False)
+            if combined.height == current.height:
+                unchanged_symbols.append(symbol)
+                continue
         else:
             combined = (
                 pl.concat([current, new_rows], how="vertical")
@@ -296,15 +298,29 @@ def inspect_intraday_research_store(
                 ).__dict__
             )
             continue
+        try:
+            frame = pl.read_parquet(str(path))
+        except Exception as exc:
+            entries.append(
+                IntradayResearchInspectEntry(
+                    symbol=symbol,
+                    exists=True,
+                    rows=0,
+                    start=None,
+                    end=None,
+                    valid=False,
+                    issues=[f"{type(exc).__name__}: {exc}"],
+                    path=str(path),
+                ).__dict__
+            )
+            continue
         issues: list[str] = []
         valid = True
         try:
-            frame = pl.read_parquet(str(path))
             validate_intraday_research_frame(frame, allow_extra_columns=False)
         except Exception as exc:
             valid = False
             issues.append(str(exc))
-            frame = pl.read_parquet(str(path))
         start = frame.select(pl.col("timestamp").min()).item() if not frame.is_empty() else None
         end = frame.select(pl.col("timestamp").max()).item() if not frame.is_empty() else None
         entries.append(

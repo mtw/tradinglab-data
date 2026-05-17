@@ -125,9 +125,10 @@ def fetch_intraday_bulk(
                 if exc is not None and issue is None:
                     raise exc
                 chunk_map = split_bulk_download(df_pd, chunk)
+                missing_syms = [sym for sym in chunk if sym not in chunk_map]
                 if issue is not None and not chunk_map:
                     if log_path is not None:
-                        for sym in chunk:
+                        for sym in missing_syms:
                             append_update_log_throttled(
                                 log_path,
                                 sym,
@@ -143,6 +144,16 @@ def fetch_intraday_bulk(
                         out_chunk[sym] = coerce_standard_schema(df_one)
                     except Exception:
                         continue
+                if issue is not None and log_path is not None:
+                    for sym in [sym for sym in chunk if sym not in out_chunk]:
+                        append_update_log_throttled(
+                            log_path,
+                            sym,
+                            f"intraday_{interval}_{issue}",
+                            attempt + 1,
+                            cooldown_hours=log_repeat_cooldown_hours,
+                            state_path=warning_state_path,
+                        )
                 results.update(out_chunk)
                 break
             except Exception as e:

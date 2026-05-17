@@ -170,13 +170,13 @@ def fetch_yfinance_history_bulk(
                 if exc is not None and issue is None:
                     raise exc
                 chunk_map = _split_bulk_download(df_pd, chunk)
+                missing_syms = [sym for sym in chunk if sym not in chunk_map]
                 if issue is not None and not chunk_map:
                     if log_path is not None:
-                        for sym in chunk:
+                        for sym in missing_syms:
                             append_update_log(log_path, sym, issue, attempt + 1)
                     break
                 # Share-class fallback (e.g. BRK.B -> BRK-B) for symbols not present in bulk response.
-                missing_syms = [sym for sym in chunk if sym not in chunk_map]
                 for msym in missing_syms:
                     alt = _share_class_fallback(msym)
                     if not alt:
@@ -206,6 +206,9 @@ def fetch_yfinance_history_bulk(
                             chunk_map[msym] = _normalize_yf_df_to_polars(df_one)
                     except Exception:
                         pass
+                if issue is not None and log_path is not None:
+                    for sym in [sym for sym in chunk if sym not in chunk_map]:
+                        append_update_log(log_path, sym, issue, attempt + 1)
                 results.update(chunk_map)
                 break
             except Exception as e:
@@ -256,6 +259,8 @@ def upsert_symbol_parquet(
     if existing is None or existing.is_empty():
         df_new = fetch_yfinance_history(YFDownloadSpec(symbol=symbol, interval=interval, lookback_days=lookback_days))
         df_new = _coerce_standard_schema(df_new)
+        if df_new.is_empty():
+            return out_path
         df_new.write_parquet(str(out_path))
         return out_path
 

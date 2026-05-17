@@ -133,6 +133,24 @@ def test_update_intraday_live_store_empty_skipped_and_unchanged(tmp_path: Path):
     assert unchanged["unchanged_symbols"] == ["BBB"]
 
 
+def test_update_intraday_live_store_trims_existing_when_fetch_returns_no_rows(tmp_path: Path):
+    root = tmp_path / "intraday_live"
+    path = root / "5m" / "OLD.parquet"
+    path.parent.mkdir(parents=True)
+    normalize_intraday_live_frame(_raw_intraday_frame(["2020-01-01T13:30:00"]), symbol="OLD", currency="USD").write_parquet(path)
+
+    result = update_intraday_live_store(
+        ["OLD"],
+        live_root=root,
+        retention_days=1,
+        fetch_intraday_fn=lambda **kwargs: {},
+        fetch_currency_fn=lambda symbol: "USD",
+    )
+
+    assert result["files_written"] == 1
+    assert pl.read_parquet(path).is_empty()
+
+
 def test_inspect_intraday_live_store_reports_invalid_existing_file(tmp_path: Path):
     root = tmp_path / "intraday_live"
     path = root / "5m" / "BAD.parquet"
@@ -144,3 +162,18 @@ def test_inspect_intraday_live_store_reports_invalid_existing_file(tmp_path: Pat
     assert inspected[0]["exists"] is True
     assert inspected[0]["valid"] is False
     assert inspected[0]["issues"]
+
+
+def test_inspect_intraday_live_store_reports_unreadable_file_without_raising(tmp_path: Path):
+    root = tmp_path / "intraday_live"
+    path = root / "5m" / "BAD.parquet"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not parquet")
+
+    inspected = inspect_intraday_live_store(["BAD"], live_root=root)
+    validated = validate_intraday_live_store(["BAD"], live_root=root)
+
+    assert inspected[0]["exists"] is True
+    assert inspected[0]["valid"] is False
+    assert inspected[0]["rows"] == 0
+    assert not validated["ok"]
