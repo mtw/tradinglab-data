@@ -5,6 +5,8 @@ from typing import Any
 
 import requests  # type: ignore[import-untyped]
 
+QueryParam = str | int | float | None
+
 
 @dataclass(frozen=True)
 class CoinGeckoProvider:
@@ -20,15 +22,16 @@ class CoinGeckoProvider:
         order: str = "market_cap_desc",
         sparkline: bool = False,
     ) -> list[dict[str, Any]]:
+        params: dict[str, QueryParam] = {
+            "vs_currency": vs_currency,
+            "order": order,
+            "per_page": per_page,
+            "page": page,
+            "sparkline": str(sparkline).lower(),
+        }
         response = requests.get(
             f"{self.base_url}/coins/markets",
-            params={
-                "vs_currency": vs_currency,
-                "order": order,
-                "per_page": per_page,
-                "page": page,
-                "sparkline": str(sparkline).lower(),
-            },
+            params=params,
             timeout=self.timeout_seconds,
         )
         response.raise_for_status()
