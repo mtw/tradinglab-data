@@ -13,7 +13,7 @@ from .providers.binance_ccxt import BinanceCCXTProvider
 from .providers.coinbase_ccxt import CoinbaseCCXTProvider
 from .providers.coingecko_provider import CoinGeckoProvider
 from .providers.kraken_ccxt import KrakenCCXTProvider
-from .registry import resolve_crypto_universe, write_dynamic_registry, write_dynamic_universe
+from .registry import merge_dynamic_registry, resolve_crypto_universe, write_dynamic_universe
 from .storage import atomic_write_parquet, crypto_parquet_path, read_crypto_parquet
 from .symbols import normalize_crypto_symbol
 from .validation import filter_closed_bars, merge_crypto_frames, validate_crypto_ohlcv_frame
@@ -406,7 +406,7 @@ def crypto_refresh_universe_from_config(
         universe_name=universe_name,
         limit=limit or crypto_cfg.universe_refresh_limit,
     )
-    registry_path = write_dynamic_registry(cfg, metadata_entries)
+    registry_path = merge_dynamic_registry(cfg, metadata_entries)
     universe_path = write_dynamic_universe(
         cfg,
         universe_name,

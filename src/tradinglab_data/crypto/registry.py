@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from ..config import ConfigLike, crypto_registry_path, crypto_universe_dir_path
@@ -139,6 +140,40 @@ def write_dynamic_registry(cfg: ConfigLike, entries: list[CryptoMetadataEntry]) 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
     return out_path
+
+
+def merge_dynamic_registry(cfg: ConfigLike, entries: list[CryptoMetadataEntry]) -> Path:
+    out_path = crypto_registry_path(cfg)
+    payload = _load_json(out_path)
+    preserved: list[object] = []
+    merged: dict[tuple[str, str, str], object] = {}
+    if isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, dict):
+                preserved.append(item)
+                continue
+            key = _registry_entry_key(item)
+            if key is None:
+                preserved.append(item)
+                continue
+            merged[key] = item
+    for entry in entries:
+        key = _registry_entry_key(entry)
+        if key is not None:
+            merged[key] = entry
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps([*preserved, *merged.values()], indent=2), encoding="utf-8")
+    return out_path
+
+
+def _registry_entry_key(entry: Mapping[str, object]) -> tuple[str, str, str] | None:
+    try:
+        symbol = normalize_crypto_symbol(str(entry.get("symbol_canonical") or ""))
+    except ValueError:
+        return None
+    exchange = str(entry.get("exchange") or "binance")
+    market_type = str(entry.get("market_type") or "spot")
+    return (symbol, exchange, market_type)
 
 
 def write_dynamic_universe(cfg: ConfigLike, universe: str, symbols: list[str], metadata: dict[str, object]) -> Path:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -328,6 +329,80 @@ def test_crypto_refresh_universe_writes_dynamic_registry(monkeypatch, dummy_cfg_
     assert [entry["symbol_canonical"] for entry in resolved] == ["BTC_USDT", "ETH_USDT"]
     assert Path(result["registry_path"]).exists()
     assert Path(result["universe_path"]).exists()
+
+
+def test_crypto_refresh_universe_preserves_unrelated_dynamic_registry_entries(monkeypatch, dummy_cfg_factory, tmp_path: Path):
+    import tradinglab_data.crypto.workflows as crypto_workflows
+
+    class FakeExchangeProvider:
+        def list_symbols(self) -> list[str]:
+            return ["BTC_USDT", "ETH_USDT"]
+
+    monkeypatch.setattr(crypto_workflows, "_provider_for", lambda crypto_cfg: FakeExchangeProvider())
+    monkeypatch.setattr(
+        crypto_workflows.CoinGeckoProvider,
+        "fetch_markets",
+        lambda self, **kwargs: [
+            {"id": "bitcoin", "symbol": "btc", "name": "Bitcoin", "market_cap_rank": 1, "market_cap": 10.0, "total_volume": 5.0},
+            {"id": "ethereum", "symbol": "eth", "name": "Ethereum", "market_cap_rank": 2, "market_cap": 9.0, "total_volume": 4.0},
+        ],
+    )
+    registry_path = tmp_path / "meta" / "crypto" / "registry.json"
+    universe_dir = tmp_path / "meta" / "crypto" / "universes"
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "crypto_registry_json": registry_path,
+                "crypto_universe_dir": universe_dir,
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {
+                "exchange": "binance",
+                "market_type": "spot",
+                "quote_assets": ["USDT"],
+                "universe_refresh_limit": 10,
+                "universe_refresh_pages": 1,
+            },
+        }
+    )
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(
+            [
+                {
+                    "coingecko_id": "dogecoin",
+                    "symbol_canonical": "DOGE_USDT",
+                    "source_symbol": "DOGE/USDT",
+                    "name": "Dogecoin",
+                    "base_asset": "DOGE",
+                    "quote_asset": "USDT",
+                    "market_cap_rank": 9,
+                    "market_cap": 3.0,
+                    "total_volume": 2.0,
+                    "exchange": "binance",
+                    "market_type": "spot",
+                    "is_active": True,
+                    "universe_tags": ["crypto", "crypto_other_dynamic"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    universe_dir.mkdir(parents=True, exist_ok=True)
+    (universe_dir / "crypto_other_dynamic.json").write_text(
+        json.dumps({"universe": "crypto_other_dynamic", "symbols": ["DOGE_USDT"]}),
+        encoding="utf-8",
+    )
+
+    crypto_refresh_universe_from_config(cfg, universe="crypto_dynamic")
+
+    resolved_other = resolve_crypto_universe("crypto_other_dynamic", cfg=cfg)
+    assert [entry["symbol_canonical"] for entry in resolved_other] == ["DOGE_USDT"]
+    persisted_symbols = {entry["symbol_canonical"] for entry in json.loads(registry_path.read_text(encoding="utf-8"))}
+    assert persisted_symbols == {"BTC_USDT", "ETH_USDT", "DOGE_USDT"}
 
 
 def test_crypto_refresh_universe_skips_invalid_coingecko_symbol(monkeypatch, dummy_cfg_factory, tmp_path: Path):

@@ -8,3 +8,4 @@ var/
 refactor/
 .venv/
 configs/config.local.yaml
+.clawpatch/

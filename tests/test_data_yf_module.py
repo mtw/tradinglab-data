@@ -222,3 +222,211 @@ def test_fetch_yfinance_history_bulk_classifies_dns_failure_without_delisted_noi
     log_text = log_path.read_text(encoding="utf-8")
     assert "yahoo_connectivity_error: could not resolve host guce.yahoo.com" in log_text
     assert "possibly delisted" not in log_text
+
+
+def test_fetch_yfinance_history_raises_unclassified_exception(monkeypatch):
+    monkeypatch.setattr(
+        data_yf,
+        "_run_yf_download",
+        lambda *args, **kwargs: (None, "", RuntimeError("boom")),
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        data_yf.fetch_yfinance_history(data_yf.YFDownloadSpec("AAA"))
+
+
+def test_fetch_yfinance_history_uses_share_class_fallback(monkeypatch):
+    calls: list[str] = []
+    pdf = pd.DataFrame(
+        {
+            "Date": [datetime(2026, 1, 1)],
+            "Open": [1.0],
+            "High": [2.0],
+            "Low": [0.5],
+            "Close": [1.5],
+            "Adj Close": [1.4],
+            "Volume": [100],
+        }
+    )
+
+    def fake_run(download_fn, symbol, **kwargs):
+        calls.append(symbol)
+        if symbol == "BRK.B":
+            return pd.DataFrame(), "", None
+        return pdf, "", None
+
+    monkeypatch.setattr(data_yf, "_run_yf_download", fake_run)
+
+    out = data_yf.fetch_yfinance_history(data_yf.YFDownloadSpec("BRK.B"))
+
+    assert calls == ["BRK.B", "BRK-B"]
+    assert out.height == 1
+
+
+def test_fetch_yfinance_history_returns_empty_for_classified_issue(monkeypatch):
+    monkeypatch.setattr(
+        data_yf,
+        "_run_yf_download",
+        lambda *args, **kwargs: (pd.DataFrame(), "possibly delisted", None),
+    )
+
+    out = data_yf.fetch_yfinance_history(data_yf.YFDownloadSpec("AAA"))
+
+    assert out.is_empty()
+    assert out.columns == list(data_yf.STANDARD_PRICE_SCHEMA)
+
+
+def test_fetch_symbol_currency_fast_info_get_item_info_and_cache(monkeypatch):
+    data_yf.clear_currency_cache()
+    ticker_calls: list[str] = []
+
+    class FastInfoGet:
+        def get(self, key):
+            return " usd "
+
+    class FakeTicker:
+        fast_info = FastInfoGet()
+
+        def __init__(self, symbol):
+            ticker_calls.append(symbol)
+
+        def get_info(self):
+            return {"currency": "EUR"}
+
+    monkeypatch.setattr(data_yf.yf, "Ticker", FakeTicker)
+
+    assert data_yf.fetch_symbol_currency("AAA") == "USD"
+    assert data_yf.fetch_symbol_currency("AAA") == "USD"
+    assert ticker_calls == ["AAA"]
+
+    data_yf.clear_currency_cache()
+
+    class FastInfoItem:
+        def get(self, key):
+            raise RuntimeError("no get")
+
+        def __getitem__(self, key):
+            return "gbp"
+
+    class FakeTickerItem(FakeTicker):
+        fast_info = FastInfoItem()
+
+    monkeypatch.setattr(data_yf.yf, "Ticker", FakeTickerItem)
+    assert data_yf.fetch_symbol_currency("BBB") == "GBP"
+
+    data_yf.clear_currency_cache()
+
+    class FakeTickerInfo(FakeTicker):
+        fast_info = None
+
+        def get_info(self):
+            return {"currency": " jpy "}
+
+    monkeypatch.setattr(data_yf.yf, "Ticker", FakeTickerInfo)
+    assert data_yf.fetch_symbol_currency("CCC") == "JPY"
+
+
+def test_fetch_yfinance_history_bulk_share_class_fallback_and_single_issue(monkeypatch, tmp_path: Path):
+    pdf = pd.DataFrame(
+        {
+            "Date": [datetime(2026, 1, 1)],
+            "Open": [1.0],
+            "High": [2.0],
+            "Low": [0.5],
+            "Close": [1.5],
+            "Adj Close": [1.4],
+            "Volume": [100],
+        }
+    )
+    calls: list[object] = []
+
+    def fake_run(download_fn, symbols, **kwargs):
+        calls.append(symbols)
+        if symbols == ["BRK.B", "FAIL.B"]:
+            return pd.DataFrame(), "", None
+        if symbols == "BRK-B":
+            return pdf, "", None
+        if symbols == "FAIL-B":
+            return pd.DataFrame(), "possibly delisted", None
+        raise AssertionError(symbols)
+
+    monkeypatch.setattr(data_yf, "_run_yf_download", fake_run)
+
+    out = data_yf.fetch_yfinance_history_bulk(
+        ["BRK.B", "FAIL.B"],
+        interval="1d",
+        lookback_days=5,
+        chunk_size=2,
+        sleep_seconds=0,
+        log_path=tmp_path / "log.csv",
+    )
+
+    assert out["BRK.B"].height == 1
+    assert "FAIL.B" not in out
+    assert "possibly delisted" in (tmp_path / "log.csv").read_text(encoding="utf-8")
+
+
+def test_fetch_yfinance_history_bulk_retries_rate_limit_then_logs(monkeypatch, tmp_path: Path):
+    calls = 0
+    sleeps: list[int] = []
+
+    def fake_run(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return None, "", RuntimeError("429")
+
+    monkeypatch.setattr(data_yf, "_run_yf_download", fake_run)
+    monkeypatch.setattr(data_yf, "_backoff_sleep", lambda attempt, maximum: sleeps.append(attempt))
+
+    out = data_yf.fetch_yfinance_history_bulk(
+        ["AAA"],
+        interval="1d",
+        lookback_days=5,
+        chunk_size=1,
+        sleep_seconds=0,
+        max_retries=1,
+        log_path=tmp_path / "log.csv",
+    )
+
+    assert out == {}
+    assert calls == 2
+    assert sleeps == [1]
+    assert "429" in (tmp_path / "log.csv").read_text(encoding="utf-8")
+
+
+def test_upsert_symbol_parquet_writes_initial_history_and_handles_empty_increment(monkeypatch, tmp_path: Path):
+    root = tmp_path / "daily"
+    fetched = pl.DataFrame(
+        {
+            "date": [datetime(2026, 1, 1)],
+            "open": [1.0],
+            "high": [2.0],
+            "low": [0.5],
+            "close": [1.5],
+            "adj_close": [1.4],
+            "volume": [100.0],
+        }
+    )
+    monkeypatch.setattr(data_yf, "fetch_yfinance_history", lambda spec: fetched)
+
+    with pytest.warns(DeprecationWarning):
+        out_path = data_yf.upsert_symbol_parquet("AAA", "1d", 10, root)
+
+    assert pl.read_parquet(out_path).height == 1
+
+    monkeypatch.setattr(data_yf, "fetch_yfinance_history", lambda spec: pl.DataFrame(schema=data_yf.STANDARD_PRICE_SCHEMA))
+    with pytest.warns(DeprecationWarning):
+        assert data_yf.upsert_symbol_parquet("AAA", "1d", 10, root) == out_path
+
+
+def test_warning_state_helpers_handle_invalid_and_naive_timestamps(tmp_path: Path):
+    state = tmp_path / "state.json"
+    state.write_text(
+        json.dumps({"AAA␟issue": "2026-01-01T00:00:00", "bad": "2026-01-01T00:00:00", "BBB␟issue": "not-a-date"}),
+        encoding="utf-8",
+    )
+
+    loaded = data_yf._load_warning_state(state)
+
+    assert list(loaded) == [("AAA", "issue")]
+    assert loaded[("AAA", "issue")].tzinfo is not None
