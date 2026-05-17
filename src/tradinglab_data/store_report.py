@@ -9,10 +9,25 @@ from statistics import median
 
 import polars as pl
 
-from .config import Config, crypto_root_path, intraday_root_path, parquet_root_path, runs_root_path, universe_dir_path
+from .config import (
+    Config,
+    crypto_root_path,
+    intraday_live_root_path,
+    intraday_research_root_path,
+    intraday_root_path,
+    parquet_root_path,
+    runs_root_path,
+    universe_dir_path,
+)
 from .contracts import StoreHistoryEntry, StoreIntegrityFileIssue, StoreIntegrityReport, StoreIntegritySection
 from .parquet_verify import ParquetVerifyConfig, run_parquet_sanity_checks
-from .schema import validate_crypto_frame, validate_daily_frame, validate_intraday_frame
+from .schema import (
+    validate_crypto_frame,
+    validate_daily_frame,
+    validate_intraday_frame,
+    validate_intraday_live_frame,
+    validate_intraday_research_frame,
+)
 
 
 @dataclass(frozen=True)
@@ -453,6 +468,8 @@ def generate_parquet_store_report(
 ) -> StoreIntegrityReport:
     daily_root = parquet_root_path(cfg)
     intraday_root = intraday_root_path(cfg)
+    intraday_research_root = intraday_research_root_path(cfg)
+    intraday_live_root = intraday_live_root_path(cfg)
     crypto_root = crypto_root_path(cfg)
     runs_root = runs_root_path(cfg)
     report_dir = Path(out_dir) if out_dir is not None else _dated_report_dir(runs_root)
@@ -490,6 +507,38 @@ def generate_parquet_store_report(
             root=interval_dir,
             validator=validate_intraday_frame,
             time_column="date",
+            value_column="currency",
+        )
+        sections.append(section)
+        dirty_files.extend(items)
+
+    research_interval_dirs = (
+        sorted(path for path in intraday_research_root.iterdir() if path.is_dir())
+        if intraday_research_root.exists() and intraday_research_root.is_dir()
+        else []
+    )
+    for interval_dir in research_interval_dirs:
+        section, items = _summarize_section(
+            section=f"intraday_research:{interval_dir.name}",
+            root=interval_dir,
+            validator=validate_intraday_research_frame,
+            time_column="timestamp",
+            value_column="currency",
+        )
+        sections.append(section)
+        dirty_files.extend(items)
+
+    live_interval_dirs = (
+        sorted(path for path in intraday_live_root.iterdir() if path.is_dir())
+        if intraday_live_root.exists() and intraday_live_root.is_dir()
+        else []
+    )
+    for interval_dir in live_interval_dirs:
+        section, items = _summarize_section(
+            section=f"intraday_live:{interval_dir.name}",
+            root=interval_dir,
+            validator=validate_intraday_live_frame,
+            time_column="timestamp",
             value_column="currency",
         )
         sections.append(section)

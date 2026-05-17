@@ -12,6 +12,8 @@ from tradinglab_data.store_report import generate_parquet_store_report, render_s
 def _write_config(tmp_path: Path) -> Path:
     daily_root = tmp_path / "daily"
     intraday_root = tmp_path / "intraday"
+    intraday_research_root = tmp_path / "intraday_research"
+    intraday_live_root = tmp_path / "intraday_live"
     crypto_root = tmp_path / "crypto"
     runs_root = tmp_path / "runs"
     universe_csv = tmp_path / "meta" / "merged.csv"
@@ -32,6 +34,10 @@ def _write_config(tmp_path: Path) -> Path:
                 f"  universe_dir: {universe_dir}",
                 "extended_hours:",
                 f"  intraday_root: {intraday_root}",
+                "intraday:",
+                f"  research_root: {intraday_research_root}",
+                "intraday_live:",
+                f"  live_root: {intraday_live_root}",
             ]
         )
         + "\n",
@@ -70,6 +76,35 @@ def _write_intraday_parquet(path: Path) -> None:
             "currency": ["USD", "USD"],
         }
     ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(path)
+
+
+def _write_intraday_timestamp_parquet(path: Path, *, live: bool, timestamps: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "timestamp": timestamps,
+        "open": [20.0 + idx for idx, _ in enumerate(timestamps)],
+        "high": [20.4 + idx for idx, _ in enumerate(timestamps)],
+        "low": [19.8 + idx for idx, _ in enumerate(timestamps)],
+        "close": [20.2 + idx for idx, _ in enumerate(timestamps)],
+        "volume": [500.0 for _ in timestamps],
+        "currency": ["USD" for _ in timestamps],
+        "symbol": [path.stem for _ in timestamps],
+        "interval": ["5m" for _ in timestamps],
+        "provider": ["yahoo" for _ in timestamps],
+        "session_date": ["2026-03-27" for _ in timestamps],
+        "is_regular_session": [True for _ in timestamps],
+        "ingested_at": ["2026-03-27T21:00:00" for _ in timestamps],
+    }
+    if live:
+        data["session"] = ["regular" for _ in timestamps]
+        data["is_closed_bar"] = [True for _ in timestamps]
+    else:
+        data["session"] = ["regular" for _ in timestamps]
+    pl.DataFrame(data).with_columns(
+        pl.col("timestamp").str.strptime(pl.Datetime, strict=False),
+        pl.col("session_date").str.strptime(pl.Date, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    ).write_parquet(path)
 
 
 def _write_crypto_parquet(path: Path, *, timestamps: list[str], quote_asset: list[str] | None = None) -> None:
@@ -221,6 +256,26 @@ def test_generate_parquet_store_report_flags_crypto_dirty_files(tmp_path: Path):
     assert "duplicate_timestamps" in btc["dirty_reasons"]
     assert "unsorted_timestamps" in btc["dirty_reasons"]
     assert "missing_quote_asset_rows" in btc["dirty_reasons"]
+
+
+def test_generate_parquet_store_report_includes_intraday_research_and_live_roots(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    cfg = Config.load(config_path)
+    _write_intraday_timestamp_parquet(
+        tmp_path / "intraday_research" / "5m" / "AAA.parquet",
+        live=False,
+        timestamps=["2026-03-27T13:35:00", "2026-03-27T13:30:00"],
+    )
+    bad_live_path = tmp_path / "intraday_live" / "5m" / "BBB.parquet"
+    bad_live_path.parent.mkdir(parents=True)
+    bad_live_path.write_bytes(b"not parquet")
+
+    report = generate_parquet_store_report(cfg)
+
+    sections = {section["section"] for section in report["sections"]}
+    assert "intraday_research:5m" in sections
+    assert "intraday_live:5m" in sections
+    assert any(item["section"] == "intraday_live:5m" and item["symbol"] == "BBB" for item in report["dirty_files"])
 
 
 def test_generate_parquet_store_report_flags_crypto_gap_zero_volume_and_metadata_drift(tmp_path: Path):

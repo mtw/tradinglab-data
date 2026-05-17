@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
 import math
 import random
-import contextlib
-import io
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -14,14 +14,22 @@ from zoneinfo import ZoneInfo
 
 import polars as pl
 from tqdm import tqdm
-from tradinglab_data.config import Config, default_config_path, parquet_root_path, universe_csv_path, universe_dir_path, update_log_path
+
+from tradinglab_data.config import (
+    Config,
+    default_config_path,
+    parquet_root_path,
+    universe_csv_path,
+    universe_dir_path,
+    update_log_path,
+)
 from tradinglab_data.data_yf import (
-    fetch_yfinance_history_bulk,
-    fetch_yfinance_history,
     YFDownloadSpec,
-    read_parquet_if_exists,
     append_update_log,
     fetch_symbol_currency,
+    fetch_yfinance_history,
+    fetch_yfinance_history_bulk,
+    read_parquet_if_exists,
 )
 from tradinglab_data.extended_hours_monitor import (
     MAX_PERIOD_BY_INTERVAL,
@@ -35,7 +43,6 @@ from tradinglab_data.parquet_verify import (
     write_verification_summary,
 )
 from tradinglab_data.universe import load_universe_frame
-
 
 REQUIRED_COLS = ["date", "open", "high", "low", "close"]
 DEFAULT_ROOT = Path()
@@ -320,6 +327,8 @@ def _validate_file(
     # Cast date for robust sort/summary.
     work = df.with_columns(pl.col("date").cast(pl.Datetime, strict=False).alias("date"))
 
+    is_sorted = work.select(pl.col("date").eq_missing(pl.col("date").sort()).all()).item()
+
     with_checks = (
         work.sort("date")
         .with_columns(
@@ -357,7 +366,6 @@ def _validate_file(
     ).row(0, named=True)
 
     ordered = with_checks
-    is_sorted = ordered.select(pl.col("date").eq_missing(pl.col("date").sort()).all()).item()
 
     last = ordered.select(["open", "high", "low", "close"]).tail(1).row(0, named=True)
 
@@ -594,9 +602,8 @@ def _possible_venue_mismatch(symbol: str, meta: SymbolMeta | None) -> str:
 
 def _fetch_yf_latest(symbol: str, mode: str = "daily", intraday_interval: str = "5m") -> YFLatest:
     try:
-        import contextlib
-        import io
         import yfinance as yf
+
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             if mode == "intraday":
                 df = yf.download(
@@ -1613,10 +1620,11 @@ def main() -> None:
     all_statuses = statuses[:]
 
     meta_by_symbol: dict[str, SymbolMeta] = {}
+    resolved_universe_dir = Path(args.universe_dir) if str(args.universe_dir).strip() else universe_dir_path(cfg)
     if args.with_meta:
         meta_by_symbol = _load_symbol_meta(
             universe_csv=(Path(args.universe) if str(args.universe).strip() else universe_csv_path(cfg)),
-            universe_dir=Path(args.universe_dir),
+            universe_dir=resolved_universe_dir,
         )
 
     yf_latest_by_symbol: dict[str, YFLatest] = {}
@@ -1764,7 +1772,7 @@ def main() -> None:
 
     index_map = _load_symbol_index_map(
         universe_csv=(Path(args.universe) if str(args.universe).strip() else universe_csv_path(cfg)),
-        universe_dir=Path(args.universe_dir),
+        universe_dir=resolved_universe_dir,
     )
     symbol_asset_type: dict[str, str] = {}
     for s in all_statuses:
@@ -1891,8 +1899,8 @@ def main() -> None:
 
     parquet_sanity = run_parquet_sanity_checks(
         ParquetVerifyConfig(
-            root=Path(args.root),
-            universe_dir=Path(args.universe_dir),
+            root=root,
+            universe_dir=resolved_universe_dir,
             min_parquet_files=int(args.gate_min_files),
             max_zero_byte=int(args.gate_max_zero_byte),
             max_missing_ratio=float(args.gate_max_missing_ratio),

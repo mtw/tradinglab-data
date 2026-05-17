@@ -273,6 +273,61 @@ def test_validate_file_intraday_same_day_gap(tmp_path: Path):
     assert status.valid is False
 
 
+def test_validate_file_flags_unsorted_original_dates(tmp_path: Path):
+    p = tmp_path / "AAA.parquet"
+    mod.pl.DataFrame(
+        {
+            "date": [datetime(2020, 1, 2), datetime(2020, 1, 1)],
+            "open": [1.0, 1.1],
+            "high": [1.2, 1.3],
+            "low": [0.9, 1.0],
+            "close": [1.1, 1.2],
+        }
+    ).write_parquet(str(p))
+
+    status = mod._validate_file(path=p, symbol="AAA", period_year=None, period_month=None)
+
+    assert status.sorted_dates is False
+    assert status.valid is False
+
+
+def test_main_uses_config_resolved_roots_for_sanity_gate(tmp_path: Path, monkeypatch):
+    parquet_root = tmp_path / "daily"
+    universe_dir = tmp_path / "meta" / "universes"
+    universe_csv = tmp_path / "meta" / "merged.csv"
+    universe_dir.mkdir(parents=True)
+    parquet_root.mkdir()
+    universe_csv.write_text("symbol\nAAA\n", encoding="utf-8")
+    (universe_dir / "sp500.csv").write_text("symbol\nAAA\n", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  parquet_root: {parquet_root}",
+                f"  universe_csv: {universe_csv}",
+                f"  universe_dir: {universe_dir}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    captured = {}
+    monkeypatch.setattr(mod, "_collect_targets", lambda **kwargs: [])
+    monkeypatch.setattr(mod, "_load_symbol_index_map", lambda **kwargs: {})
+    def fake_sanity(cfg):
+        captured["cfg"] = cfg
+        return {"ok": True, "errors": []}
+
+    monkeypatch.setattr(mod, "run_parquet_sanity_checks", fake_sanity)
+    monkeypatch.setattr(sys, "argv", ["check_parquet_status.py", "--config", str(config_path)])
+
+    mod.main()
+
+    assert captured["cfg"].root == parquet_root
+    assert captured["cfg"].universe_dir == universe_dir
+
+
 def test_repair_intraday_symbol_from_yf_upserts(tmp_path: Path, monkeypatch):
     p = tmp_path / "AAA.parquet"
     mod.pl.DataFrame(
