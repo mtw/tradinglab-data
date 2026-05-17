@@ -162,12 +162,31 @@ def _require_path(cfg: ConfigLike, section: str, key: str) -> Path:
     return value
 
 
+def store_root_path(cfg: ConfigLike) -> Path:
+    value = cfg.path("paths", "store_root")
+    if value is not None:
+        return value
+    parquet_root = cfg.path("paths", "parquet_root")
+    if parquet_root is not None:
+        return parquet_root.parent.parent
+    universe_csv = cfg.path("paths", "universe_csv")
+    if universe_csv is not None:
+        return universe_csv.parent.parent
+    raise ValueError(f"Missing paths.store_root in {cfg.source_path or 'config'}")
+
+
 def universe_csv_path(cfg: ConfigLike) -> Path:
-    return _require_path(cfg, "paths", "universe_csv")
+    return cfg.path("paths", "universe_csv") or (meta_root_path(cfg) / "universe_master.csv")
 
 
 def meta_root_path(cfg: ConfigLike) -> Path:
-    return cfg.path("paths", "meta_root") or universe_csv_path(cfg).parent
+    explicit = cfg.path("paths", "meta_root")
+    if explicit is not None:
+        return explicit
+    universe_csv = cfg.path("paths", "universe_csv")
+    if universe_csv is not None:
+        return universe_csv.parent
+    return store_root_path(cfg) / "meta"
 
 
 def universe_dir_path(cfg: ConfigLike) -> Path:
@@ -193,7 +212,7 @@ def ticker_overrides_path(cfg: ConfigLike) -> Path:
 
 
 def parquet_root_path(cfg: ConfigLike) -> Path:
-    return _require_path(cfg, "paths", "parquet_root")
+    return cfg.path("paths", "parquet_root") or (store_root_path(cfg) / "parquet" / "daily")
 
 
 def intraday_root_path(cfg: ConfigLike) -> Path:

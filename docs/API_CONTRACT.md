@@ -588,14 +588,19 @@ Missing config behavior:
 
 Required path keys for the main workflows:
 
-- `paths.universe_csv`
-- `paths.parquet_root`
+- `paths.store_root`, or the legacy explicit pair `paths.universe_csv` and `paths.parquet_root`
 - `paths.runs_root`
 
 Derived path defaults:
 
+- `paths.store_root`
+  - defaults to `dirname(dirname(paths.parquet_root))` when `paths.parquet_root` is set
+  - otherwise defaults to `dirname(dirname(paths.universe_csv))` when `paths.universe_csv` is set
 - `paths.meta_root`
-  - defaults to `dirname(paths.universe_csv)`
+  - defaults to `dirname(paths.universe_csv)` when `paths.universe_csv` is set
+  - otherwise defaults to `<paths.store_root>/meta`
+- `paths.universe_csv`
+  - defaults to `<meta_root>/universe_master.csv`
 - `paths.universe_dir`
   - defaults to `<meta_root>/universes`
 - `paths.update_log_csv`
@@ -1091,6 +1096,7 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `ConfigLike`
   - fields: `raw`, `source_path`
   - methods: `load(...)`, `get(...)`, `path(...)`
+- `store_root_path(cfg) -> Path`
 - `universe_csv_path(cfg) -> Path`
 - `meta_root_path(cfg) -> Path`
 - `universe_dir_path(cfg) -> Path`

@@ -17,8 +17,10 @@ from tradinglab_data.config import (
     intraday_research_root_path,
     intraday_root_path,
     packaged_config_example_text,
+    parquet_root_path,
     registry_root_path,
     resolve_config_path,
+    store_root_path,
     ticker_overrides_path,
     universe_dir_path,
     update_log_path,
@@ -150,6 +152,36 @@ def test_config_derived_paths(tmp_path: Path):
     assert registry_root_path(cfg) == tmp_path / "runs" / "runs_registry"
 
 
+def test_config_store_root_derives_artifact_paths(tmp_path: Path):
+    cfg_file = tmp_path / "config.yaml"
+    store_root = tmp_path / "store"
+    runs_root = tmp_path / "runs"
+    cfg_file.write_text(
+        "\n".join([
+            "paths:",
+            f"  store_root: {store_root}",
+            f"  runs_root: {runs_root}",
+        ]),
+        encoding="utf-8",
+    )
+    cfg = Config.load(cfg_file)
+
+    assert store_root_path(cfg) == store_root
+    assert universe_dir_path(cfg) == store_root / "meta" / "universes"
+    assert update_log_path(cfg) == store_root / "meta" / "update_log.csv"
+    assert update_warning_state_path(cfg) == store_root / "meta" / "update_warning_state.json"
+    assert ticker_overrides_path(cfg) == store_root / "meta" / "ticker_overrides.csv"
+    assert parquet_root_path(cfg) == store_root / "parquet" / "daily"
+    assert intraday_root_path(cfg) == store_root / "parquet" / "intraday"
+    assert intraday_research_root_path(cfg) == store_root / "parquet" / "intraday_research"
+    assert intraday_live_root_path(cfg) == store_root / "parquet" / "intraday_live"
+    assert crypto_root_path(cfg) == store_root / "parquet" / "crypto"
+    assert crypto_metadata_root_path(cfg) == store_root / "meta" / "crypto"
+    assert crypto_registry_path(cfg) == store_root / "meta" / "crypto" / "registry.json"
+    assert crypto_universe_dir_path(cfg) == store_root / "meta" / "crypto" / "universes"
+    assert registry_root_path(cfg) == runs_root / "runs_registry"
+
+
 def test_default_config_path_prefers_envvar(tmp_path: Path, monkeypatch):
     cfg = tmp_path / "custom.yaml"
     monkeypatch.setenv(config_mod.DEFAULT_CONFIG_ENVVAR, str(cfg))
@@ -216,4 +248,5 @@ def test_config_legacy_aliases_are_resolved_lazily(monkeypatch, tmp_path: Path):
 def test_packaged_config_example_text_contains_paths():
     text = packaged_config_example_text()
     assert "paths:" in text
-    assert "parquet_root:" in text
+    assert "store_root:" in text
+    assert "runs_root:" in text

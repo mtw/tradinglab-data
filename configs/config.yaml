@@ -1,16 +1,6 @@
 paths:
-  universe_csv: "./var/meta/universe_master.csv"
-  universe_dir: "./var/meta/universes"
-  ticker_overrides_csv: "./var/meta/ticker_overrides.csv"
-  parquet_root: "./var/parquet/daily"
-  crypto_root: "./var/parquet/crypto"
-  crypto_metadata_root: "./var/meta/crypto"
-  crypto_registry_json: "./var/meta/crypto/registry.json"
-  crypto_universe_dir: "./var/meta/crypto/universes"
-  update_log_csv: "./var/meta/update_log.csv"
-  update_warning_state_json: "./var/meta/update_warning_state.json"
+  store_root: "./var"
   runs_root: "./var/runs"
-  registry_root: "./var/runs/runs_registry"
 
 timeframe: "1d"
 lookback_days: 2000
@@ -32,7 +22,6 @@ update:
 
 extended_hours:
   enabled: true
-  intraday_root: "./var/parquet/intraday"
   preferred_interval: "5m"
   fallback_interval: "1m"
   retention_days: 0
@@ -48,7 +37,6 @@ extended_hours:
 
 intraday:
   enabled: true
-  research_root: "./var/parquet/intraday_research"
   interval: "5m"
   provider: "yahoo"
   session: "regular"
@@ -64,7 +52,6 @@ intraday:
 
 intraday_live:
   enabled: true
-  live_root: "./var/parquet/intraday_live"
   interval: "5m"
   provider: "yahoo"
   exchange_timezone: "America/New_York"

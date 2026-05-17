@@ -1,16 +1,6 @@
 paths:
-  universe_csv: "/absolute/path/to/market-data-store/meta/universe_master.csv"
-  universe_dir: "/absolute/path/to/market-data-store/meta/universes"
-  ticker_overrides_csv: "/absolute/path/to/market-data-store/meta/ticker_overrides.csv"
-  update_log_csv: "/absolute/path/to/market-data-store/meta/update_log.csv"
-  update_warning_state_json: "/absolute/path/to/market-data-store/meta/update_warning_state.json"
-  parquet_root: "/absolute/path/to/market-data-store/parquet/daily"
-  crypto_root: "/absolute/path/to/market-data-store/parquet/crypto"
-  crypto_metadata_root: "/absolute/path/to/market-data-store/meta/crypto"
-  crypto_registry_json: "/absolute/path/to/market-data-store/meta/crypto/registry.json"
-  crypto_universe_dir: "/absolute/path/to/market-data-store/meta/crypto/universes"
+  store_root: "/absolute/path/to/market-data-store"
   runs_root: "/absolute/path/to/market-data-runs/maintenance"
-  registry_root: "/absolute/path/to/market-data-runs/maintenance/runs_registry"
 
 timeframe: "1d"
 lookback_days: 2000
@@ -32,7 +22,6 @@ update:
 
 extended_hours:
   enabled: true
-  intraday_root: "/absolute/path/to/market-data-store/parquet/intraday"
   preferred_interval: "5m"
   fallback_interval: "1m"
   retention_days: 0
@@ -48,7 +37,6 @@ extended_hours:
 
 intraday:
   enabled: true
-  research_root: "/absolute/path/to/market-data-store/parquet/intraday_research"
   interval: "5m"
   provider: "yahoo"
   session: "regular"
@@ -64,7 +52,6 @@ intraday:
 
 intraday_live:
   enabled: true
-  live_root: "/absolute/path/to/market-data-store/parquet/intraday_live"
   interval: "5m"
   provider: "yahoo"
   exchange_timezone: "America/New_York"
