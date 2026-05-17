@@ -10,6 +10,17 @@ import polars as pl
 from ._move_compute import summarize_gap_report
 
 
+def _json_for_script(value: object) -> str:
+    return (
+        json.dumps(value, default=str)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
+    )
+
+
 def persist_alerts(alerts: pl.DataFrame, path: str | Path) -> Path:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -117,10 +128,10 @@ def render_extended_hours_report_html(
     <div class="footer">Artifact source: <code>&lt;paths.runs_root&gt;/YYYY-MM-DD/monitor/extended_hours_alerts.csv</code> and intraday parquet cache.</div>
   </div>
   <script>
-    const alerts = {json.dumps(alerts, default=str)};
-    const moves = {json.dumps(records, default=str)};
+    const alerts = {_json_for_script(alerts)};
+    const moves = {_json_for_script(records)};
     const topN = {int(top_n)};
-    const initialSession = {json.dumps(wanted)};
+    const initialSession = {_json_for_script(wanted)};
     const fmt = (v, digits=2) => (v === null || v === undefined || Number.isNaN(Number(v))) ? "-" : Number(v).toFixed(digits);
     const cls = v => Number(v) >= 0 ? "up" : "dn";
     const alertsBody = document.getElementById("alerts-body");

@@ -68,6 +68,31 @@ def test_persist_extended_hours_report_html(tmp_path: Path):
     assert 'data-table="moves"' in text
 
 
+def test_extended_hours_report_html_escapes_market_data_in_script():
+    payload = "</script><img src=x onerror=alert(1)>"
+    moves = pl.DataFrame(
+        {
+            "symbol": [payload],
+            "ref_close": [100.0],
+            "last_price": [103.0],
+            "pct_move": [3.0],
+            "last_volume": [1000.0],
+            "currency": ["USD"],
+            "last_ts": ["<svg onload=alert(2)>"],
+            "session": ["<b>post</b>"],
+        }
+    )
+    html = eh.render_extended_hours_report_html(moves, moves, threshold=2.0, top_n=10)
+
+    assert payload not in html
+    assert "<svg onload=alert(2)>" not in html
+    assert "<b>post</b>" not in html
+    assert "\\u003c/script\\u003e" in html
+    assert html.lower().count("</script>") == 1
+    assert "td.textContent = value ?? \"-\";" in html
+    assert "span.textContent = value || \"-\";" in html
+
+
 def test_summarize_gap_report_session_filter():
     moves = pl.DataFrame(
         {
