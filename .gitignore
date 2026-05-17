@@ -9,3 +9,4 @@ refactor/
 .venv/
 configs/config.local.yaml
 .clawpatch/
+local_docs/
