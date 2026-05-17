@@ -47,6 +47,7 @@ dev = [
   "build",
   "mypy>=1.10.0",
   "ruff>=0.6.0",
+  "twine>=5.0.0",
   "types-PyYAML>=6.0.0",
 ]
 
@@ -57,6 +58,15 @@ tradinglab-data = "tradinglab_data.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.envs.default]
+features = ["test", "dev"]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest -q -m 'not network' tests"
+lint = "ruff check src tests scripts"
+typecheck = "mypy src"
+build-check = "python -m build && python -m twine check dist/*"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/tradinglab_data"]
 include = [
@@ -66,6 +76,7 @@ include = [
 ]
 
 [tool.pytest.ini_options]
+addopts = "-m 'not network'"
 markers = [
   "network: tests that require live network access",
 ]
