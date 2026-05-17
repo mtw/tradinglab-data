@@ -125,6 +125,21 @@ def render_extended_hours_report_html(
     const cls = v => Number(v) >= 0 ? "up" : "dn";
     const alertsBody = document.getElementById("alerts-body");
     const movesBody = document.getElementById("moves-body");
+    const appendCell = (tr, value, className="") => {{
+      const td = document.createElement("td");
+      if (className) td.className = className;
+      td.textContent = value ?? "-";
+      tr.appendChild(td);
+      return td;
+    }};
+    const appendPillCell = (tr, value) => {{
+      const td = document.createElement("td");
+      const span = document.createElement("span");
+      span.className = "pill";
+      span.textContent = value || "-";
+      td.appendChild(span);
+      tr.appendChild(td);
+    }};
     const state = {{
       alerts: {{ key: "pct_move", dir: "desc" }},
       moves: {{ key: "pct_move", dir: "desc" }},
@@ -155,14 +170,23 @@ def render_extended_hours_report_html(
       movesBody.innerHTML = "";
       sortRows(bySession(alerts, session), state.alerts).forEach(r => {{
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${{r.symbol || "-"}}</td><td class="${{cls(r.pct_move)}}">${{fmt(r.pct_move)}}%</td><td><span class="pill">${{r.session || "-"}}</span></td><td>${{fmt(r.last_price, 4)}}</td>`;
+        appendCell(tr, r.symbol || "-");
+        appendCell(tr, `${{fmt(r.pct_move)}}%`, cls(r.pct_move));
+        appendPillCell(tr, r.session || "-");
+        appendCell(tr, fmt(r.last_price, 4));
         alertsBody.appendChild(tr);
       }});
       let moveRows = sortRows(bySession(moves, session), state.moves);
       if (topN > 0) moveRows = moveRows.slice(0, topN);
       moveRows.forEach(r => {{
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${{r.symbol || "-"}}</td><td class="${{cls(r.pct_move)}}">${{fmt(r.pct_move)}}%</td><td>${{fmt(r.ref_close, 4)}}</td><td>${{fmt(r.last_price, 4)}}</td><td>${{fmt(r.last_volume, 0)}}</td><td><span class="pill">${{r.session || "-"}}</span></td><td>${{r.last_ts || "-"}}</td>`;
+        appendCell(tr, r.symbol || "-");
+        appendCell(tr, `${{fmt(r.pct_move)}}%`, cls(r.pct_move));
+        appendCell(tr, fmt(r.ref_close, 4));
+        appendCell(tr, fmt(r.last_price, 4));
+        appendCell(tr, fmt(r.last_volume, 0));
+        appendPillCell(tr, r.session || "-");
+        appendCell(tr, r.last_ts || "-");
         movesBody.appendChild(tr);
       }});
       markHeaders();
