@@ -193,6 +193,18 @@ def universe_dir_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "universe_dir") or (meta_root_path(cfg) / "universes")
 
 
+def symbol_master_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "symbol_master_csv") or (meta_root_path(cfg) / "symbol_master.csv")
+
+
+def exchange_defaults_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "exchange_defaults_csv") or (meta_root_path(cfg) / "exchange_defaults.csv")
+
+
+def symbol_overrides_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "symbol_overrides_csv") or (meta_root_path(cfg) / "symbol_overrides.csv")
+
+
 def update_log_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "update_log_csv") or (meta_root_path(cfg) / "update_log.csv")
 
@@ -229,6 +241,10 @@ def intraday_live_root_path(cfg: ConfigLike) -> Path:
 
 def crypto_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "crypto_root") or (parquet_root_path(cfg).parent / "crypto")
+
+
+def fx_daily_root_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "fx_daily_root") or (store_root_path(cfg) / "parquet" / "fx_daily")
 
 
 def crypto_metadata_root_path(cfg: ConfigLike) -> Path:

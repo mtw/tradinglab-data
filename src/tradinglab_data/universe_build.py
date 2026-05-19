@@ -22,6 +22,13 @@ class UniverseRow:
     isin: str | None = None
     index_memberships: str | None = None
     needs_mapping: int = 0
+    asset_currency: str = ""
+    base_listing_currency: str = ""
+    tax_country: str = ""
+    asset_class: str = ""
+    fx_pair_to_base: str = ""
+    lot_size: float = 1.0
+    price_multiplier: float = 1.0
 
 
 def _warn(message: str) -> None:
@@ -395,6 +402,13 @@ def build_universe(
         "isin",
         "index_memberships",
         "needs_mapping",
+        "asset_currency",
+        "base_listing_currency",
+        "tax_country",
+        "asset_class",
+        "fx_pair_to_base",
+        "lot_size",
+        "price_multiplier",
     ]
     cols = [c for c in ordered if c in df.columns] + [c for c in df.columns if c not in ordered]
     df = df.select(cols)

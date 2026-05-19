@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import json
+import math
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, TypeAlias
 
 import polars as pl
 
-from .contracts import ARTIFACT_SCHEMA_VERSION, OHLC_COLUMNS, PACKAGE_NAME, PYTHON_PACKAGE_NAME, CompatibilityManifest
+from .contracts import (
+    ARTIFACT_SCHEMA_VERSION,
+    EXCHANGE_DEFAULT_COLUMNS,
+    FX_DAILY_COLUMNS,
+    OHLC_COLUMNS,
+    PACKAGE_NAME,
+    PYTHON_PACKAGE_NAME,
+    SYMBOL_MASTER_COLUMNS,
+    SYMBOL_MASTER_OPTIONAL_COLUMNS,
+    CompatibilityManifest,
+)
 
 # Use the public PolarsDataType alias for typing while keeping runtime on the stable pl.DataType export.
 if TYPE_CHECKING:
@@ -81,6 +92,34 @@ INTRADAY_LIVE_SCHEMA: dict[str, SchemaDtype] = {
     "ingested_at": pl.Datetime,
 }
 
+FX_DAILY_PARQUET_SCHEMA: dict[str, SchemaDtype] = {
+    "date": pl.Datetime,
+    "open": pl.Float64,
+    "high": pl.Float64,
+    "low": pl.Float64,
+    "close": pl.Float64,
+    "provider": pl.String,
+    "pair": pl.String,
+    "base_currency": pl.String,
+    "quote_currency": pl.String,
+    "source_symbol": pl.String,
+    "ingested_at": pl.Datetime,
+}
+
+SYMBOL_MASTER_SCHEMA: dict[str, SchemaDtype] = {
+    **{column: pl.String for column in SYMBOL_MASTER_COLUMNS[:8]},
+    "lot_size": pl.Float64,
+    "price_multiplier": pl.Float64,
+    **{column: pl.String for column in SYMBOL_MASTER_OPTIONAL_COLUMNS},
+}
+
+EXCHANGE_DEFAULT_SCHEMA: dict[str, SchemaDtype] = {
+    **{column: pl.String for column in EXCHANGE_DEFAULT_COLUMNS[:4]},
+    "default_lot_size": pl.Float64,
+    "default_price_multiplier": pl.Float64,
+    "default_asset_class": pl.String,
+}
+
 
 OHLC_PARQUET_SCHEMA: dict[str, SchemaDtype] = OHLC_SCHEMA
 DAILY_PARQUET_SCHEMA: dict[str, SchemaDtype] = OHLC_SCHEMA
@@ -105,14 +144,19 @@ SCHEMA_NOTES = {
     "crypto_partitioning": "Crypto store: <paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet.",
     "intraday_research_partitioning": "Intraday research store: <intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet.",
     "intraday_live_partitioning": "Intraday live store: <intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet.",
+    "fx_daily_partitioning": "FX daily store: <paths.fx_daily_root>/<PAIR>.parquet.",
+    "symbol_master_partitioning": "Authoritative symbol metadata lives under <paths.meta_root>/symbol_master.csv, with exchange defaults and symbol overrides as companion CSV artifacts.",
     "semantics": "OHLC columns are raw vendor OHLC. adj_close is adjusted close when supplied by the upstream provider. currency is the listing currency when known.",
+    "symbol_master_semantics": "symbol_master.csv is the authoritative accounting metadata surface. Daily OHLC currency remains diagnostic provider data and is not authoritative accounting metadata. metadata_quality=non_authoritative_country and metadata_quality=non_authoritative_tax_country mark fallback fields derived from exchange_defaults.csv rather than provider-authoritative source data.",
     "intraday_research_semantics": "Intraday research parquet persists regular-session raw OHLCV bars with explicit UTC timestamp, session_date, provider, and symbol metadata.",
     "intraday_live_semantics": "Intraday live parquet persists session-aware raw OHLCV bars for pre, regular, and post sessions with explicit closed-bar and session metadata.",
     "crypto_semantics": "Crypto parquet persists closed exchange-native OHLCV bars with explicit exchange, market type, interval, and canonical symbol metadata.",
+    "fx_daily_semantics": "FX daily parquet persists explicit source-to-target conversion pairs such as USDEUR, meaning EUR value of 1 USD. Consumers must not silently invert pair direction.",
     "timestamps": "date is stored as Polars Datetime. Daily bars represent session dates. Intraday bars should be normalized to UTC internally and written without mixed timezone types.",
     "intraday_research_timestamps": "Intraday research timestamp and ingested_at are stored as UTC-normalized datetimes; session_date is the exchange-local trading date.",
     "intraday_live_timestamps": "Intraday live timestamp and ingested_at are stored as UTC-normalized datetimes; session_date is the exchange-local trading date.",
     "crypto_timestamps": "Crypto timestamp columns are UTC-normalized bar-open timestamps; ingested_at records the last local write time in UTC.",
+    "fx_daily_timestamps": "FX daily date follows the same daily-bar normalization as the existing daily parquet contract; ingested_at is stored in UTC.",
     "constraints": [
         "Rows must be sorted by date ascending.",
         "date values must be unique within a file.",
@@ -136,6 +180,18 @@ SCHEMA_NOTES = {
         "timestamp values must be unique within a file.",
         "session must be one of pre, regular, post, or unknown.",
         "interval, provider, symbol, and is_closed_bar metadata must be populated on every row and remain file-consistent.",
+    ],
+    "fx_daily_constraints": [
+        "Rows must be sorted by date ascending.",
+        "date values must be unique within a file.",
+        "base_currency + quote_currency must equal pair on every row.",
+        "open, high, low, and close must be positive finite conversion values.",
+    ],
+    "symbol_master_constraints": [
+        "All required symbol master columns must be present.",
+        "Active rows must have non-empty symbol, exchange, country, asset_currency, base_listing_currency, tax_country, asset_class, and fx_pair_to_base values.",
+        "lot_size and price_multiplier must be strictly positive.",
+        "fx_pair_to_base must be a six-letter uppercase pair, including explicit identity pairs such as EUREUR.",
     ],
 }
 
@@ -184,6 +240,30 @@ def compatibility_manifest() -> CompatibilityManifest:
                 "schema_name": "crypto_ohlcv",
                 "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
             },
+            "fx_daily_parquet": {
+                "category": "parquet",
+                "path_pattern": "<paths.fx_daily_root>/<PAIR>.parquet",
+                "schema_name": "fx_daily_parquet",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "symbol_master_csv": {
+                "category": "csv",
+                "path_pattern": "<paths.meta_root>/symbol_master.csv",
+                "schema_name": "symbol_master_csv",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "exchange_defaults_csv": {
+                "category": "csv",
+                "path_pattern": "<paths.meta_root>/exchange_defaults.csv",
+                "schema_name": "exchange_defaults_csv",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
+            "symbol_overrides_csv": {
+                "category": "csv",
+                "path_pattern": "<paths.meta_root>/symbol_overrides.csv",
+                "schema_name": "symbol_overrides_csv",
+                "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+            },
             "extended_hours_alerts_csv": {
                 "category": "csv",
                 "path_pattern": "<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_alerts.csv",
@@ -220,6 +300,8 @@ def schema_manifest() -> dict[str, object]:
         "intraday_research": {k: str(v) for k, v in INTRADAY_RESEARCH_PARQUET_SCHEMA.items()},
         "intraday_live": {k: str(v) for k, v in INTRADAY_LIVE_PARQUET_SCHEMA.items()},
         "crypto": {k: str(v) for k, v in CRYPTO_PARQUET_SCHEMA.items()},
+        "fx_daily": {k: str(v) for k, v in FX_DAILY_PARQUET_SCHEMA.items()},
+        "symbol_master": {k: str(v) for k, v in SYMBOL_MASTER_SCHEMA.items()},
         "notes": SCHEMA_NOTES,
     }
 
@@ -233,7 +315,6 @@ def render_schema_markdown() -> str:
         rows = "\n".join(f"| `{col}` | `{dtype}` |" for col, dtype in schema.items())
         return f"## {title}\n\n| Column | Type |\n|---|---|\n{rows}\n"
 
-    notes = "\n".join(f"- {item}" for item in SCHEMA_NOTES["constraints"])
     return (
         "# Data Parquet Schema\n\n"
         + _table("Daily", DAILY_PARQUET_SCHEMA)
@@ -245,26 +326,39 @@ def render_schema_markdown() -> str:
         + _table("Intraday Live", INTRADAY_LIVE_PARQUET_SCHEMA)
         + "\n"
         + _table("Crypto", CRYPTO_PARQUET_SCHEMA)
+        + "\n"
+        + _table("FX Daily", FX_DAILY_PARQUET_SCHEMA)
+        + "\n"
+        + _table("Symbol Master CSV", SYMBOL_MASTER_SCHEMA)
         + "\n## Notes\n\n"
         + f"- {SCHEMA_NOTES['partitioning']}\n"
         + f"- {SCHEMA_NOTES['intraday_research_partitioning']}\n"
         + f"- {SCHEMA_NOTES['intraday_live_partitioning']}\n"
         + f"- {SCHEMA_NOTES['crypto_partitioning']}\n"
+        + f"- {SCHEMA_NOTES['fx_daily_partitioning']}\n"
+        + f"- {SCHEMA_NOTES['symbol_master_partitioning']}\n"
         + f"- {SCHEMA_NOTES['semantics']}\n"
+        + f"- {SCHEMA_NOTES['symbol_master_semantics']}\n"
         + f"- {SCHEMA_NOTES['intraday_research_semantics']}\n"
         + f"- {SCHEMA_NOTES['intraday_live_semantics']}\n"
         + f"- {SCHEMA_NOTES['crypto_semantics']}\n"
+        + f"- {SCHEMA_NOTES['fx_daily_semantics']}\n"
         + f"- {SCHEMA_NOTES['timestamps']}\n"
         + f"- {SCHEMA_NOTES['intraday_research_timestamps']}\n"
         + f"- {SCHEMA_NOTES['intraday_live_timestamps']}\n"
         + f"- {SCHEMA_NOTES['crypto_timestamps']}\n"
-        + notes
+        + f"- {SCHEMA_NOTES['fx_daily_timestamps']}\n"
+        + "\n".join(f"- {item}" for item in SCHEMA_NOTES["constraints"])
         + "\n"
         + "\n".join(f"- {item}" for item in SCHEMA_NOTES["intraday_research_constraints"])
         + "\n"
         + "\n".join(f"- {item}" for item in SCHEMA_NOTES["intraday_live_constraints"])
         + "\n"
         + "\n".join(f"- {item}" for item in SCHEMA_NOTES["crypto_constraints"])
+        + "\n"
+        + "\n".join(f"- {item}" for item in SCHEMA_NOTES["fx_daily_constraints"])
+        + "\n"
+        + "\n".join(f"- {item}" for item in SCHEMA_NOTES["symbol_master_constraints"])
         + "\n"
     )
 
@@ -302,6 +396,126 @@ def validate_frame_schema(
         if extras and not allow_extra_columns:
             problems.append(f"extra={extras}")
         raise ValueError("Frame does not match contract: " + "; ".join(problems))
+
+
+def _normalize_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    text = str(value).strip()
+    return "" if text.lower() == "null" else text
+
+
+def _normalize_upper(value: object) -> str:
+    return _normalize_text(value).upper()
+
+
+def _pair_is_valid(pair: str) -> bool:
+    return len(pair) == 6 and pair.isalpha() and pair == pair.upper()
+
+
+def _column_nonempty_count(df: pl.DataFrame, column: str) -> int:
+    return int(df.select(pl.col(column).cast(pl.String, strict=False).fill_null("").str.strip_chars().eq("").sum()).item())
+
+
+def validate_symbol_master_frame(df: pl.DataFrame, *, strict: bool = True) -> list[str]:
+    errors: list[str] = []
+    missing = [column for column in SYMBOL_MASTER_COLUMNS if column not in df.columns]
+    if missing:
+        errors.append("missing_required_columns=" + ",".join(missing))
+        return errors
+    active_mask = pl.lit(True)
+    if "active" in df.columns:
+        active_mask = (
+            pl.col("active")
+            .cast(pl.String, strict=False)
+            .fill_null("1")
+            .str.strip_chars()
+            .str.to_lowercase()
+            .is_in(["1", "true", "yes", "y"])
+        )
+    required_active_columns = [
+        "symbol",
+        "exchange",
+        "country",
+        "asset_currency",
+        "base_listing_currency",
+        "tax_country",
+        "asset_class",
+        "fx_pair_to_base",
+    ]
+    for column in required_active_columns:
+        missing_rows = int(
+            df.select((active_mask & pl.col(column).cast(pl.String, strict=False).fill_null("").str.strip_chars().eq("")).sum()).item()
+        )
+        if missing_rows > 0:
+            errors.append(f"empty_{column}_rows={missing_rows}")
+    normalized_symbols = [_normalize_upper(value) for value in df.get_column("symbol").to_list()]
+    if len(normalized_symbols) != len(set(sym for sym in normalized_symbols if sym)):
+        errors.append("duplicate_symbols")
+    for column in ("asset_currency", "base_listing_currency", "tax_country"):
+        bad = sum(1 for value in df.get_column(column).to_list() if _normalize_upper(value) != _normalize_text(value))
+        if bad > 0:
+            errors.append(f"{column}_not_uppercase={bad}")
+    for column in ("lot_size", "price_multiplier"):
+        try:
+            casted = df.get_column(column).cast(pl.Float64, strict=True)
+        except Exception:
+            errors.append(f"{column}_not_float")
+            continue
+        bad = int(casted.is_null().sum()) + int((casted <= 0).sum())
+        if bad > 0:
+            errors.append(f"{column}_nonpositive_rows={bad}")
+    bad_pairs = 0
+    for pair_value, asset_value in zip(df.get_column("fx_pair_to_base").to_list(), df.get_column("asset_currency").to_list(), strict=False):
+        pair = _normalize_upper(pair_value)
+        asset = _normalize_upper(asset_value)
+        if not _pair_is_valid(pair):
+            bad_pairs += 1
+            continue
+        if asset and pair[:3] != asset:
+            bad_pairs += 1
+    if bad_pairs > 0:
+        errors.append(f"invalid_fx_pair_rows={bad_pairs}")
+    if strict and errors:
+        return errors
+    return errors
+
+
+def validate_fx_daily_frame(df: pl.DataFrame, *, pair: str | None = None) -> list[str]:
+    errors: list[str] = []
+    missing = [column for column in FX_DAILY_COLUMNS if column not in df.columns]
+    if missing:
+        errors.append("missing_required_columns=" + ",".join(missing))
+        return errors
+    try:
+        validate_frame_schema(df, FX_DAILY_PARQUET_SCHEMA)
+    except ValueError as exc:
+        errors.append(str(exc))
+        return errors
+    expected_pair = _normalize_upper(pair) if pair else ""
+    if df.is_empty():
+        return errors
+    if not bool(df.get_column("date").is_sorted()):
+        errors.append("dates_not_sorted")
+    duplicate_dates = int(df.height - df.select(pl.col("date").n_unique()).item())
+    if duplicate_dates > 0:
+        errors.append(f"duplicate_dates={duplicate_dates}")
+    bad_rows = 0
+    for row in df.select(["open", "high", "low", "close", "pair", "base_currency", "quote_currency"]).iter_rows(named=True):
+        if expected_pair and _normalize_upper(row["pair"]) != expected_pair:
+            bad_rows += 1
+        if _normalize_upper(row["base_currency"]) + _normalize_upper(row["quote_currency"]) != _normalize_upper(row["pair"]):
+            bad_rows += 1
+        for column in ("open", "high", "low", "close"):
+            value = row[column]
+            if value is None or not math.isfinite(float(value)) or float(value) <= 0:
+                bad_rows += 1
+                break
+    if bad_rows > 0:
+        errors.append(f"invalid_rows={bad_rows}")
+    return errors
 
 
 def validate_daily_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:

@@ -13,6 +13,8 @@ from tradinglab_data.config import (
     crypto_root_path,
     crypto_universe_dir_path,
     default_config_path,
+    exchange_defaults_path,
+    fx_daily_root_path,
     intraday_live_root_path,
     intraday_research_root_path,
     intraday_root_path,
@@ -21,6 +23,8 @@ from tradinglab_data.config import (
     registry_root_path,
     resolve_config_path,
     store_root_path,
+    symbol_master_path,
+    symbol_overrides_path,
     ticker_overrides_path,
     universe_dir_path,
     update_log_path,
@@ -142,10 +146,14 @@ def test_config_derived_paths(tmp_path: Path):
     assert update_log_path(cfg) == tmp_path / "meta" / "update_log.csv"
     assert update_warning_state_path(cfg) == tmp_path / "meta" / "update_warning_state.json"
     assert ticker_overrides_path(cfg) == tmp_path / "meta" / "ticker_overrides.csv"
+    assert symbol_master_path(cfg) == tmp_path / "meta" / "symbol_master.csv"
+    assert exchange_defaults_path(cfg) == tmp_path / "meta" / "exchange_defaults.csv"
+    assert symbol_overrides_path(cfg) == tmp_path / "meta" / "symbol_overrides.csv"
     assert intraday_root_path(cfg) == tmp_path / "parquet" / "intraday"
     assert intraday_research_root_path(cfg) == tmp_path / "parquet" / "intraday_research"
     assert intraday_live_root_path(cfg) == tmp_path / "parquet" / "intraday_live"
     assert crypto_root_path(cfg) == tmp_path / "parquet" / "crypto"
+    assert fx_daily_root_path(cfg) == tmp_path / "parquet" / "fx_daily"
     assert crypto_metadata_root_path(cfg) == tmp_path / "meta" / "crypto"
     assert crypto_registry_path(cfg) == tmp_path / "meta" / "crypto" / "registry.json"
     assert crypto_universe_dir_path(cfg) == tmp_path / "meta" / "crypto" / "universes"
@@ -171,11 +179,15 @@ def test_config_store_root_derives_artifact_paths(tmp_path: Path):
     assert update_log_path(cfg) == store_root / "meta" / "update_log.csv"
     assert update_warning_state_path(cfg) == store_root / "meta" / "update_warning_state.json"
     assert ticker_overrides_path(cfg) == store_root / "meta" / "ticker_overrides.csv"
+    assert symbol_master_path(cfg) == store_root / "meta" / "symbol_master.csv"
+    assert exchange_defaults_path(cfg) == store_root / "meta" / "exchange_defaults.csv"
+    assert symbol_overrides_path(cfg) == store_root / "meta" / "symbol_overrides.csv"
     assert parquet_root_path(cfg) == store_root / "parquet" / "daily"
     assert intraday_root_path(cfg) == store_root / "parquet" / "intraday"
     assert intraday_research_root_path(cfg) == store_root / "parquet" / "intraday_research"
     assert intraday_live_root_path(cfg) == store_root / "parquet" / "intraday_live"
     assert crypto_root_path(cfg) == store_root / "parquet" / "crypto"
+    assert fx_daily_root_path(cfg) == store_root / "parquet" / "fx_daily"
     assert crypto_metadata_root_path(cfg) == store_root / "meta" / "crypto"
     assert crypto_registry_path(cfg) == store_root / "meta" / "crypto" / "registry.json"
     assert crypto_universe_dir_path(cfg) == store_root / "meta" / "crypto" / "universes"

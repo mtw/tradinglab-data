@@ -364,8 +364,14 @@ def _load_intraday_live_symbols_from_cfg(
     return symbols
 
 
-def _migrate_symbol_alias_parquet(symbols: list[str], parquet_root: str | Path, intraday_root: str | Path | None = None) -> None:
-    overrides = load_ticker_overrides()
+def _migrate_symbol_alias_parquet(
+    symbols: list[str],
+    parquet_root: str | Path,
+    intraday_root: str | Path | None = None,
+    *,
+    ticker_overrides_csv: str | Path | None = None,
+) -> None:
+    overrides = load_ticker_overrides(ticker_overrides_csv)
     if not overrides:
         return
     canonical = {canonicalize_symbol(sym, overrides=overrides) for sym in symbols}
@@ -558,6 +564,7 @@ def update_from_config(cfg: ConfigLike, symbols_override: list[str] | None = Non
         symbols,
         parquet_root=update_cfg.parquet_root,
         intraday_root=update_cfg.intraday.root if update_cfg.intraday.enabled else None,
+        ticker_overrides_csv=ticker_overrides_path(cfg),
     )
     print(f"Updating {len(symbols)} symbols into {update_cfg.parquet_root} ...")
     if update_cfg.history_provider in {"stooq"}:

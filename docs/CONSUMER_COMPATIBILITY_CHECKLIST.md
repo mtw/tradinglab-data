@@ -20,10 +20,25 @@ Use this checklist before upgrading external consumers to a new `tradinglab-data
 
 - confirm the consumer checks `ARTIFACT_SCHEMA_VERSION`
 - verify daily and intraday parquet readers still accept the current schema
+- verify the consumer treats daily OHLC `currency` as diagnostic provider data rather than authoritative accounting metadata
+- verify the consumer reads `symbol_master.csv` before portfolio simulation or accounting-sensitive workflows
+- verify the consumer accepts:
+  - `<paths.meta_root>/symbol_master.csv`
+  - `<paths.meta_root>/exchange_defaults.csv`
+  - `<paths.meta_root>/symbol_overrides.csv`
+  - `<paths.fx_daily_root>/<PAIR>.parquet`
 - if consuming crypto artifacts, verify the reader accepts:
   - `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
   - `<paths.crypto_registry_json>`
   - `<paths.crypto_universe_dir>/<UNIVERSE>.json`
+
+## TradingLab Accounting Consumer Checks
+
+- load `symbol_master.csv` before portfolio simulation
+- treat `fx_pair_to_base` as authoritative
+- for identity pairs such as `EUREUR`, use a conversion factor of `1.0`
+- for non-identity pairs, require `<paths.fx_daily_root>/<PAIR>.parquet`
+- never infer asset currency from ticker suffixes inside the consumer
 
 ## Integrity Report Contract
 

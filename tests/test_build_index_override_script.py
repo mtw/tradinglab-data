@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pandas as pd
 import polars as pl
 import pytest
 
@@ -34,3 +35,35 @@ def test_main_dispatches_and_writes_csv(tmp_path: Path, monkeypatch):
     loaded = pl.read_csv(str(out))
     assert loaded.height == 2
     assert loaded.get_column("symbol").to_list() == ["AAPL", "MSFT"]
+
+
+def test_build_atx_uses_real_symbol_column(monkeypatch):
+    monkeypatch.setattr(mod, "_fetch_html", lambda url: "<html></html>")
+    monkeypatch.setattr(
+        pd,
+        "read_html",
+        lambda *_args, **_kwargs: [
+            pd.DataFrame(
+                {
+                    "Ticker": ["Erste", "Voestalpine"],
+                    "Name": ["Erste Group", "voestalpine AG"],
+                }
+            )
+        ],
+    )
+
+    out = mod.build_atx()
+
+    assert out.get_column("symbol").to_list() == ["ERSTE", "VOESTALPINE"]
+
+
+def test_build_atx_rejects_missing_symbol_column(monkeypatch):
+    monkeypatch.setattr(mod, "_fetch_html", lambda url: "<html></html>")
+    monkeypatch.setattr(
+        pd,
+        "read_html",
+        lambda *_args, **_kwargs: [pd.DataFrame({"Name": ["Erste Group"]})],
+    )
+
+    with pytest.raises(RuntimeError, match="Missing Symbol/Ticker/Kürzel/ISIN column"):
+        mod.build_atx()

@@ -1,0 +1,6 @@
+exchange,country,default_asset_currency,default_tax_country,default_lot_size,default_price_multiplier,default_asset_class,notes
+NASDAQ,US,USD,US,1.0,1.0,stock,US equities default
+NYSEARCA,US,USD,US,1.0,1.0,etf,US ETF default
+VIE,AT,EUR,AT,1.0,1.0,stock,Vienna exchange default
+SIX,CH,CHF,CH,1.0,1.0,stock,Switzerland default
+LSE,GB,GBP,GB,1.0,1.0,stock,London default

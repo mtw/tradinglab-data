@@ -22,7 +22,7 @@ Use these signals for different needs:
   - example: `tradinglab-data>=0.2,<0.3`
 - artifact schema version
   - use this when consuming parquet files or generated reports across package releases
-  - current value: `v0.2.0`
+  - current value: `v0.3.0`
 
 Programmatic surface:
 
@@ -47,7 +47,9 @@ What this package provides:
 - canonical local data artifacts for daily stock/ETF history
 - canonical local data artifacts for extended-hours intraday stock/ETF history
 - canonical local data artifacts for regular-session intraday research stock/ETF history
+- canonical local data artifacts for daily FX conversion pairs
 - canonical local data artifacts for crypto OHLCV history
+- authoritative symbol-master accounting metadata, exchange defaults, and symbol overrides
 - universe metadata artifacts and ticker normalization behavior
 - verification, integrity reporting, and maintenance wrappers around those artifacts
 
@@ -57,7 +59,11 @@ What downstream packages may rely on:
 - intraday parquet under `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
 - intraday research parquet under `<intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet`
 - intraday live parquet under `<intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet`
+- FX daily parquet under `<paths.fx_daily_root>/<PAIR>.parquet`
 - crypto parquet under `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
+- authoritative symbol master under `<paths.meta_root>/symbol_master.csv`
+- exchange defaults under `<paths.meta_root>/exchange_defaults.csv`
+- symbol overrides under `<paths.meta_root>/symbol_overrides.csv`
 - published parquet schemas in `docs/PARQUET_SCHEMA.md`
 - public CLI entrypoints documented in this file
 - public Python exports documented in this file
@@ -75,6 +81,8 @@ What downstream packages must not assume:
 What downstream packages should do:
 
 - treat this package as the source of truth for maintained market-data artifacts
+- load `symbol_master.csv` before portfolio simulation or accounting-sensitive workflows
+- treat `fx_pair_to_base` as authoritative and use identity pairs such as `EUREUR` as a conversion factor of `1.0`
 - consume the published artifact paths and schemas rather than re-deriving provider-specific formats
 - tolerate additive fields and additive CLI/config surface where this document does not promise exact closure
 - pin package versions for Python/CLI compatibility
@@ -121,6 +129,8 @@ Current top-level keys:
 - `intraday_research`
 - `intraday_live`
 - `crypto`
+- `fx_daily`
+- `symbol_master`
 - `notes`
 
 Migration note:
@@ -174,6 +184,13 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `render_schema_json`
 - `render_schema_markdown`
 - `generate_parquet_store_report`
+- `load_symbol_master_frame`
+- `load_symbol_master_map`
+- `build_symbol_master_frame`
+- `validate_symbol_master`
+- `load_fx_pair`
+- `available_fx_pairs`
+- `sync_fx_pair_yahoo`
 - `crypto_backfill_from_config`
 - `crypto_diff_universe_from_config`
 - `crypto_inspect_from_config`
@@ -187,6 +204,8 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `validate_intraday_frame`
 - `validate_intraday_research_frame`
 - `validate_intraday_live_frame`
+- `validate_symbol_master_frame`
+- `validate_fx_daily_frame`
 - `validate_moves_frame`
 - `validate_alerts_frame`
 - `update_from_config`
@@ -225,6 +244,65 @@ Global option:
     - `./configs/config.yaml`
 - is not required for `schema`
 - is required in practice for `update`, `intraday ...`, `monitor-extended-hours`, `build-universe`, `report-parquet-store`, and `crypto ...` because those code paths load `Config`
+
+## Accounting Metadata Contract
+
+Authoritative CSV artifacts:
+
+- `<paths.meta_root>/symbol_master.csv`
+- `<paths.meta_root>/exchange_defaults.csv`
+- `<paths.meta_root>/symbol_overrides.csv`
+
+Required `symbol_master.csv` columns:
+
+- `symbol`
+- `exchange`
+- `country`
+- `asset_currency`
+- `base_listing_currency`
+- `tax_country`
+- `asset_class`
+- `fx_pair_to_base`
+- `lot_size`
+- `price_multiplier`
+
+Important consumer rule:
+
+- daily OHLC `currency` is diagnostic provider data and must not be treated as authoritative accounting metadata
+
+Provenance rule:
+
+- `symbol_master.csv` is still the consumer-facing accounting surface, but some required fields may be derived to satisfy the contract.
+- `metadata_source` records whether a row used `universe`, `exchange_defaults`, and/or `symbol_overrides`.
+- `metadata_quality` records whether fields were derived instead of sourced directly.
+- `non_authoritative_country` means `country` was filled from `exchange_defaults.csv` and is fallback metadata rather than provider-authoritative source data.
+- `non_authoritative_tax_country` means `tax_country` was filled from `exchange_defaults.csv` and is fallback metadata rather than provider-authoritative source data.
+- Yahoo quote-page audits currently provide authoritative `symbol`, `name`, `exchange`, and `currency`, but not authoritative `country` or `tax_country`.
+
+Resolution order for symbol-master construction:
+
+1. universe CSV data
+2. exchange defaults
+3. symbol overrides
+
+Overrides win over both provider metadata and exchange defaults.
+
+## FX Daily Contract
+
+Artifact path:
+
+- `<paths.fx_daily_root>/<PAIR>.parquet`
+
+Pair naming:
+
+- `USDEUR` means EUR value of `1` USD
+- `EURUSD` means USD value of `1` EUR
+- consumers must not silently invert pair direction
+
+Identity convention:
+
+- `symbol_master.csv` uses explicit identity pairs such as `EUREUR`
+- identity pairs do not require parquet files by default
 
 Subcommands:
 
@@ -974,6 +1052,7 @@ Consumer behavior when loading universes:
 - if an `active` column exists, only rows with `active == 1` are kept
 - ticker overrides are applied after load
 - duplicate symbols introduced by overrides are deduplicated, keeping the first row
+- duplicate symbols encountered during merged-universe normalization are merged field-by-field, preferring later non-empty metadata while unioning `index_memberships`
 
 ### Ticker Overrides CSV
 

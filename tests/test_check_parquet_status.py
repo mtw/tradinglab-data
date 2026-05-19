@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -243,6 +244,44 @@ def test_main_fail_severity_all_fails_on_noncritical_issue(tmp_path: Path, monke
         raise AssertionError("expected SystemExit")
     except SystemExit as e:
         assert int(e.code) == 2
+
+
+def test_main_summary_json_uses_resolved_root_from_config(tmp_path: Path, monkeypatch):
+    status = _status("AAA")
+    config_path = tmp_path / "config.yaml"
+    parquet_root = tmp_path / "parquet" / "daily"
+    summary_path = tmp_path / "summary.json"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  parquet_root: {parquet_root}",
+                f"  runs_root: {tmp_path / 'runs'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "_collect_targets", lambda **kwargs: [("AAA", tmp_path / "AAA.parquet")])
+    monkeypatch.setattr(mod, "_validate_file", lambda **kwargs: status)
+    monkeypatch.setattr(mod, "_load_symbol_meta", lambda **kwargs: {})
+    monkeypatch.setattr(mod, "run_parquet_sanity_checks", lambda *args, **kwargs: {"ok": True, "errors": []})
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "check_parquet_status.py",
+            "--config",
+            str(config_path),
+            "--summary-json",
+            str(summary_path),
+        ],
+    )
+
+    mod.main()
+
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["root"] == str(parquet_root)
 
 
 def test_validate_file_intraday_same_day_gap(tmp_path: Path):

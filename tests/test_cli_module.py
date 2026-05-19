@@ -303,3 +303,161 @@ def test_cli_module_invokes_main_when_run_as_module(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["tradinglab-data", "schema", "--format", "json"])
     with pytest.raises(SystemExit, match="0"):
         runpy.run_module("tradinglab_data.cli", run_name="__main__")
+
+
+def test_cli_build_symbol_master_writes_output(tmp_path: Path, capsys):
+    meta = tmp_path / "meta"
+    universe_csv = meta / "merged.csv"
+    universe_csv.parent.mkdir(parents=True, exist_ok=True)
+    universe_csv.write_text("symbol,exchange,country,active\nAAPL,NASDAQ,US,1\n", encoding="utf-8")
+    exchange_defaults = meta / "exchange_defaults.csv"
+    exchange_defaults.write_text(
+        "exchange,country,default_asset_currency,default_tax_country,default_lot_size,default_price_multiplier,default_asset_class\n"
+        "NASDAQ,US,USD,US,1,1,stock\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  universe_csv: {universe_csv}",
+                f"  exchange_defaults_csv: {exchange_defaults}",
+                f"  symbol_master_csv: {meta / 'symbol_master.csv'}",
+                f"  store_root: {tmp_path / 'store'}",
+                f"  runs_root: {tmp_path / 'runs'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    rc = cli.main(["--config", str(config_path), "build-symbol-master", "--base-currency", "EUR"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[BUILD_SYMBOL_MASTER]" in out
+    assert (meta / "symbol_master.csv").exists()
+
+
+def test_cli_validate_symbol_master_returns_zero_for_valid_file(tmp_path: Path, capsys):
+    meta = tmp_path / "meta"
+    path = meta / "symbol_master.csv"
+    meta.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "symbol,exchange,country,asset_currency,base_listing_currency,tax_country,asset_class,fx_pair_to_base,lot_size,price_multiplier\n"
+        "AAPL,NASDAQ,US,USD,USD,US,stock,USDEUR,1,1\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  symbol_master_csv: {path}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    rc = cli.main(["--config", str(config_path), "validate-symbol-master", "--path", str(path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[VALIDATE_SYMBOL_MASTER]" in out
+
+
+def test_cli_validate_symbol_master_returns_nonzero_for_invalid_file(tmp_path: Path):
+    meta = tmp_path / "meta"
+    path = meta / "symbol_master.csv"
+    meta.mkdir(parents=True, exist_ok=True)
+    path.write_text("symbol,exchange\nAAPL,NASDAQ\n", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  symbol_master_csv: {path}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        cli.main(["--config", str(config_path), "validate-symbol-master", "--path", str(path), "--strict"])
+
+
+def test_cli_fx_validate_checks_existing_pair(tmp_path: Path, capsys):
+    fx_root = tmp_path / "store" / "parquet" / "fx_daily"
+    fx_root.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        {
+            "date": ["2026-03-27"],
+            "open": [0.92],
+            "high": [0.93],
+            "low": [0.91],
+            "close": [0.925],
+            "provider": ["yahoo"],
+            "pair": ["USDEUR"],
+            "base_currency": ["USD"],
+            "quote_currency": ["EUR"],
+            "source_symbol": ["USDEUR=X"],
+            "ingested_at": ["2026-03-27T20:01:00"],
+        }
+    ).with_columns(
+        pl.col("date").str.strptime(pl.Datetime, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    ).write_parquet(fx_root / "USDEUR.parquet")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"paths:\n  store_root: {tmp_path / 'store'}\n  fx_daily_root: {fx_root}\n  runs_root: {tmp_path / 'runs'}\n",
+        encoding="utf-8",
+    )
+    rc = cli.main(["--config", str(config_path), "fx-validate", "--pairs", "USDEUR"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[FX_VALIDATE] pair=USDEUR ok=1" in out
+
+
+def test_cli_fx_update_uses_pairs_from_symbol_master_when_pairs_omitted(monkeypatch, tmp_path: Path, capsys):
+    meta = tmp_path / "meta"
+    meta.mkdir(parents=True, exist_ok=True)
+    symbol_master_csv = meta / "symbol_master.csv"
+    symbol_master_csv.write_text(
+        "symbol,exchange,country,asset_currency,base_listing_currency,tax_country,asset_class,fx_pair_to_base,lot_size,price_multiplier\n"
+        "AAPL,NASDAQ,US,USD,USD,US,stock,USDEUR,1,1\n"
+        "EBS.VI,VIE,AT,EUR,EUR,AT,stock,EUREUR,1,1\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"paths:\n  symbol_master_csv: {symbol_master_csv}\n  fx_daily_root: {tmp_path / 'fx_daily'}\n  runs_root: {tmp_path / 'runs'}\n",
+        encoding="utf-8",
+    )
+    seen: list[str] = []
+
+    def _sync(pair, root, *, provider="yahoo", allow_inverse=True, start=None, end=None):
+        seen.append(pair)
+        return {
+            "pair": pair,
+            "rows_written": 2,
+            "path": str(Path(root) / f"{pair}.parquet"),
+            "source_symbol": f"{pair}=X",
+            "used_inverse": False,
+        }
+
+    monkeypatch.setattr(cli, "sync_fx_pair_yahoo", _sync)
+    rc = cli.main(["--config", str(config_path), "fx-update"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert seen == ["USDEUR"]
+    assert "[FX_UPDATE] pair=USDEUR" in out
+
+
+def test_cli_inspect_symbol_master_filters_and_renders_markdown(tmp_path: Path, capsys):
+    meta = tmp_path / "meta"
+    path = meta / "symbol_master.csv"
+    meta.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "symbol,exchange,country,asset_currency,base_listing_currency,tax_country,asset_class,fx_pair_to_base,lot_size,price_multiplier,metadata_source,metadata_quality\n"
+        "AAPL,NASDAQ,US,USD,USD,US,stock,USDEUR,1,1,universe,complete\n"
+        "EBS.VI,VIE,AT,EUR,EUR,AT,stock,EUREUR,1,1,universe,defaulted_country\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  symbol_master_csv: {path}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    rc = cli.main(
+        [
+            "--config",
+            str(config_path),
+            "inspect-symbol-master",
+            "--exchange",
+            "VIE",
+            "--issues",
+            "defaulted_country",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Symbol Master Inspection" in out
+    assert "EBS.VI" in out
+    assert "AAPL" not in out

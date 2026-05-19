@@ -255,7 +255,16 @@ def main() -> int:
     indices = [value.strip() for value in str(args.indices).split(",") if value.strip()]
     intervals = [value.strip() for value in str(args.intervals).split(",") if value.strip()]
     symbols = _load_symbols(cfg, indices)
+    if not symbols:
+        print(
+            f"[ERROR] no symbols loaded from {'full universe' if not indices else ','.join(indices)}; "
+            "check the configured universe inputs",
+        )
+        return 2
     sample = _sample_symbols(symbols, args.sample_size, args.seed)
+    if not sample:
+        print("[ERROR] empty Yahoo probe sample; check --sample-size and universe inputs")
+        return 2
 
     print(
         f"[INFO] probing Yahoo access for {len(sample)} symbols across {len(intervals)} intervals "

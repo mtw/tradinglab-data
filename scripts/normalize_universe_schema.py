@@ -187,6 +187,13 @@ def _build_master(all_rows: list[dict[str, str]]) -> list[dict[str, str]]:
             continue
         if symbol not in by_symbol:
             by_symbol[symbol] = dict(row)
+        else:
+            merged = by_symbol[symbol]
+            for key, value in row.items():
+                if key in {"symbol", "index_memberships"}:
+                    continue
+                if _norm(value):
+                    merged[key] = value
         memberships.setdefault(symbol, set())
         raw = _norm(row.get("index_memberships"))
         if raw:

@@ -11,9 +11,11 @@ from tradinglab_data.schema import (
     validate_alerts_frame,
     validate_crypto_frame,
     validate_daily_frame,
+    validate_fx_daily_frame,
     validate_intraday_live_frame,
     validate_intraday_research_frame,
     validate_moves_frame,
+    validate_symbol_master_frame,
 )
 
 
@@ -26,20 +28,25 @@ def test_schema_manifest_has_daily_and_intraday():
     assert "crypto" in manifest
     assert "date" in manifest["daily"]
     assert "timestamp" in manifest["crypto"]
-    assert manifest["artifact_schema_version"] == "v0.2.0"
+    assert manifest["artifact_schema_version"] == "v0.3.0"
     assert "package_version" in manifest
+    assert "fx_daily" in manifest
+    assert "symbol_master" in manifest
 
 
 def test_render_schema_markdown_contains_header():
     text = render_schema_markdown()
     assert "# Data Parquet Schema" in text
     assert "## Daily" in text
+    assert "non_authoritative_country" in text
+    assert "non_authoritative_tax_country" in text
 
 
 def test_render_schema_json_contains_adj_close():
     text = render_schema_json()
     assert '"adj_close"' in text
     assert '"crypto"' in text
+    assert '"fx_daily"' in text
     assert '"package_version"' in text
     assert '"artifact_schema_version"' in text
 
@@ -205,16 +212,18 @@ def test_validate_alerts_frame_rejects_wrong_dtype():
 
 def test_schema_manifest_contains_artifact_schema_version():
     manifest = schema_manifest()
-    assert manifest["artifact_schema_version"] == "v0.2.0"
+    assert manifest["artifact_schema_version"] == "v0.3.0"
 
 
 def test_compatibility_manifest_separates_package_and_artifact_versions():
     manifest = compatibility_manifest()
     assert manifest["package_name"] == "tradinglab-data"
     assert manifest["python_package_name"] == "tradinglab_data"
-    assert manifest["artifact_schema_version"] == "v0.2.0"
+    assert manifest["artifact_schema_version"] == "v0.3.0"
     assert "daily_parquet" in manifest["artifact_families"]
     assert "crypto_parquet" in manifest["artifact_families"]
+    assert "fx_daily_parquet" in manifest["artifact_families"]
+    assert "symbol_master_csv" in manifest["artifact_families"]
     assert manifest["artifact_families"]["daily_parquet"]["category"] == "parquet"
     assert manifest["artifact_families"]["parquet_store_report_markdown"]["category"] == "markdown"
     assert set(manifest) == {
@@ -224,3 +233,44 @@ def test_compatibility_manifest_separates_package_and_artifact_versions():
         "artifact_schema_version",
         "artifact_families",
     }
+
+
+def test_validate_fx_daily_frame_accepts_valid_frame():
+    df = pl.DataFrame(
+        {
+            "date": ["2026-03-27"],
+            "open": [0.92],
+            "high": [0.93],
+            "low": [0.91],
+            "close": [0.925],
+            "provider": ["yahoo"],
+            "pair": ["USDEUR"],
+            "base_currency": ["USD"],
+            "quote_currency": ["EUR"],
+            "source_symbol": ["USDEUR=X"],
+            "ingested_at": ["2026-03-27T20:01:00"],
+        }
+    ).with_columns(
+        pl.col("date").str.strptime(pl.Datetime, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    )
+    assert validate_fx_daily_frame(df, pair="USDEUR") == []
+
+
+def test_validate_symbol_master_frame_accepts_valid_frame():
+    df = pl.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "exchange": ["NASDAQ"],
+            "country": ["US"],
+            "asset_currency": ["USD"],
+            "base_listing_currency": ["USD"],
+            "tax_country": ["US"],
+            "asset_class": ["stock"],
+            "fx_pair_to_base": ["USDEUR"],
+            "lot_size": [1.0],
+            "price_multiplier": [1.0],
+            "active": [1],
+        }
+    )
+    assert validate_symbol_master_frame(df) == []

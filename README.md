@@ -1,52 +1,40 @@
 # tradinglab-data
 
-`tradinglab-data` is a standalone market-data maintenance package. It retrieves upstream price history, normalizes it into a stable parquet contract, maintains universe metadata, and validates the resulting local data store.
+`tradinglab-data` is the standalone data-maintenance package for TradingLab market-data artifacts.
+It retrieves upstream market data, normalizes it into versioned parquet contracts, maintains universe metadata, and verifies the local data store consumed by downstream applications.
 
-It is designed to be the system of record for:
-- daily OHLC parquet history
-- extended-hours intraday parquet history
-- regular-session intraday research parquet history
-- session-aware intraday live parquet history
-- crypto OHLCV parquet history
-- universe CSVs and ticker overrides
-- store-wide integrity and verification reports
+This repository owns:
 
-## Quick Start
+- universe loading, merged-universe construction, ticker normalization, and override mapping
+- upstream provider retrieval for stock/ETF daily, stock/ETF intraday, and crypto OHLCV data
+- canonical parquet schemas and storage layouts
+- daily parquet workflows
+- extended-hours monitoring cache and reports
+- regular-session intraday research store
+- session-aware intraday live store
+- crypto universe and parquet workflows
+- store integrity, universe consistency, and schema verification tooling
+
+This repository does not own signal generation, screening decisions, research workflows, predictive modeling, experiment registries, or downstream plotting/report UX.
+
+Current release: `0.2.0`
+
+Artifact schema version: `v0.3.0`
+
+## Install
+
+From PyPI:
+
+```bash
+pip install tradinglab-data
+```
+
+For local development:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[test]"
-```
-
-Core commands:
-
-```bash
-tradinglab-data schema --format markdown
-tradinglab-data build-universe --indices sp500 djia dax mdax atx --out <paths.universe_csv>
-tradinglab-data --config configs/config.yaml update
-tradinglab-data --config configs/config.yaml monitor-extended-hours --session pre --top-n 25
-tradinglab-data --config configs/config.yaml backfill-extended-hours --interval 5m
-tradinglab-data --config configs/config.yaml intraday backfill --universe intraday_pilot
-tradinglab-data --config configs/config.yaml intraday-live update --universe intraday_live_core
-tradinglab-data --config configs/config.yaml intraday-sync update --universe intraday_live_core
-tradinglab-data --config configs/config.yaml report-parquet-store
-tradinglab-data --config configs/config.yaml report-universe-consistency --dataset daily --instrument-type stock
-tradinglab-data --config configs/config.yaml report-universe-consistency --dataset crypto --interval 1h --universe crypto_core
-tradinglab-data --config configs/config.yaml crypto backfill --interval 1d --universe crypto_majors
-tradinglab-data --config configs/config.yaml crypto update --interval 1h --universe crypto_high_liquidity
-tradinglab-data --config configs/config.yaml crypto validate --interval 15m --universe crypto_high_liquidity
-tradinglab-data --config configs/config.yaml crypto refresh-universe --provider coingecko --universe crypto_high_liquidity
-tradinglab-data --config configs/config.yaml crypto show-universe --universe crypto_high_liquidity
-tradinglab-data --config configs/config.yaml crypto diff-universe --left-universe crypto_majors --right-universe crypto_high_liquidity
-tradinglab-data --config configs/config.yaml crypto inspect --interval 1h --universe crypto_high_liquidity
-tradinglab-data --config configs/config.yaml crypto prune --interval 1h --universe crypto_high_liquidity
-```
-
-Install from PyPI:
-
-```bash
-pip install tradinglab-data
+pip install -e ".[test,dev]"
 ```
 
 Use from another local checkout:
@@ -55,209 +43,241 @@ Use from another local checkout:
 pip install -e /path/to/tradinglab-data
 ```
 
-## Primary Commands
-
-- `tradinglab-data update`
-  - refresh daily parquet history
-  - optionally refresh extended-hours intraday parquet
-  - write extended-hours alert/report artifacts
-  - existing daily parquet files are merged/upserted rather than replaced
-  - intraday parquet is append-only by default; set `extended_hours.retention_days` to a positive number only if you explicitly want rolling truncation
-
-- `tradinglab-data monitor-extended-hours`
-  - refresh extended-hours intraday parquet only
-  - compute moves versus latest regular-session close
-  - write CSV and HTML monitoring outputs
-  - repeated Yahoo intraday symbol warnings are throttled by `extended_hours.log_repeat_cooldown_hours` to avoid cron-log spam
-
-- `tradinglab-data backfill-extended-hours`
-  - refetch the provider's full allowed intraday window for one interval
-  - merge it into existing local parquet without deleting older locally accumulated rows
-
-- `tradinglab-data intraday`
-  - maintain the dedicated regular-session `5m` research store under `intraday.research_root`
-  - normalize timestamps to UTC with `America/New_York` session dates
-  - validate and inspect per-symbol research parquet coverage
-
-- `tradinglab-data intraday-live`
-  - maintain the session-aware `5m` live store under `intraday_live.live_root`
-  - fetch Yahoo bars with `prepost=True`
-  - label bars as `pre`, `regular`, `post`, or `unknown`
-
-- `tradinglab-data intraday-sync`
-  - fetch Yahoo `5m` data once with `prepost=True`
-  - write the live store and derive the regular-session research store from the same fetched frames
-  - avoid duplicate provider requests when both stores should be refreshed together
-
-- `tradinglab-data build-universe`
-  - build a merged universe CSV from supported index sources and fallback overrides
-
-- `tradinglab-data schema`
-  - print the canonical parquet schema in markdown or JSON form
-
-- `tradinglab-data report-parquet-store`
-  - audit every daily, intraday, and crypto parquet file
-  - write JSON and markdown integrity reports
-  - highlight dirty files, schema issues, history ranges, and currency coverage
-
-- `tradinglab-data report-universe-consistency`
-  - render a symbol-level table for one daily, intraday, or crypto universe slice
-  - show file existence, row counts, start and end coverage, and issue flags per symbol
-  - useful for checking stock, ETF, and crypto coverage without running repair flows
-
-- `tradinglab-data crypto`
-  - list exchange symbols through the configured crypto provider
-  - refresh dynamic crypto universes from CoinGecko metadata, intersected with configured exchange tradability
-  - backfill and refresh crypto OHLCV parquet under a separate crypto store root
-  - inspect, diff, and prune local crypto universe coverage
-  - validate crypto parquet against the canonical crypto schema
-
-- `scripts/check_crypto_status.py`
-  - verify crypto coverage, file health, and stale-bar conditions for one interval and universe
-  - optionally repair dirty symbols by rerunning crypto backfill/update logic
-
-- `scripts/bootstrap_stooq_history.py`
-  - bootstrap full daily history from Stooq across configured universe CSVs
-  - optionally merge a short recent yfinance tail after the bulk bootstrap
-
-- `scripts/normalize_universe_schema.py`
-  - rewrite per-universe CSVs to the canonical schema
-  - rebuild the merged master universe CSV at `paths.universe_csv`
-
-- `scripts/build_index_override.py`
-  - build one-off index override CSVs from TradingView/Wikipedia source tables
-  - useful when a source-specific override needs to be regenerated manually
-
-Operational verifier:
+The console command is:
 
 ```bash
-python scripts/verify_yahoo_access.py --config configs/config.local.yaml --sample-size 15 --intervals 1d,5m,1m
+tradinglab-data --help
 ```
 
-By default, each invocation samples a fresh random set of symbols. Pass `--seed <n>` when you want reproducible sampling for debugging.
+The module entrypoint also works:
 
-Provider caveat:
-
-- live Yahoo and exchange providers can fail on individual symbols without the symbol being truly delisted
-- repeated intraday Yahoo symbol warnings are throttled through `<paths.update_warning_state_json>` so the first signal is preserved without spamming every cron run
-- use `python scripts/verify_yahoo_access.py ...` and the `@pytest.mark.network` suite when you want live upstream confidence rather than fixture-only confidence
-
-## Primary Outputs
-
-- universe CSV
-  - `<paths.universe_csv>`
-- Yahoo warning throttle state
-  - `<paths.update_warning_state_json>`
-- daily parquet
-  - `<paths.parquet_root>/<SYMBOL>.parquet`
-- intraday parquet
-  - current extended-hours cache: `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet`
-- intraday research parquet
-  - `<intraday.research_root>/5m/<SYMBOL>.parquet`
-- intraday live parquet
-  - `<intraday_live.live_root>/5m/<SYMBOL>.parquet`
-- crypto parquet
-  - `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
-- crypto metadata registry
-  - `<paths.crypto_registry_json>`
-- dynamic crypto universes
-  - `<paths.crypto_universe_dir>/<UNIVERSE>.json`
-- extended-hours alerts
-  - `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_alerts.csv`
-- extended-hours HTML report
-  - `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_report.html`
-- parquet store integrity report
-  - `<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.{md,json}`
+```bash
+PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown
+```
 
 ## Configuration
 
-The CLI expects a YAML config with paths and workflow settings.
-Example templates:
+Most commands require a YAML config. The `schema` command is the main exception.
+
+Config discovery order:
+
+1. `--config <path>`
+2. `TRADINGLAB_DATA_CONFIG`
+3. source-tree `configs/config.yaml` when running from a checkout
+4. `./config.yaml`
+5. `./configs/config.yaml`
+
+Templates:
 
 - `configs/config.yaml.example`
-- bundled package template: `src/tradinglab_data/config.yaml.example`
+- `src/tradinglab_data/config.yaml.example`
 
-If a config-backed command is run without a valid config file, the CLI raises a clear error telling you to create one from the bundled template, pass `--config`, or set `TRADINGLAB_DATA_CONFIG`.
-
-Keep the tracked `configs/config.yaml` generic. For machine-specific path layouts, create an untracked `configs/config.local.yaml` and point commands at it:
+Keep tracked configs generic. Put machine-specific paths in an untracked local override:
 
 ```bash
 export TRADINGLAB_DATA_CONFIG=configs/config.local.yaml
 tradinglab-data update
 ```
 
-The maintenance wrapper supports the same local-override pattern:
+The local maintenance wrappers prefer `TLD_CONFIG_PATH`, then `configs/config.local.yaml`, then `configs/config.yaml`.
 
 ```bash
 TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_daily_update_verify.sh
 ```
 
-Dedicated crypto maintenance wrapper:
+## Artifact Families
+
+| Family | Store Layout | Notes |
+|---|---|---|
+| Daily stock/ETF | `<paths.parquet_root>/<SYMBOL>.parquet` | regular-session daily OHLCV with listing currency |
+| Extended-hours intraday cache | `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet` | monitoring cache, currently `5m` and `1m` |
+| Intraday research | `<intraday.research_root>/5m/<SYMBOL>.parquet` | regular-session-only US stock/ETF `5m` bars |
+| Intraday live | `<intraday_live.live_root>/5m/<SYMBOL>.parquet` | session-aware US stock/ETF `5m` bars labeled `pre`, `regular`, `post`, or `unknown` |
+| Crypto | `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet` | exchange-native closed OHLCV bars |
+| FX daily | `<paths.fx_daily_root>/<PAIR>.parquet` | explicit source-to-target daily conversion pairs such as `USDEUR` |
+| Symbol master | `<paths.meta_root>/symbol_master.csv` | authoritative accounting metadata for downstream consumers |
+| Exchange defaults | `<paths.meta_root>/exchange_defaults.csv` | maintained exchange-level metadata defaults |
+| Symbol overrides | `<paths.meta_root>/symbol_overrides.csv` | last-wins per-symbol metadata overrides |
+| Universe metadata | `<paths.universe_csv>` and `<paths.universe_dir>/<UNIVERSE>.csv` | canonical public CSV artifacts |
+| Dynamic crypto universes | `<paths.crypto_universe_dir>/<UNIVERSE>.json` | persisted universe selections from metadata refreshes |
+
+Schema details live in `docs/PARQUET_SCHEMA.md`.
+Consumer compatibility details live in `docs/API_CONTRACT.md`.
+
+## Core Commands
+
+Inspect the published schema:
+
+```bash
+tradinglab-data schema --format markdown
+tradinglab-data schema --format json --out schema.json
+```
+
+Build or normalize universe inputs:
+
+```bash
+tradinglab-data build-universe --indices sp500 djia dax mdax atx --out <paths.universe_csv>
+python scripts/normalize_universe_schema.py --config configs/config.local.yaml
+python scripts/build_index_override.py --help
+```
+
+Build and validate the authoritative symbol master:
+
+```bash
+tradinglab-data --config configs/config.local.yaml build-symbol-master --base-currency EUR
+tradinglab-data --config configs/config.local.yaml validate-symbol-master
+tradinglab-data --config configs/config.local.yaml inspect-symbol-master --exchange VIE --issues defaulted_country
+```
+
+Maintain daily FX parquet:
+
+```bash
+tradinglab-data --config configs/config.local.yaml fx-backfill --pairs USDEUR CHFEUR GBPEUR
+tradinglab-data --config configs/config.local.yaml fx-update
+tradinglab-data --config configs/config.local.yaml fx-validate
+tradinglab-data --config configs/config.local.yaml fx-inspect
+```
+
+`symbol_master.csv` is the authoritative accounting metadata surface. Daily OHLC `currency` remains provider-derived diagnostic data. When `metadata_quality` contains `non_authoritative_country` or `non_authoritative_tax_country`, those fields were derived from `exchange_defaults.csv` as fallback metadata rather than sourced directly from Yahoo/provider metadata.
+
+Maintain daily stock/ETF parquet:
+
+```bash
+tradinglab-data --config configs/config.local.yaml update
+tradinglab-data --config configs/config.local.yaml update --symbols AAPL MSFT
+```
+
+The daily update flow loads active universe symbols, applies ticker overrides, migrates renamed files where possible, fetches missing or recent history, upserts canonical parquet files, and can optionally refresh the legacy extended-hours cache and reports.
+
+Maintain extended-hours monitoring data:
+
+```bash
+tradinglab-data --config configs/config.local.yaml monitor-extended-hours --session pre --top-n 25
+tradinglab-data --config configs/config.local.yaml backfill-extended-hours --interval 5m
+```
+
+The extended-hours cache is append-oriented by default. Set `extended_hours.retention_days` only when a rolling cache is intentional.
+
+Maintain the regular-session intraday research store:
+
+```bash
+tradinglab-data --config configs/config.local.yaml intraday backfill --universe intraday_pilot
+tradinglab-data --config configs/config.local.yaml intraday update --universe intraday_pilot
+tradinglab-data --config configs/config.local.yaml intraday validate --universe intraday_pilot
+tradinglab-data --config configs/config.local.yaml intraday inspect --universe intraday_pilot
+```
+
+Maintain the session-aware intraday live store:
+
+```bash
+tradinglab-data --config configs/config.local.yaml intraday-live backfill --universe intraday_live_core
+tradinglab-data --config configs/config.local.yaml intraday-live update --universe intraday_live_core
+tradinglab-data --config configs/config.local.yaml intraday-live validate --universe intraday_live_core
+tradinglab-data --config configs/config.local.yaml intraday-live inspect --universe intraday_live_core
+```
+
+Refresh live and research intraday stores from one shared Yahoo fetch:
+
+```bash
+tradinglab-data --config configs/config.local.yaml intraday-sync backfill --universe intraday_live_core
+tradinglab-data --config configs/config.local.yaml intraday-sync update --universe intraday_live_core
+```
+
+The sync workflow fetches Yahoo `5m` data once with `prepost=True`, writes the live store, and derives the regular-session research store from the same fetched frames.
+
+Maintain crypto parquet:
+
+```bash
+tradinglab-data --config configs/config.local.yaml crypto list-symbols --exchange binance
+tradinglab-data --config configs/config.local.yaml crypto refresh-universe --provider coingecko --universe crypto_high_liquidity
+tradinglab-data --config configs/config.local.yaml crypto backfill --exchange binance --interval 1d --universe crypto_majors
+tradinglab-data --config configs/config.local.yaml crypto update --exchange binance --interval 1h --universe crypto_high_liquidity
+tradinglab-data --config configs/config.local.yaml crypto validate --exchange binance --interval 15m --universe crypto_high_liquidity
+tradinglab-data --config configs/config.local.yaml crypto show-universe --universe crypto_high_liquidity
+tradinglab-data --config configs/config.local.yaml crypto diff-universe --left-universe crypto_majors --right-universe crypto_high_liquidity
+tradinglab-data --config configs/config.local.yaml crypto inspect --exchange binance --interval 1h --universe crypto_high_liquidity
+tradinglab-data --config configs/config.local.yaml crypto prune --exchange binance --interval 1h --universe crypto_high_liquidity --apply
+```
+
+Supported crypto workflow intervals are currently `1d`, `1h`, and `15m`.
+
+Audit local artifacts:
+
+```bash
+tradinglab-data --config configs/config.local.yaml report-parquet-store
+tradinglab-data --config configs/config.local.yaml report-universe-consistency --dataset daily --instrument-type stock
+tradinglab-data --config configs/config.local.yaml report-universe-consistency --dataset intraday --interval 5m --instrument-type stock
+tradinglab-data --config configs/config.local.yaml report-universe-consistency --dataset crypto --interval 1h --universe crypto_core
+```
+
+## Maintenance Scripts
+
+Daily update and verification wrapper:
+
+```bash
+TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_daily_update_verify.sh
+```
+
+Dedicated crypto update and verification wrapper:
 
 ```bash
 TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_crypto_update_verify.sh
 ```
 
-Read-only universe consistency report:
+Crypto status checker:
 
 ```bash
-python scripts/report_universe_consistency.py --config configs/config.local.yaml --dataset daily --instrument-type etf
-python scripts/report_universe_consistency.py --config configs/config.local.yaml --dataset intraday --interval 5m --instrument-type stock
-python scripts/report_universe_consistency.py --config configs/config.local.yaml --dataset crypto --interval 1h --universe crypto_core
+python scripts/check_crypto_status.py --config configs/config.local.yaml --interval 1h --universe crypto_core --repair --fail-on-issues
 ```
 
-Default crypto refresh, update, and validation in the maintenance wrapper:
+Yahoo provider diagnostic:
 
 ```bash
-TLD_CRYPTO_REFRESH_UNIVERSE=1 \
-TLD_CRYPTO_REFRESH_UNIVERSE_NAME=crypto_high_liquidity \
-TLD_CRYPTO_UPDATE=1 \
-TLD_VERIFY_CRYPTO=1 \
-TLD_CRYPTO_INTERVALS=1d,1h,15m \
-./scripts/run_daily_update_verify.sh
+python scripts/verify_yahoo_access.py --config configs/config.local.yaml --sample-size 15 --intervals 1d,5m,1m
 ```
 
-Relevant wrapper toggles:
-
-- `TLD_CRYPTO_REFRESH_UNIVERSE`
-- `TLD_CRYPTO_REFRESH_PROVIDER`
-- `TLD_CRYPTO_REFRESH_UNIVERSE_NAME`
-- `TLD_CRYPTO_REFRESH_LIMIT`
-- `TLD_CRYPTO_UPDATE`
-- `TLD_VERIFY_CRYPTO`
-- `TLD_CRYPTO_INTERVALS`
-- `TLD_CRYPTO_UNIVERSE`
-- `TLD_CRYPTO_REPAIR`
-- `TLD_CRYPTO_MAX_MISSING_RATIO`
-- `TLD_CRYPTO_MAX_ZERO_BYTE`
-- `TLD_CRYPTO_STALE_MULTIPLE`
-
-The dedicated crypto wrapper performs a full `check -> update -> verify/fix -> strict post-check` sequence for each configured interval and writes per-interval JSON summaries under the crypto gate directory.
-
-If `TLD_CONFIG_PATH` is not set, the wrapper prefers `configs/config.local.yaml` automatically when it exists, and falls back to `configs/config.yaml` otherwise.
-
-## Programmatic Surface
-
-Machine-readable manifests:
-
-- `tradinglab_data.compatibility_manifest()`
-- `tradinglab_data.schema_manifest()`
-
-Schema contract and artifacts:
-
-- `docs/PARQUET_SCHEMA.md`
-- `docs/API_CONTRACT.md`
-- `docs/TROUBLESHOOTING.md`
-
-## Testing
-
-Run the package test suite directly:
+Yahoo quote metadata audit for ETF source rows:
 
 ```bash
-PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
+python scripts/audit_yahoo_quote_metadata.py --config configs/config.local.yaml --format markdown
+python scripts/audit_yahoo_quote_metadata.py --config configs/config.local.yaml --symbols MVEU.L IPLT.L --format json --out /tmp/yahoo_quote_audit.json
 ```
 
-For this standalone repo:
+Pass `--seed <n>` to make provider sampling reproducible during debugging.
+Live Yahoo and exchange providers can fail for individual symbols without proving that the symbol is delisted; use the diagnostic script and `@pytest.mark.network` tests when live upstream confidence matters.
+
+## Generated Reports
+
+Common report locations:
+
+- extended-hours alerts: `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_alerts.csv`
+- extended-hours HTML report: `<paths.runs_root>/YYYY-MM-DD/monitor/extended_hours_report.html`
+- parquet store integrity report: `<paths.runs_root>/YYYY-MM-DD/integrity/parquet_store_report.{md,json}`
+- Yahoo warning throttle state: `<paths.update_warning_state_json>`
+- crypto metadata registry: `<paths.crypto_registry_json>`
+
+## Public Python Surface
+
+Import package:
+
+```python
+import tradinglab_data
+```
+
+Compatibility and schema manifests:
+
+```python
+tradinglab_data.ARTIFACT_SCHEMA_VERSION
+tradinglab_data.compatibility_manifest()
+tradinglab_data.schema_manifest()
+```
+
+Common public helpers are lazily re-exported from `tradinglab_data`, including universe loading/building, parquet validation, schema rendering, store reporting, daily workflows, intraday workflows, and crypto workflows.
+The full compatibility surface is documented in `docs/API_CONTRACT.md`.
+
+## Development Checks
+
+Run the package checks before finishing code changes:
 
 ```bash
 python -m ruff check src tests
@@ -268,18 +288,18 @@ python -m build
 python -m twine check dist/*
 ```
 
-GitHub CI:
+Use `@pytest.mark.network` for live upstream smoke tests so CI can exclude them by default.
+Network tests should skip cleanly when an upstream provider blocks or returns no live data.
 
-- `.github/workflows/ci.yml`
-- tests Python 3.10, 3.11, 3.12, and 3.13
-- runs Ruff, mypy, pytest with coverage and `-m "not network"`, schema CLI smoke, build, twine check
-- builds and installs the wheel to smoke-check the installed package and CLI
+GitHub CI runs Ruff, mypy, pytest with non-network coverage, a schema CLI smoke check, build validation, `twine check`, and wheel install smoke checks across Python 3.10 through 3.13.
 
-## Release
+## Reference Docs
 
-Release notes and process:
-
+- `ARCHITECTURE.md`
+- `docs/API_CONTRACT.md`
+- `docs/PARQUET_SCHEMA.md`
+- `docs/WORKFLOWS.md`
+- `docs/INTRADAY_5M_CONTRACT.md`
+- `docs/TROUBLESHOOTING.md`
 - `RELEASE.md`
 - `CHANGELOG.md`
-
-Current release: `0.2.0`.

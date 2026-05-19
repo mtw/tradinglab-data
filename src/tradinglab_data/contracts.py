@@ -6,7 +6,7 @@ import polars as pl
 
 PACKAGE_NAME = "tradinglab-data"
 PYTHON_PACKAGE_NAME = "tradinglab_data"
-ARTIFACT_SCHEMA_VERSION = "v0.2.0"
+ARTIFACT_SCHEMA_VERSION = "v0.3.0"
 
 SessionLabel = Literal["pre", "regular", "post", "closed", "unknown"]
 VerifyStatus = Literal["ok", "fail"]
@@ -21,6 +21,68 @@ OHLC_COLUMNS = (
     "adj_close",
     "volume",
     "currency",
+)
+
+SYMBOL_MASTER_COLUMNS = (
+    "symbol",
+    "exchange",
+    "country",
+    "asset_currency",
+    "base_listing_currency",
+    "tax_country",
+    "asset_class",
+    "fx_pair_to_base",
+    "lot_size",
+    "price_multiplier",
+)
+
+SYMBOL_MASTER_OPTIONAL_COLUMNS = (
+    "name",
+    "isin",
+    "instrument_type",
+    "active",
+    "source",
+    "metadata_source",
+    "metadata_quality",
+    "notes",
+)
+
+EXCHANGE_DEFAULT_COLUMNS = (
+    "exchange",
+    "country",
+    "default_asset_currency",
+    "default_tax_country",
+    "default_lot_size",
+    "default_price_multiplier",
+    "default_asset_class",
+)
+
+SYMBOL_OVERRIDE_COLUMNS = (
+    "symbol",
+    "exchange",
+    "country",
+    "asset_currency",
+    "base_listing_currency",
+    "tax_country",
+    "asset_class",
+    "fx_pair_to_base",
+    "lot_size",
+    "price_multiplier",
+    "notes",
+)
+
+FX_DAILY_COLUMNS = (
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "provider",
+    "pair",
+    "base_currency",
+    "quote_currency",
+    "source_symbol",
+    "ingested_at",
 )
 
 MOVE_FRAME_COLUMNS = (
@@ -114,6 +176,98 @@ class VerifyResult(TypedDict):
 class DailyCloseInfo(TypedDict):
     close: float
     currency: str | None
+
+
+class SymbolMasterEntry(TypedDict, total=False):
+    symbol: str
+    exchange: str
+    country: str
+    asset_currency: str
+    base_listing_currency: str
+    tax_country: str
+    asset_class: str
+    fx_pair_to_base: str
+    lot_size: float
+    price_multiplier: float
+    name: str
+    isin: str
+    instrument_type: str
+    active: int | bool
+    source: str
+    metadata_source: str
+    metadata_quality: str
+    notes: str
+
+
+class ExchangeDefaultEntry(TypedDict, total=False):
+    exchange: str
+    country: str
+    default_asset_currency: str
+    default_tax_country: str
+    default_lot_size: float
+    default_price_multiplier: float
+    default_asset_class: str
+    notes: str
+
+
+class SymbolOverrideEntry(TypedDict, total=False):
+    symbol: str
+    exchange: str
+    country: str
+    asset_currency: str
+    base_listing_currency: str
+    tax_country: str
+    asset_class: str
+    fx_pair_to_base: str
+    lot_size: float
+    price_multiplier: float
+    notes: str
+
+
+class FxDailyEntry(TypedDict):
+    date: str | None
+    open: float
+    high: float
+    low: float
+    close: float
+    provider: str
+    pair: str
+    base_currency: str
+    quote_currency: str
+    source_symbol: str
+    ingested_at: str | None
+
+
+class FxSyncResult(TypedDict):
+    ok: bool
+    pair: str
+    provider: str
+    rows_written: int
+    path: str
+    source_symbol: str
+    used_inverse: bool
+
+
+class FxValidateResult(TypedDict):
+    ok: bool
+    pair: str
+    path: str
+    rows: int
+    errors: list[str]
+
+
+class SymbolMasterBuildResult(TypedDict):
+    symbols: int
+    base_currency: str
+    missing_required: int
+    output: str
+
+
+class SymbolMasterValidateResult(TypedDict):
+    ok: bool
+    path: str
+    rows: int
+    errors: list[str]
 
 
 class ExtendedHoursResult(TypedDict):

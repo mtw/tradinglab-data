@@ -175,16 +175,28 @@ def build_atx() -> pl.DataFrame:
 
     df = pl.from_pandas(picked)
     cols = {str(c).lower(): c for c in df.columns}
+    symbol = (
+        cols.get("symbol")
+        or cols.get("ticker")
+        or cols.get("kürzel")
+        or cols.get("kuerzel")
+        or cols.get("isin")
+    )
     name = cols.get("name") or cols.get("unternehmen") or cols.get("company")
+    if symbol is None:
+        raise RuntimeError("Missing Symbol/Ticker/Kürzel/ISIN column in ATX table")
     if name is None:
         raise RuntimeError("Missing Name/Unternehmen/Company column in ATX table")
-    out = df.select([name]).rename({name: "name"})
+    out = df.select([symbol, name]).rename({symbol: "symbol", name: "name"})
     out = out.with_columns(
-        pl.lit("").alias("symbol"),
+        pl.col("symbol").cast(pl.Utf8).str.replace_all(r"\s+", " ").str.strip_chars().str.to_uppercase().alias("symbol"),
         pl.lit("Vienna").alias("exchange"),
         pl.lit("Austria").alias("country"),
         pl.lit(1).alias("active"),
     ).select(["symbol", "name", "exchange", "country", "active"])
+    out = out.filter(pl.col("symbol").is_not_null() & (pl.col("symbol") != ""))
+    if out.is_empty():
+        raise RuntimeError("ATX table did not yield any non-empty symbols")
     return out
 
 

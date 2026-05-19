@@ -46,6 +46,94 @@ Outputs:
 - maintenance log under `<paths.update_log_csv>`
 - extended-hours alerts/report under `<paths.runs_root>/YYYY-MM-DD/monitor/`
 
+## Symbol Master Workflow
+
+Primary commands:
+
+```bash
+tradinglab-data --config /path/to/config.yaml build-symbol-master --base-currency EUR
+tradinglab-data --config /path/to/config.yaml validate-symbol-master
+tradinglab-data --config /path/to/config.yaml inspect-symbol-master --exchange VIE --issues defaulted_country
+```
+
+High-level behavior:
+
+1. load the configured universe CSV
+2. normalize symbols using the existing universe and ticker-override rules
+3. join exchange defaults from `exchange_defaults.csv`
+4. apply `symbol_overrides.csv` last
+5. fill authoritative accounting fields such as `asset_currency`, `tax_country`, `asset_class`, `fx_pair_to_base`, `lot_size`, and `price_multiplier`
+6. write `symbol_master.csv`
+7. validate required columns, duplicate symbols, positive lot metadata, and explicit FX pair direction
+
+Outputs:
+
+- authoritative symbol master under `paths.symbol_master_csv`
+- exchange defaults under `paths.exchange_defaults_csv`
+- symbol overrides under `paths.symbol_overrides_csv`
+
+Important rule:
+
+- daily OHLC `currency` is not the authoritative accounting metadata source
+- `metadata_quality=non_authoritative_country` means `country` was filled from `exchange_defaults.csv`
+- `metadata_quality=non_authoritative_tax_country` means `tax_country` was filled from `exchange_defaults.csv`
+- those flags are expected when Yahoo quote-page audits were used as the source of truth, because Yahoo does not provide authoritative `country` or `tax_country`
+
+## Yahoo Quote Metadata Audit
+
+Primary command:
+
+```bash
+python scripts/audit_yahoo_quote_metadata.py --config /path/to/config.yaml --format markdown
+```
+
+High-level behavior:
+
+1. read ETF source rows from `paths.universe_dir/etf_all.csv` unless `--path` overrides it
+2. fetch exact Yahoo Finance quote pages for each symbol
+3. parse the displayed exchange and currency from the quote page header
+4. compare Yahoo metadata against the local ETF source row
+5. report clean matches, exchange mismatches, currency mismatches, combined mismatches, and ambiguous pages separately
+
+Useful options:
+
+- `--symbols <SYM...>` to audit only selected symbols
+- `--format markdown|json|csv`
+- `--out <PATH>` to persist the report
+- `--fail-on-mismatch` to exit non-zero when any row is not a clean match
+
+Important rule:
+
+- ambiguous Yahoo pages are expected for some naked symbols; those rows should be reviewed manually instead of silently normalized
+
+## FX Daily Workflow
+
+Primary commands:
+
+```bash
+tradinglab-data --config /path/to/config.yaml fx-backfill --pairs USDEUR CHFEUR GBPEUR
+tradinglab-data --config /path/to/config.yaml fx-update
+tradinglab-data --config /path/to/config.yaml fx-validate
+tradinglab-data --config /path/to/config.yaml fx-inspect
+```
+
+High-level behavior:
+
+1. resolve requested pairs explicitly, or infer non-identity pairs from `symbol_master.csv` for `fx-update`
+2. fetch daily Yahoo FX history for the direct pair when available
+3. optionally fetch the inverse pair and invert OHLC correctly when the direct pair is unavailable
+4. write canonical per-pair parquet under `fx_daily_root`
+5. validate pair direction, positive rates, sorted dates, and date uniqueness
+
+Outputs:
+
+- daily FX parquet under `paths.fx_daily_root/<PAIR>.parquet`
+
+Pair convention:
+
+- `USDEUR` means EUR value of `1` USD
+- inverse derivation must preserve high/low correctly by using `1/low` for inverse high and `1/high` for inverse low
+
 ## Crypto Workflow
 
 Primary commands:
@@ -120,6 +208,12 @@ Current behavior:
 6. merge append-style history per symbol, preserving older local rows when retention is disabled
 7. validate ordering, uniqueness, metadata consistency, and OHLC quality before write
 
+Retention behavior:
+
+- `retention_days: 0` keeps the full accumulated local history
+- positive `retention_days` trims existing parquet even when Yahoo returns no new rows for a symbol during an update
+- a symbol is reported as `unchanged` only when the fetched frame is empty and the retention trim leaves the existing file unchanged
+
 Outputs:
 
 - intraday research parquet under `intraday.research_root/5m/`
@@ -154,6 +248,12 @@ Current behavior:
 4. label each bar as `pre`, `regular`, `post`, or `unknown`
 5. persist a separate session-aware live store under `intraday_live.live_root/5m/`
 6. validate ordering, uniqueness, metadata consistency, and OHLC quality before write
+
+Retention behavior:
+
+- `retention_days: 0` keeps the full accumulated local history
+- positive `retention_days` trims existing parquet even when Yahoo returns no new rows for a symbol during an update
+- a symbol is reported as `unchanged` only when the fetched frame is empty and the retention trim leaves the existing file unchanged
 
 Outputs:
 
@@ -210,8 +310,13 @@ High-level behavior:
 1. fetch constituents from supported upstream sources
 2. fall back to override CSVs when primary sources fail
 3. normalize symbols via ticker map rules
-4. merge duplicate symbols and accumulate index memberships
+4. merge duplicate symbols field-by-field, preferring later non-empty metadata while accumulating index memberships
 5. write a canonical CSV with stable columns
+
+ATX-specific rule:
+
+- ATX override generation must produce real non-empty symbols
+- if the upstream ATX source does not expose a usable symbol column, the override builder now fails fast instead of emitting unusable blank symbols
 
 ## Schema Inspection Workflow
 
@@ -268,6 +373,9 @@ tradinglab-data --config /path/to/config.yaml report-universe-consistency --data
 ```
 
 Behavior:
+
+- exits non-zero when no symbols can be loaded from the requested universe inputs
+- exits non-zero when the effective Yahoo probe sample is empty
 
 1. resolve the requested symbol scope from the active equity universe or selected crypto universe
 2. read one parquet file per expected symbol without mutating local state

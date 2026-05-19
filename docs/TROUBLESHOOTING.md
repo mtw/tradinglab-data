@@ -30,6 +30,12 @@ What to check:
 3. Run `python scripts/verify_yahoo_access.py ...` to distinguish broad Yahoo access issues from symbol-specific failures.
 4. Review symbol overrides in `<paths.ticker_overrides_csv>` when the warning is concentrated in one mapping.
 
+If `verify_yahoo_access.py` exits immediately with a message about no loaded symbols or an empty sample:
+
+1. check the selected `--indices` values
+2. check the configured universe CSV or universe directory paths
+3. treat that result as a configuration/input problem, not a clean Yahoo connectivity pass
+
 ## Warning Throttle State
 
 Repeated intraday Yahoo warnings are throttled so the same symbol and issue do not spam every cron run.
@@ -79,6 +85,53 @@ If a daily file looks unexpectedly short:
 1. inspect the symbol with the consistency report
 2. review recent update-log entries
 3. verify whether the file was already short before the latest run
+
+## Symbol Master Validation Failures
+
+Typical failures:
+
+- missing `asset_currency`
+- missing `base_listing_currency`
+- missing `tax_country`
+- missing `asset_class`
+- duplicate normalized `symbol`
+- malformed `fx_pair_to_base`
+- non-positive `lot_size`
+- non-positive `price_multiplier`
+
+What to check:
+
+1. verify the symbol has an `exchange` value that matches a row in `exchange_defaults.csv`
+2. confirm overrides use canonical uppercase symbols
+3. confirm the intended account-base pair direction, for example `USDEUR` rather than `EURUSD` for a USD asset in a EUR account
+4. rebuild with `build-symbol-master` after changing defaults or overrides
+
+## FX Pair Direction Errors
+
+Typical problem:
+
+- the symbol master says `EURUSD` when the consumer actually needs `USDEUR`
+
+What to remember:
+
+- `USDEUR` means EUR value of `1` USD
+- pair direction is explicit and must match the consumer contract
+- consumers must not silently invert pair direction
+
+If Yahoo lacks the direct pair:
+
+- run `fx-backfill` or `fx-update` with inverse fetch allowed
+- the package can fetch the inverse Yahoo symbol and derive the requested pair by inversion
+
+## Missing FX Parquet
+
+If a non-base-currency asset is present in `symbol_master.csv` but the corresponding FX parquet file is missing:
+
+1. run `tradinglab-data --config /path/to/config.yaml fx-update`
+2. inspect the pair with `tradinglab-data --config /path/to/config.yaml fx-inspect --pairs <PAIR>`
+3. validate the file with `tradinglab-data --config /path/to/config.yaml fx-validate --pairs <PAIR>`
+
+Identity pairs such as `EUREUR` do not require parquet files by default.
 
 ## Crypto Provider Limitations
 

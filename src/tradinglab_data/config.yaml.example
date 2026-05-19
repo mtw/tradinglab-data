@@ -1,6 +1,10 @@
 paths:
   store_root: "/absolute/path/to/market-data-store"
   runs_root: "/absolute/path/to/market-data-runs/maintenance"
+  symbol_master_csv: "${TRADINGLAB_STORE:-../tradinglab-store}/meta/symbol_master.csv"
+  exchange_defaults_csv: "${TRADINGLAB_STORE:-../tradinglab-store}/meta/exchange_defaults.csv"
+  symbol_overrides_csv: "${TRADINGLAB_STORE:-../tradinglab-store}/meta/symbol_overrides.csv"
+  fx_daily_root: "${TRADINGLAB_STORE:-../tradinglab-store}/parquet/fx_daily"
 
 timeframe: "1d"
 lookback_days: 2000

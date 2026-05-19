@@ -30,11 +30,19 @@ def test_top_level_exports_include_public_helpers():
     assert pkg.StoreIntegritySection is not None
     assert pkg.run_parquet_sanity_checks is not None
     assert pkg.render_universe_consistency_markdown is not None
+    assert pkg.build_symbol_master_frame is not None
+    assert pkg.inspect_symbol_master_frame is not None
+    assert pkg.load_symbol_master_frame is not None
+    assert pkg.load_fx_pair is not None
+    assert pkg.sync_fx_pair_yahoo is not None
+    assert pkg.available_fx_pairs is not None
     assert pkg.validate_daily_frame is not None
     assert pkg.validate_crypto_frame is not None
+    assert pkg.validate_fx_daily_frame is not None
+    assert pkg.validate_symbol_master_frame is not None
     assert pkg.validate_intraday_live_frame is not None
     assert pkg.validate_intraday_research_frame is not None
-    assert pkg.ARTIFACT_SCHEMA_VERSION == "v0.2.0"
+    assert pkg.ARTIFACT_SCHEMA_VERSION == "v0.3.0"
 
 
 def test_clear_currency_cache_clears_module_cache():

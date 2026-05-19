@@ -1,0 +1,3 @@
+symbol,exchange,country,asset_currency,base_listing_currency,tax_country,asset_class,fx_pair_to_base,lot_size,price_multiplier,notes
+SPY,NYSEARCA,US,USD,USD,US,etf,USDEUR,1.0,1.0,Override ETF asset class explicitly
+BTC-USD,,,,,,crypto,USDEUR,0.000001,1.0,Crypto example with fractional lot size

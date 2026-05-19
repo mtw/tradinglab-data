@@ -55,3 +55,40 @@ def test_main_normalizes_universe_dir_and_rebuilds_master(tmp_path: Path, monkey
     assert "instrument_type" in normalized.columns
     assert normalized.get_column("symbol").to_list() == ["SPY"]
     assert master.get_column("symbol").to_list() == ["SPY"]
+
+
+def test_build_master_prefers_nonempty_later_metadata_and_unions_memberships():
+    rows = [
+        {
+            "symbol": "SPY",
+            "name": "SPDR S&P 500 ETF",
+            "exchange": "",
+            "country": "",
+            "currency": "",
+            "source": "first",
+            "index_memberships": "SP500",
+            "instrument_type": "etf",
+        },
+        {
+            "symbol": "SPY",
+            "name": "SPDR S&P 500 ETF Trust",
+            "exchange": "NYSEARCA",
+            "country": "US",
+            "currency": "USD",
+            "source": "second",
+            "index_memberships": "ETF_ALL",
+            "instrument_type": "etf",
+        },
+    ]
+
+    out = mod._build_master(rows)
+
+    assert len(out) == 1
+    row = out[0]
+    assert row["symbol"] == "SPY"
+    assert row["name"] == "SPDR S&P 500 ETF Trust"
+    assert row["exchange"] == "NYSEARCA"
+    assert row["country"] == "US"
+    assert row["currency"] == "USD"
+    assert row["source"] == "second"
+    assert row["index_memberships"] == "ETF_ALL,SP500"

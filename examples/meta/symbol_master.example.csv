@@ -1,0 +1,5 @@
+symbol,exchange,country,asset_currency,base_listing_currency,tax_country,asset_class,fx_pair_to_base,lot_size,price_multiplier,name,active,source
+AAPL,NASDAQ,US,USD,USD,US,stock,USDEUR,1.0,1.0,Apple Inc.,1,example
+SPY,NYSEARCA,US,USD,USD,US,etf,USDEUR,1.0,1.0,SPDR S&P 500 ETF Trust,1,example
+EBS.VI,VIE,AT,EUR,EUR,AT,stock,EUREUR,1.0,1.0,Erste Group Bank AG,1,example
+NESN.SW,SIX,CH,CHF,CHF,CH,stock,CHFEUR,1.0,1.0,Nestle SA,1,example

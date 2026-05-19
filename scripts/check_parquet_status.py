@@ -8,7 +8,7 @@ import io
 import math
 import random
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -121,7 +121,7 @@ def _fmt_price(value: float | None) -> str:
     return f"{value:.4f}"
 
 
-def _parse_date_ymd(value: str) -> datetime.date | None:
+def _parse_date_ymd(value: str) -> date | None:
     try:
         return datetime.fromisoformat(str(value).split(" ")[0]).date()
     except Exception:
@@ -452,8 +452,8 @@ def _collect_targets(
     targets: list[tuple[str, Path]] = []
 
     if paths:
-        for p in paths:
-            path = Path(p)
+        for raw_path in paths:
+            path = Path(raw_path)
             symbol = path.stem
             targets.append((symbol, path))
         return targets
@@ -471,10 +471,10 @@ def _collect_targets(
         except Exception:
             active_symbols = None
 
-    for p in sorted(root.glob("*.parquet")):
-        if active_symbols is not None and p.stem.strip().upper() not in active_symbols:
+    for parquet_path in sorted(root.glob("*.parquet")):
+        if active_symbols is not None and parquet_path.stem.strip().upper() not in active_symbols:
             continue
-        targets.append((p.stem, p))
+        targets.append((parquet_path.stem, parquet_path))
     return targets
 
 
@@ -670,6 +670,7 @@ def _sample_yf_consistency(
     if sample_days <= 0:
         return YFSampleAudit(ok=True, checked_days=0, mismatch_days=0, first_mismatch_dates=[], max_abs_ohlc_diff=0.0, error="")
     try:
+        yf_frame: pl.DataFrame | None
         if mode == "intraday":
             import yfinance as yf
             period = INTRADAY_VERIFY_PERIOD.get(intraday_interval, "2d")
@@ -685,15 +686,15 @@ def _sample_yf_consistency(
                     threads=False,
                 )
             if y_pd is None or len(y_pd) == 0:
-                y = pl.DataFrame()
+                yf_frame = pl.DataFrame()
             else:
                 from tradinglab_data.data_yf import _normalize_yf_df_to_polars
-                y = _normalize_yf_df_to_polars(y_pd)
+                yf_frame = _normalize_yf_df_to_polars(y_pd)
         else:
             try:
-                s = datetime.fromisoformat(status.start_date.split(" ")[0])
-                e = datetime.fromisoformat(status.end_date.split(" ")[0])
-                span_days = max(365, (e - s).days + 30)
+                start_dt = datetime.fromisoformat(status.start_date.split(" ")[0])
+                end_dt = datetime.fromisoformat(status.end_date.split(" ")[0])
+                span_days = max(365, (end_dt - start_dt).days + 30)
             except Exception:
                 span_days = 5000
 
@@ -709,14 +710,14 @@ def _sample_yf_consistency(
                     threads=False,
                     log_path=None,
                 )
-            y = yf_map.get(status.symbol)
-            if y is None or y.is_empty():
+            yf_frame = yf_map.get(status.symbol)
+            if yf_frame is None or yf_frame.is_empty():
                 # Fallback: direct single-symbol path
                 with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                    y = fetch_yfinance_history(
+                    yf_frame = fetch_yfinance_history(
                         YFDownloadSpec(symbol=status.symbol, interval="1d", lookback_days=span_days)
                     )
-        if y is None or y.is_empty():
+        if yf_frame is None or yf_frame.is_empty():
             return YFSampleAudit(
                 ok=False,
                 checked_days=0,
@@ -725,29 +726,29 @@ def _sample_yf_consistency(
                 max_abs_ohlc_diff=0.0,
                 error="no_yf_history",
             )
-        if any(c not in y.columns for c in ["date", "open", "high", "low", "close"]):
+        if any(c not in yf_frame.columns for c in ["date", "open", "high", "low", "close"]):
             return YFSampleAudit(ok=False, checked_days=0, mismatch_days=0, first_mismatch_dates=[], max_abs_ohlc_diff=0.0, error="yf_missing_ohlc_cols")
 
         if mode == "intraday":
-            p = pl.read_parquet(str(status.path)).select(["date", "open", "high", "low", "close"]).with_columns(
+            parquet_frame = pl.read_parquet(str(status.path)).select(["date", "open", "high", "low", "close"]).with_columns(
                 pl.col("date").cast(pl.Datetime, strict=False).alias("date")
             )
-            y = y.select(["date", "open", "high", "low", "close"]).rename(
+            yf_frame = yf_frame.select(["date", "open", "high", "low", "close"]).rename(
                 {"open": "yf_open", "high": "yf_high", "low": "yf_low", "close": "yf_close"}
             ).with_columns(
                 pl.col("date").cast(pl.Datetime, strict=False).alias("date")
             )
         else:
-            p = pl.read_parquet(str(status.path)).select(["date", "open", "high", "low", "close"]).with_columns(
+            parquet_frame = pl.read_parquet(str(status.path)).select(["date", "open", "high", "low", "close"]).with_columns(
                 pl.col("date").cast(pl.Datetime, strict=False).dt.date().alias("date")
             )
-            y = y.select(["date", "open", "high", "low", "close"]).rename(
+            yf_frame = yf_frame.select(["date", "open", "high", "low", "close"]).rename(
                 {"open": "yf_open", "high": "yf_high", "low": "yf_low", "close": "yf_close"}
             ).with_columns(
                 pl.col("date").cast(pl.Datetime, strict=False).dt.date().alias("date")
             )
 
-        j = p.join(y, on="date", how="inner").sort("date")
+        j = parquet_frame.join(yf_frame, on="date", how="inner").sort("date")
         if int(sample_recent_days) > 0 and not j.is_empty():
             max_d = j.select(pl.col("date").max()).item()
             if max_d is not None:
@@ -760,14 +761,14 @@ def _sample_yf_consistency(
         n = min(sample_days, j.height)
         seed = int(hashlib.md5(status.symbol.encode("utf-8")).hexdigest()[:8], 16)
         idxs = sorted(random.Random(seed).sample(range(j.height), n))
-        s = (
+        sample_frame = (
             j.with_row_index("__row_idx")
             .filter(pl.col("__row_idx").is_in(idxs))
             .drop("__row_idx")
             .sort("date")
         )
 
-        diff = s.with_columns(
+        diff = sample_frame.with_columns(
             (pl.col("open") - pl.col("yf_open")).abs().alias("d_open"),
             (pl.col("high") - pl.col("yf_high")).abs().alias("d_high"),
             (pl.col("low") - pl.col("yf_low")).abs().alias("d_low"),
@@ -1912,7 +1913,7 @@ def main() -> None:
 
     summary = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "root": str(args.root),
+        "root": str(root),
         "parquet_kind": parquet_mode,
         "intraday_interval": intraday_interval if parquet_mode == "intraday" else "",
         "verify_yf": bool(args.verify_yf),

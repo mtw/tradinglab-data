@@ -82,13 +82,32 @@ def test_migrate_symbol_alias_parquet_moves_daily_and_intraday(tmp_path: Path, m
     (intraday_root / "5m").mkdir(parents=True)
     (daily_root / "RAW.parquet").write_text("daily", encoding="utf-8")
     (intraday_root / "5m" / "RAW.parquet").write_text("intraday", encoding="utf-8")
-    monkeypatch.setattr(workflows, "load_ticker_overrides", lambda: {"RAW": "CANON"})
+    monkeypatch.setattr(workflows, "load_ticker_overrides", lambda path=None: {"RAW": "CANON"})
 
     workflows._migrate_symbol_alias_parquet(["CANON"], daily_root, intraday_root)
 
     assert (daily_root / "CANON.parquet").read_text(encoding="utf-8") == "daily"
     assert (intraday_root / "5m" / "CANON.parquet").read_text(encoding="utf-8") == "intraday"
     assert "migrated daily parquet" in capsys.readouterr().out
+
+
+def test_migrate_symbol_alias_parquet_uses_configured_override_path(tmp_path: Path, monkeypatch):
+    daily_root = tmp_path / "daily"
+    daily_root.mkdir()
+    (daily_root / "RAW.parquet").write_text("daily", encoding="utf-8")
+    seen: list[Path | None] = []
+    override_path = tmp_path / "custom_overrides.csv"
+
+    def fake_load(path=None):
+        seen.append(path)
+        return {"RAW": "CANON"}
+
+    monkeypatch.setattr(workflows, "load_ticker_overrides", fake_load)
+
+    workflows._migrate_symbol_alias_parquet(["CANON"], daily_root, ticker_overrides_csv=override_path)
+
+    assert seen == [override_path]
+    assert (daily_root / "CANON.parquet").read_text(encoding="utf-8") == "daily"
 
 
 def test_write_extended_hours_artifacts_prints_top_moves(tmp_path: Path, monkeypatch, capsys):

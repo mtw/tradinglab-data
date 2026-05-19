@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 from pathlib import Path
@@ -101,3 +103,21 @@ def test_main_writes_json_summary(monkeypatch, tmp_path: Path):
     assert payload["intervals"] == ["1d", "5m"]
     assert payload["summary"]["1d"]["ok"] == 2
     assert payload["summary"]["5m"]["ok"] == 2
+
+
+def test_main_fails_when_no_symbols_loaded(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("paths:\n  universe_csv: missing.csv\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_load_symbols", lambda cfg, indices: [])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["verify_yahoo_access.py", "--config", str(config_path), "--sample-size", "2"],
+    )
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = mod.main()
+
+    assert rc == 2
+    assert "no symbols loaded" in out.getvalue()
