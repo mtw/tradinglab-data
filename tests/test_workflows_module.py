@@ -40,12 +40,28 @@ def test_update_from_config_keeps_postwrite_integrity_callable(
     history_frame_factory,
 ):
     parquet_root, _, _, _ = patch_workflow_common_paths(workflows, symbols=["AAA"])
+    integrity_calls: list[dict[str, object]] = []
     monkeypatch.setattr(workflows, "fetch_yfinance_history_bulk", lambda symbols, **kwargs: {"AAA": history_frame_factory()})
     monkeypatch.setattr(workflows, "fetch_symbol_currency", lambda symbol: "USD")
+    monkeypatch.setattr(
+        workflows,
+        "assert_postwrite_integrity",
+        lambda path, symbol, **kwargs: integrity_calls.append(
+            {
+                "path": Path(path),
+                "symbol": symbol,
+                **kwargs,
+            }
+        ),
+    )
     result = workflows.update_from_config(_base_cfg(dummy_cfg_factory))
 
     assert result["symbols"] == ["AAA"]
     assert (parquet_root / "AAA.parquet").exists()
+    assert len(integrity_calls) == 1
+    assert integrity_calls[0]["path"] == parquet_root / "AAA.parquet"
+    assert integrity_calls[0]["symbol"] == "AAA"
+    assert integrity_calls[0]["enabled"] is True
 
 
 def test_update_from_config_incremental_merge_dedupes_and_preserves_currency(

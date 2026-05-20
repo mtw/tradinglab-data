@@ -200,9 +200,18 @@ def test_status_rows_provider_baseline_stooq_marks_expected_difference():
 
 def test_main_fail_severity_critical_does_not_fail_on_noncritical_issue(tmp_path: Path, monkeypatch):
     status = _status("AAA")
+    meta = {
+        "AAA": mod.SymbolMeta(
+            name="AAA",
+            isin="",
+            exchange="Vienna",
+            country="AT",
+            source="atx",
+        )
+    }
     monkeypatch.setattr(mod, "_collect_targets", lambda **kwargs: [("AAA", tmp_path / "AAA.parquet")])
     monkeypatch.setattr(mod, "_validate_file", lambda **kwargs: status)
-    monkeypatch.setattr(mod, "_load_symbol_meta", lambda **kwargs: {})
+    monkeypatch.setattr(mod, "_load_symbol_meta", lambda **kwargs: meta)
     monkeypatch.setattr(mod, "run_parquet_sanity_checks", lambda *args, **kwargs: {"ok": True, "errors": []})
     summary_path = tmp_path / "summary.json"
     monkeypatch.setattr(
@@ -224,9 +233,18 @@ def test_main_fail_severity_critical_does_not_fail_on_noncritical_issue(tmp_path
 
 def test_main_fail_severity_all_fails_on_noncritical_issue(tmp_path: Path, monkeypatch):
     status = _status("AAA")
+    meta = {
+        "AAA": mod.SymbolMeta(
+            name="AAA",
+            isin="",
+            exchange="Vienna",
+            country="AT",
+            source="atx",
+        )
+    }
     monkeypatch.setattr(mod, "_collect_targets", lambda **kwargs: [("AAA", tmp_path / "AAA.parquet")])
     monkeypatch.setattr(mod, "_validate_file", lambda **kwargs: status)
-    monkeypatch.setattr(mod, "_load_symbol_meta", lambda **kwargs: {})
+    monkeypatch.setattr(mod, "_load_symbol_meta", lambda **kwargs: meta)
     monkeypatch.setattr(mod, "run_parquet_sanity_checks", lambda *args, **kwargs: {"ok": True, "errors": []})
     monkeypatch.setattr(
         sys,

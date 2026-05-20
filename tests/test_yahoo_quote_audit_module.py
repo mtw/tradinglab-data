@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import csv
+import io
 from pathlib import Path
 
 from tradinglab_data.yahoo_quote_audit import (
+    YahooQuoteAuditRow,
     YahooQuoteSnapshot,
     audit_rows_to_csv,
     audit_rows_to_markdown,
@@ -148,3 +151,33 @@ def test_audit_renderers_include_statuses(tmp_path: Path):
     csv_text = audit_rows_to_csv(rows)
     assert "| MVEU.L | match |" in markdown
     assert "symbol,local_exchange,local_currency,local_name" in csv_text
+
+
+def test_audit_rows_to_csv_round_trips_quoted_fields():
+    rows = [
+        YahooQuoteAuditRow(
+            symbol="MVEU.L",
+            local_exchange="LSE",
+            local_currency="EUR",
+            local_name='Name, "Quoted"\nLine',
+            yahoo_exchange_display="LSE",
+            yahoo_exchange="LSE",
+            yahoo_currency="EUR",
+            yahoo_name='Yahoo, "Quoted"\nLine',
+            status="name_mismatch",
+            issue='needs "manual", review',
+            requested_url="https://finance.yahoo.com/quote/MVEU.L/",
+            final_url="https://finance.yahoo.com/quote/MVEU.L/",
+            page_symbol="MVEU.L",
+            isin="IE00A",
+        )
+    ]
+
+    csv_text = audit_rows_to_csv(rows)
+    parsed = list(csv.DictReader(io.StringIO(csv_text)))
+
+    assert len(parsed) == 1
+    assert parsed[0]["symbol"] == "MVEU.L"
+    assert parsed[0]["local_name"] == 'Name, "Quoted"\nLine'
+    assert parsed[0]["yahoo_name"] == 'Yahoo, "Quoted"\nLine'
+    assert parsed[0]["issue"] == 'needs "manual", review'

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
+import polars as pl
 import pytest
 
 from tradinglab_data.config import Config
@@ -39,14 +42,40 @@ def test_binance_provider_fetches_btc_usdt(interval: str):
         _skip_for_network_issue(exc)
         return
 
-    if frame.is_empty():
-        pytest.skip(f"no live data returned for {interval}")
+    assert frame.is_empty() is False, f"live Binance fetch returned empty data for {interval}"
 
-    assert "timestamp" in frame.columns
-    assert "symbol" in frame.columns
+    assert frame.columns == [
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "provider",
+        "exchange",
+        "market_type",
+        "symbol",
+        "base_asset",
+        "quote_asset",
+        "interval",
+        "is_closed",
+        "ingested_at",
+        "source_symbol",
+    ]
+    assert frame.get_column("open").null_count() == 0
+    assert frame.get_column("high").null_count() == 0
+    assert frame.get_column("low").null_count() == 0
+    assert frame.get_column("close").null_count() == 0
+    assert frame.get_column("volume").null_count() == 0
     assert frame.get_column("symbol").unique().to_list() == ["BTC_USDT"]
+    assert frame.get_column("provider").unique().to_list() == ["ccxt"]
     assert frame.get_column("exchange").unique().to_list() == ["binance"]
+    assert frame.get_column("market_type").unique().to_list() == ["spot"]
+    assert frame.get_column("base_asset").unique().to_list() == ["BTC"]
+    assert frame.get_column("quote_asset").unique().to_list() == ["USDT"]
     assert frame.get_column("interval").unique().to_list() == [interval]
+    assert frame.get_column("source_symbol").unique().to_list() == ["BTC/USDT"]
+    assert set(frame.get_column("is_closed").unique().to_list()).issubset({True, False})
 
 
 @pytest.mark.network
@@ -70,11 +99,14 @@ def test_coingecko_provider_fetches_markets():
         _skip_for_network_issue(exc)
         return
 
-    if not payload:
-        pytest.skip("no CoinGecko data returned")
-
     assert isinstance(payload, list)
-    assert "id" in payload[0]
+    assert payload, "CoinGecko returned an empty markets payload"
+    first = payload[0]
+    assert "id" in first
+    assert "symbol" in first
+    assert "name" in first
+    assert "market_cap" in first
+    assert "total_volume" in first
 
 
 @pytest.mark.network
@@ -116,8 +148,22 @@ def test_crypto_refresh_universe_smoke(tmp_path):
         return
 
     selected = result["symbols_selected"]
-    if not selected:
-        pytest.skip("no live symbols selected during refresh-universe smoke")
-
     assert result["universe"] == "crypto_high_liquidity"
+    assert result["provider"] == "coingecko"
+    assert result["exchange"] == "binance"
+    assert result["market_type"] == "spot"
+    assert selected, "refresh-universe returned no selected symbols"
     assert len(selected) <= 5
+    registry_path = Path(result["registry_path"])
+    universe_path = Path(result["universe_path"])
+    assert registry_path.exists()
+    assert universe_path.exists()
+
+    registry_payload = json.loads(registry_path.read_text(encoding="utf-8"))
+    assert isinstance(registry_payload, list)
+    persisted_registry_symbols = {str(item.get("symbol_canonical", "")) for item in registry_payload if isinstance(item, dict)}
+    assert set(selected).issubset(persisted_registry_symbols)
+
+    universe_frame = pl.read_csv(universe_path)
+    assert "symbol" in universe_frame.columns
+    assert universe_frame.get_column("symbol").to_list() == selected

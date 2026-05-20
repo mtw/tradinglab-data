@@ -117,11 +117,29 @@ def test_report_json_daily_intraday_only_store_keeps_legacy_sections(tmp_path: P
 
 def test_legacy_cli_commands_still_parse_and_return_zero(monkeypatch, tmp_path: Path):
     config_path = _write_basic_config(tmp_path)
-    monkeypatch.setattr(cli, "update_from_config", lambda cfg, symbols_override=None: {"symbols": [], "parquet_root": str(tmp_path / "daily"), "intraday": None})
+    calls: dict[str, list[dict[str, object]]] = {
+        "update": [],
+        "monitor_extended_hours": [],
+        "build_universe": [],
+    }
+
+    def fake_update(cfg, symbols_override=None):
+        calls["update"].append({"cfg": cfg, "symbols_override": symbols_override})
+        return {"symbols": [], "parquet_root": str(tmp_path / "daily"), "intraday": None}
+
+    monkeypatch.setattr(cli, "update_from_config", fake_update)
     monkeypatch.setattr(
         cli,
         "monitor_extended_hours_from_config",
-        lambda cfg, symbols_override=None, top_n=25, session_filter="all": {
+        lambda cfg, symbols_override=None, top_n=25, session_filter="all": calls["monitor_extended_hours"].append(
+            {
+                "cfg": cfg,
+                "symbols_override": symbols_override,
+                "top_n": top_n,
+                "session_filter": session_filter,
+            }
+        )
+        or {
             "preferred_interval": "5m",
             "fallback_interval": "1m",
             "symbols": 0,
@@ -134,11 +152,10 @@ def test_legacy_cli_commands_still_parse_and_return_zero(monkeypatch, tmp_path: 
             "report_html": str(tmp_path / "runs" / "report.html"),
         },
     )
-    calls: list[dict[str, object]] = []
     monkeypatch.setattr(
         cli,
         "build_universe",
-        lambda **kwargs: calls.append(kwargs),
+        lambda **kwargs: calls["build_universe"].append(kwargs),
     )
 
     assert cli.main(["--config", str(config_path), "update"]) == 0
@@ -157,7 +174,18 @@ def test_legacy_cli_commands_still_parse_and_return_zero(monkeypatch, tmp_path: 
         )
         == 0
     )
-    assert calls
+    assert len(calls["update"]) == 1
+    assert calls["update"][0]["symbols_override"] is None
+    assert len(calls["monitor_extended_hours"]) == 1
+    assert calls["monitor_extended_hours"][0]["session_filter"] == "pre"
+    assert calls["monitor_extended_hours"][0]["top_n"] == 5
+    assert calls["monitor_extended_hours"][0]["symbols_override"] is None
+    assert len(calls["build_universe"]) == 1
+    assert calls["build_universe"][0]["active_only"] is True
+    assert calls["build_universe"][0]["indices"] == ["sp500"]
+    assert calls["build_universe"][0]["out_path"] == str(tmp_path / "meta" / "merged_out.csv")
+    assert calls["build_universe"][0]["overrides_dir"] == str(tmp_path / "meta" / "universes")
+    assert calls["build_universe"][0]["ticker_overrides_path"] == tmp_path / "meta" / "ticker_overrides.csv"
 
 
 def test_wrapper_crypto_defaults_can_be_disabled_cleanly():

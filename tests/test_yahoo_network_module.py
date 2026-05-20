@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import polars as pl
 import pytest
 
 from tradinglab_data import data_yf
@@ -25,6 +26,20 @@ def _skip_for_network_issue(exc: Exception) -> None:
     raise exc
 
 
+def _assert_nonempty_daily_frame(frame: pl.DataFrame, symbol: str) -> None:
+    assert frame.is_empty() is False, f"successful Yahoo daily fetch returned empty frame for {symbol}"
+    assert "date" in frame.columns
+    assert frame.height > 0
+
+
+def _assert_nonempty_intraday_frame(frame: pl.DataFrame | None, symbol: str, *, prepost: bool) -> None:
+    label = "with prepost" if prepost else "without prepost"
+    assert frame is not None, f"successful Yahoo intraday fetch returned no frame for {symbol} {label}"
+    assert frame.is_empty() is False, f"successful Yahoo intraday fetch returned empty frame for {symbol} {label}"
+    assert "date" in frame.columns
+    assert frame.height > 0
+
+
 @pytest.mark.network
 @pytest.mark.parametrize("symbol", ["AAPL", "MSFT"])
 def test_yahoo_daily_fetch_smoke(symbol: str):
@@ -34,11 +49,7 @@ def test_yahoo_daily_fetch_smoke(symbol: str):
         _skip_for_network_issue(exc)
         return
 
-    if frame.is_empty():
-        pytest.skip(f"no live daily data returned for {symbol}")
-
-    assert "date" in frame.columns
-    assert frame.height > 0
+    _assert_nonempty_daily_frame(frame, symbol)
 
 
 @pytest.mark.network
@@ -49,11 +60,7 @@ def test_yahoo_share_class_fallback_smoke():
         _skip_for_network_issue(exc)
         return
 
-    if frame.is_empty():
-        pytest.skip("no live daily data returned for BRK.B/BRK-B fallback")
-
-    assert "date" in frame.columns
-    assert frame.height > 0
+    _assert_nonempty_daily_frame(frame, "BRK.B")
 
 
 @pytest.mark.network
@@ -71,12 +78,7 @@ def test_yahoo_intraday_fetch_smoke():
         _skip_for_network_issue(exc)
         return
 
-    frame = out.get("AAPL")
-    if frame is None or frame.is_empty():
-        pytest.skip("no live 5m intraday data returned for AAPL")
-
-    assert "date" in frame.columns
-    assert frame.height > 0
+    _assert_nonempty_intraday_frame(out.get("AAPL"), "AAPL", prepost=True)
 
 
 @pytest.mark.network
@@ -94,9 +96,50 @@ def test_yahoo_intraday_fetch_smoke_without_prepost():
         _skip_for_network_issue(exc)
         return
 
-    frame = out.get("MSFT")
-    if frame is None or frame.is_empty():
-        pytest.skip("no live 5m intraday data returned for MSFT without prepost")
+    _assert_nonempty_intraday_frame(out.get("MSFT"), "MSFT", prepost=False)
 
-    assert "date" in frame.columns
-    assert frame.height > 0
+
+def test_yahoo_daily_smoke_helper_fails_on_empty_success(monkeypatch):
+    monkeypatch.setattr(
+        data_yf,
+        "fetch_yfinance_history",
+        lambda spec: pl.DataFrame({"date": [], "open": [], "high": [], "low": [], "close": [], "adj_close": [], "volume": []}).with_columns(
+            pl.col("date").cast(pl.Datetime),
+            pl.col("open").cast(pl.Float64),
+            pl.col("high").cast(pl.Float64),
+            pl.col("low").cast(pl.Float64),
+            pl.col("close").cast(pl.Float64),
+            pl.col("adj_close").cast(pl.Float64),
+            pl.col("volume").cast(pl.Float64),
+        ),
+    )
+
+    frame = data_yf.fetch_yfinance_history(data_yf.YFDownloadSpec(symbol="AAPL", interval="1d", lookback_days=30))
+    with pytest.raises(AssertionError, match="empty frame"):
+        _assert_nonempty_daily_frame(frame, "AAPL")
+
+
+def test_yahoo_intraday_smoke_helper_fails_on_empty_success():
+    empty = pl.DataFrame(
+        {
+            "date": [],
+            "open": [],
+            "high": [],
+            "low": [],
+            "close": [],
+            "adj_close": [],
+            "volume": [],
+            "currency": [],
+        }
+    ).with_columns(
+        pl.col("date").cast(pl.Datetime),
+        pl.col("open").cast(pl.Float64),
+        pl.col("high").cast(pl.Float64),
+        pl.col("low").cast(pl.Float64),
+        pl.col("close").cast(pl.Float64),
+        pl.col("adj_close").cast(pl.Float64),
+        pl.col("volume").cast(pl.Float64),
+        pl.col("currency").cast(pl.Utf8),
+    )
+    with pytest.raises(AssertionError, match="empty frame"):
+        _assert_nonempty_intraday_frame(empty, "AAPL", prepost=True)
