@@ -345,6 +345,7 @@ Simple operator wrapper:
 ```bash
 python scripts/parquet_status.py --config configs/config.local.yaml --daily
 python scripts/parquet_status.py --config configs/config.local.yaml --intraday --universe intraday_live_core
+python scripts/parquet_status.py --config configs/config.local.yaml --list-universes
 ```
 
 High-level behavior:
@@ -384,6 +385,15 @@ It still exists for provider verification, intraday cleaning, and mismatch repai
 This split is intentional. The legacy `scripts/check_parquet_status.py` checker assumes generic OHLC parquet with a `date` column, which is correct for daily and the legacy extended-hours cache but not for the newer `intraday_research` and `intraday_live` contracts that use `timestamp`.
 
 It exits non-zero when any of those checks fail.
+
+Universe-selecting maintenance scripts also accept `--list-universes` and exit after printing the currently available equity CSV shards and crypto universe names. Use that before choosing:
+
+- `scripts/parquet_status.py --universe ...`
+- `scripts/check_parquet_status.py --universe ...`
+- `scripts/verify_yahoo_access.py --indices ...`
+- `scripts/bootstrap_stooq_history.py --only-universes ...`
+- `scripts/check_crypto_status.py --universe ...`
+- `scripts/report_universe_consistency.py --list-universes`
 
 Universe consistency report:
 

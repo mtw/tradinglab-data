@@ -43,6 +43,7 @@ from tradinglab_data.parquet_verify import (
     write_verification_summary,
 )
 from tradinglab_data.universe import load_universe_frame
+from tradinglab_data.universe_listing import list_available_universes, render_available_universes
 
 REQUIRED_COLS = ["date", "open", "high", "low", "close"]
 DEFAULT_ROOT = Path()
@@ -1395,6 +1396,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Validate OHLC parquet files and report last OHLC prices + summary stats."
     )
     ap.add_argument("--config", default=str(default_config_path()), help="YAML config path")
+    ap.add_argument("--list-universes", action="store_true", help="List available universes and exit.")
     ap.add_argument("--root", default="", help="Parquet root directory")
     ap.add_argument(
         "--parquet-kind",
@@ -1592,6 +1594,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("Use only one of --year/--yyear or --month")
 
     cfg = Config.load(args.config)
+    if bool(args.list_universes):
+        print(render_available_universes(list_available_universes(cfg)), end="")
+        return 0
     root = Path(args.root) if str(args.root).strip() else parquet_root_path(cfg)
     parquet_mode, intraday_interval_minutes = _infer_parquet_mode(root, str(args.parquet_kind))
     intraday_interval = f"{intraday_interval_minutes}m" if intraday_interval_minutes else "5m"

@@ -30,6 +30,7 @@ from tradinglab_data.data_yf import (  # noqa: E402
     fetch_yfinance_history_bulk,
     read_parquet_if_exists,
 )
+from tradinglab_data.universe_listing import list_available_universes, render_available_universes  # noqa: E402
 
 
 def _symbols_from_universe_csv(path: Path) -> list[str]:
@@ -67,14 +68,14 @@ def _align_for_concat(df_left: pl.DataFrame, df_right: pl.DataFrame) -> tuple[pl
     if r_missing:
         df_right = df_right.with_columns([pl.lit(None).alias(c) for c in r_missing])
     dtype_map: dict[str, pl.DataType] = {
-        "date": pl.Datetime,
-        "open": pl.Float64,
-        "high": pl.Float64,
-        "low": pl.Float64,
-        "close": pl.Float64,
-        "adj_close": pl.Float64,
-        "volume": pl.Float64,
-        "currency": pl.Utf8,
+        "date": pl.Datetime(),
+        "open": pl.Float64(),
+        "high": pl.Float64(),
+        "low": pl.Float64(),
+        "close": pl.Float64(),
+        "adj_close": pl.Float64(),
+        "volume": pl.Float64(),
+        "currency": pl.Utf8(),
     }
     casts_left = []
     casts_right = []
@@ -101,10 +102,14 @@ def main() -> None:
     ap.add_argument("--skip-yf-recent", action="store_true", help="Skip yfinance recent-day merge")
     ap.add_argument("--refresh-existing", action="store_true", help="Refresh symbols even if parquet already exists")
     ap.add_argument("--only-universes", nargs="*", default=None, help="Universe basenames to include, e.g. sp500 djia atx")
+    ap.add_argument("--list-universes", action="store_true", help="List available universes and exit.")
     ap.add_argument("--log-path", type=Path, default=None, help="Update log CSV (defaults to paths.update_log_csv)")
     args = ap.parse_args()
 
     cfg = Config.load(args.config)
+    if bool(args.list_universes):
+        print(render_available_universes(list_available_universes(cfg)), end="")
+        return
     universe_dir = args.universe_dir or universe_dir_path(cfg)
     parquet_root = args.parquet_root or parquet_root_path(cfg)
     log_path = args.log_path or update_log_path(cfg)

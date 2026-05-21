@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 from pathlib import Path
 
@@ -70,3 +72,38 @@ def test_main_bootstraps_stooq_history(tmp_path: Path, monkeypatch):
     loaded = pl.read_parquet(out_path)
     assert loaded.height == 1
     assert loaded.get_column("currency").to_list() == ["USD"]
+
+
+def test_main_lists_universes_and_exits(tmp_path: Path, monkeypatch):
+    universe_dir = tmp_path / "universes"
+    crypto_universe_dir = tmp_path / "meta" / "crypto" / "universes"
+    universe_dir.mkdir(parents=True)
+    crypto_universe_dir.mkdir(parents=True)
+    (universe_dir / "sp500.csv").write_text("symbol,active\nAAPL,1\n", encoding="utf-8")
+    (crypto_universe_dir / "crypto_dynamic.json").write_text(
+        '{\n  "universe": "crypto_dynamic",\n  "symbols": ["BTC_USDT"]\n}\n',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  universe_dir: {universe_dir}",
+                f"  crypto_universe_dir: {crypto_universe_dir}",
+                f"  parquet_root: {tmp_path / 'daily'}",
+                f"  update_log_csv: {tmp_path / 'meta' / 'update_log.csv'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["bootstrap_stooq_history.py", "--config", str(config_path), "--list-universes"])
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        mod.main()
+
+    printed = out.getvalue()
+    assert "sp500: 1 symbols" in printed
+    assert "crypto_dynamic: 1 symbols" in printed

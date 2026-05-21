@@ -34,6 +34,7 @@ from tradinglab_data.intraday_research import (  # noqa: E402
     validate_intraday_research_store,
 )
 from tradinglab_data.universe import load_universe_frame  # noqa: E402
+from tradinglab_data.universe_listing import list_available_universes, render_available_universes  # noqa: E402
 
 
 def _load_check_module():
@@ -216,7 +217,8 @@ def main(argv: list[str] | None = None) -> int:
         description="Simple operator wrapper for daily or intraday parquet consistency and completeness checks."
     )
     parser.add_argument("--config", default=str(default_config_path()), help="YAML config path")
-    mode = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument("--list-universes", action="store_true", help="List available universes and exit.")
+    mode = parser.add_mutually_exclusive_group(required=False)
     mode.add_argument("--daily", action="store_true", help="Check daily OHLC parquet consistency and completeness.")
     mode.add_argument("--intraday", action="store_true", help="Check intraday research/live parquet consistency and completeness.")
     parser.add_argument("--universe", default="intraday_live_core", help="Intraday universe shard name (default: intraday_live_core).")
@@ -226,6 +228,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     cfg = Config.load(args.config)
+    if bool(args.list_universes):
+        print(render_available_universes(list_available_universes(cfg)), end="")
+        return 0
+    if not bool(args.daily) and not bool(args.intraday):
+        parser.error("one of --daily or --intraday is required unless --list-universes is set")
     summary_path = Path(args.summary_json) if str(args.summary_json).strip() else None
     if summary_path is not None:
         summary_path.parent.mkdir(parents=True, exist_ok=True)

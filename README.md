@@ -126,11 +126,14 @@ Run simple parquet health checks:
 ```bash
 python scripts/parquet_status.py --config configs/config.local.yaml --daily
 python scripts/parquet_status.py --config configs/config.local.yaml --intraday --universe intraday_live_core
+python scripts/parquet_status.py --config configs/config.local.yaml --list-universes
 ```
 
 The wrapper uses different validation paths on purpose:
 - `--daily` uses the legacy file-level OHLC checker plus universe completeness reporting.
 - `--intraday` uses the schema-aware research/live store validators and completeness checks for the requested universe shard.
+
+Universe-selecting scripts support `--list-universes` so you can discover available equity and crypto universe names before choosing `--universe`, `--indices`, or `--only-universes`.
 
 Build and validate the authoritative symbol master:
 

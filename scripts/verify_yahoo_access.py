@@ -13,6 +13,7 @@ from tradinglab_data._intraday_fetch import MAX_PERIOD_BY_INTERVAL, period_for_i
 from tradinglab_data._yf_utils import classify_yf_download_issue, run_yf_download, share_class_fallback, yf_date_window
 from tradinglab_data.config import Config, ticker_overrides_path, universe_csv_path, universe_dir_path
 from tradinglab_data.universe import load_universe
+from tradinglab_data.universe_listing import list_available_universes, render_available_universes
 
 
 @dataclass(frozen=True)
@@ -220,6 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Comma-separated universe shard names to sample from, e.g. sp500,djia. Default: full configured universe.",
     )
+    parser.add_argument("--list-universes", action="store_true", help="List available universes and exit.")
     parser.add_argument("--sample-size", type=int, default=15, help="Number of symbols to probe. Default: 15.")
     parser.add_argument(
         "--seed",
@@ -252,6 +254,9 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = Config.load(args.config)
+    if bool(args.list_universes):
+        print(render_available_universes(list_available_universes(cfg)), end="")
+        return 0
     indices = [value.strip() for value in str(args.indices).split(",") if value.strip()]
     intervals = [value.strip() for value in str(args.intervals).split(",") if value.strip()]
     symbols = _load_symbols(cfg, indices)

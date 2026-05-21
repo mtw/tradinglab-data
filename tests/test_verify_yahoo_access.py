@@ -121,3 +121,41 @@ def test_main_fails_when_no_symbols_loaded(monkeypatch, tmp_path: Path):
 
     assert rc == 2
     assert "no symbols loaded" in out.getvalue()
+
+
+def test_main_lists_universes_and_exits(monkeypatch, tmp_path: Path):
+    universe_dir = tmp_path / "meta" / "universes"
+    crypto_universe_dir = tmp_path / "meta" / "crypto" / "universes"
+    universe_dir.mkdir(parents=True)
+    crypto_universe_dir.mkdir(parents=True)
+    (universe_dir / "sp500.csv").write_text("symbol,active\nAAA,1\n", encoding="utf-8")
+    (crypto_universe_dir / "crypto_dynamic.json").write_text(
+        '{\n  "universe": "crypto_dynamic",\n  "symbols": ["BTC_USDT"]\n}\n',
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  universe_dir: {universe_dir}",
+                f"  crypto_universe_dir: {crypto_universe_dir}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["verify_yahoo_access.py", "--config", str(config_path), "--list-universes"],
+    )
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        rc = mod.main()
+
+    assert rc == 0
+    printed = out.getvalue()
+    assert "sp500: 1 symbols" in printed
+    assert "crypto_dynamic: 1 symbols" in printed

@@ -6,18 +6,20 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str((Path(__file__).resolve().parent.parent / "src")))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from tradinglab_data.config import Config, default_config_path
 from tradinglab_data.crypto.verify import CryptoVerifyConfig, run_crypto_verify_checks
+from tradinglab_data.universe_listing import list_available_universes, render_available_universes
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Verify crypto parquet coverage and optionally repair dirty symbols.")
     ap.add_argument("--config", default=str(default_config_path()), help="YAML config path")
     ap.add_argument("--exchange", default="", help="Optional crypto exchange override")
-    ap.add_argument("--interval", required=True, choices=["1d", "1h", "15m"])
+    ap.add_argument("--interval", default="", choices=["", "1d", "1h", "15m"])
     ap.add_argument("--universe", default="", help="Crypto universe to verify")
+    ap.add_argument("--list-universes", action="store_true", help="List available universes and exit.")
     ap.add_argument("--summary-json", default="", help="Optional summary JSON output path")
     ap.add_argument("--repair", action="store_true", help="Attempt single-symbol repair for dirty symbols")
     ap.add_argument("--fail-on-issues", action="store_true", help="Exit non-zero when issues remain")
@@ -27,6 +29,11 @@ def main() -> None:
     args = ap.parse_args()
 
     cfg = Config.load(args.config)
+    if bool(args.list_universes):
+        print(render_available_universes(list_available_universes(cfg)), end="")
+        return
+    if not str(args.interval).strip():
+        raise SystemExit("--interval is required unless --list-universes is set")
     result = run_crypto_verify_checks(
         cfg,
         CryptoVerifyConfig(
