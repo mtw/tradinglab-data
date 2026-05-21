@@ -1390,7 +1390,7 @@ def _print_extreme_moves(statuses: list[FileStatus]) -> None:
         )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Validate OHLC parquet files and report last OHLC prices + summary stats."
     )
@@ -1580,7 +1580,7 @@ def main() -> None:
         default="",
         help="Optional previous summary JSON for drop-vs-baseline check.",
     )
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     year = args.year if args.year is not None else args.yyear
     if args.month is not None:
@@ -1963,6 +1963,8 @@ def main() -> None:
         print(msg)
         raise SystemExit(2)
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -121,6 +121,13 @@ python scripts/normalize_universe_schema.py --config configs/config.local.yaml
 python scripts/build_index_override.py --help
 ```
 
+Run simple parquet health checks:
+
+```bash
+python scripts/parquet_status.py --config configs/config.local.yaml --daily
+python scripts/parquet_status.py --config configs/config.local.yaml --intraday --universe intraday_live_core
+```
+
 Build and validate the authoritative symbol master:
 
 ```bash
@@ -208,6 +215,8 @@ tradinglab-data --config configs/config.local.yaml report-parquet-store
 tradinglab-data --config configs/config.local.yaml report-universe-consistency --dataset daily --instrument-type stock
 tradinglab-data --config configs/config.local.yaml report-universe-consistency --dataset intraday --interval 5m --instrument-type stock
 tradinglab-data --config configs/config.local.yaml report-universe-consistency --dataset crypto --interval 1h --universe crypto_core
+python scripts/parquet_status.py --config configs/config.local.yaml --daily
+python scripts/parquet_status.py --config configs/config.local.yaml --intraday --universe intraday_live_core
 ```
 
 ## Maintenance Scripts

@@ -340,6 +340,13 @@ Primary command:
 tradinglab-data --config /path/to/config.yaml report-parquet-store
 ```
 
+Simple operator wrapper:
+
+```bash
+python scripts/parquet_status.py --config configs/config.local.yaml --daily
+python scripts/parquet_status.py --config configs/config.local.yaml --intraday --universe intraday_live_core
+```
+
 High-level behavior:
 
 1. scan every daily parquet file under `paths.parquet_root`
@@ -363,6 +370,17 @@ scripts/check_parquet_status.py
 ```
 
 It still exists for provider verification, intraday cleaning, and mismatch repair, but the package-level integrity audit above is now the regular store-health entrypoint.
+
+`scripts/parquet_status.py` is the simpler operator-facing entrypoint when you want one command for consistency and completeness checks:
+
+- `--daily`
+  - runs the daily parquet file-level checker against `paths.parquet_root`
+  - runs a daily universe consistency report against the merged universe
+- `--intraday`
+  - runs the intraday file-level checker against both `intraday.research_root/<interval>` and `intraday_live.live_root/<interval>`
+  - validates completeness for the requested intraday universe shard in both stores
+
+It exits non-zero when any of those checks fail.
 
 Universe consistency report:
 
