@@ -105,6 +105,22 @@ def test_intraday_status_wrapper_checks_research_and_live_roots(tmp_path: Path, 
     monkeypatch.setattr(mod, "_load_check_module", lambda: FakeCheck())
     monkeypatch.setattr(
         mod,
+        "inspect_intraday_research_store",
+        lambda symbols, **kwargs: [
+            {"symbol": symbol, "exists": True, "valid": True, "issues": [], "path": f"/tmp/research/{symbol}.parquet"}
+            for symbol in symbols
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
+        "inspect_intraday_live_store",
+        lambda symbols, **kwargs: [
+            {"symbol": symbol, "exists": True, "valid": True, "issues": [], "path": f"/tmp/live/{symbol}.parquet"}
+            for symbol in symbols
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
         "validate_intraday_research_store",
         lambda symbols, **kwargs: {"ok": True, "dirty_files": [], "errors": [], "symbols": symbols, **kwargs},
     )
@@ -130,12 +146,12 @@ def test_intraday_status_wrapper_checks_research_and_live_roots(tmp_path: Path, 
     )
 
     assert rc == 0
-    assert len(captured) == 2
-    assert str(tmp_path / "parquet" / "intraday_research" / "5m") in captured[0]
-    assert str(tmp_path / "parquet" / "intraday_live" / "5m") in captured[1]
+    assert len(captured) == 0
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
     assert payload["mode"] == "intraday"
     assert payload["symbols_checked"] == 2
+    assert payload["research_missing_files"] == 0
+    assert payload["live_missing_files"] == 0
 
 
 def test_intraday_status_wrapper_fails_when_store_validation_fails(tmp_path: Path, monkeypatch):
@@ -166,6 +182,22 @@ def test_intraday_status_wrapper_fails_when_store_validation_fails(tmp_path: Pat
     monkeypatch.setattr(mod, "_load_check_module", lambda: FakeCheck())
     monkeypatch.setattr(
         mod,
+        "inspect_intraday_research_store",
+        lambda symbols, **kwargs: [
+            {"symbol": symbol, "exists": True, "valid": False, "issues": ["bad"], "path": f"/tmp/research/{symbol}.parquet"}
+            for symbol in symbols
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
+        "inspect_intraday_live_store",
+        lambda symbols, **kwargs: [
+            {"symbol": symbol, "exists": True, "valid": True, "issues": [], "path": f"/tmp/live/{symbol}.parquet"}
+            for symbol in symbols
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
         "validate_intraday_research_store",
         lambda symbols, **kwargs: {"ok": False, "dirty_files": ["x"], "errors": ["bad"]},
     )
@@ -178,3 +210,75 @@ def test_intraday_status_wrapper_fails_when_store_validation_fails(tmp_path: Pat
     rc = mod.main(["--config", str(config_path), "--intraday", "--universe", "pilot"])
 
     assert rc == 2
+
+
+def test_intraday_status_wrapper_fails_on_missing_files(tmp_path: Path, monkeypatch):
+    universe_dir = tmp_path / "meta" / "universes"
+    universe_dir.mkdir(parents=True)
+    (universe_dir / "pilot.csv").write_text("symbol,active\nAAA,1\nBBB,1\n", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "paths:",
+                f"  universe_dir: {universe_dir}",
+                "intraday:",
+                f"  research_root: {tmp_path / 'parquet' / 'intraday_research'}",
+                "intraday_live:",
+                f"  live_root: {tmp_path / 'parquet' / 'intraday_live'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    class FakeCheck:
+        @staticmethod
+        def main(argv):
+            return 0
+
+    monkeypatch.setattr(mod, "_load_check_module", lambda: FakeCheck())
+    monkeypatch.setattr(
+        mod,
+        "inspect_intraday_research_store",
+        lambda symbols, **kwargs: [
+            {"symbol": "AAA", "exists": True, "valid": True, "issues": [], "path": "/tmp/research/AAA.parquet"},
+            {"symbol": "BBB", "exists": False, "valid": False, "issues": ["missing_file"], "path": "/tmp/research/BBB.parquet"},
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
+        "inspect_intraday_live_store",
+        lambda symbols, **kwargs: [
+            {"symbol": symbol, "exists": True, "valid": True, "issues": [], "path": f"/tmp/live/{symbol}.parquet"}
+            for symbol in symbols
+        ],
+    )
+    monkeypatch.setattr(
+        mod,
+        "validate_intraday_research_store",
+        lambda symbols, **kwargs: {"ok": False, "dirty_files": ["/tmp/research/BBB.parquet"], "errors": ["missing"]},
+    )
+    monkeypatch.setattr(
+        mod,
+        "validate_intraday_live_store",
+        lambda symbols, **kwargs: {"ok": True, "dirty_files": [], "errors": []},
+    )
+    summary_path = tmp_path / "intraday_summary.json"
+
+    rc = mod.main(
+        [
+            "--config",
+            str(config_path),
+            "--intraday",
+            "--universe",
+            "pilot",
+            "--summary-json",
+            str(summary_path),
+        ]
+    )
+
+    assert rc == 2
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert payload["research_missing_files"] == 1
+    assert payload["ok"] is False

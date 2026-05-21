@@ -377,8 +377,11 @@ It still exists for provider verification, intraday cleaning, and mismatch repai
   - runs the daily parquet file-level checker against `paths.parquet_root`
   - runs a daily universe consistency report against the merged universe
 - `--intraday`
-  - runs the intraday file-level checker against both `intraday.research_root/<interval>` and `intraday_live.live_root/<interval>`
+  - runs the schema-aware intraday research validator against `intraday.research_root/<interval>`
+  - runs the schema-aware intraday live validator against `intraday_live.live_root/<interval>`
   - validates completeness for the requested intraday universe shard in both stores
+
+This split is intentional. The legacy `scripts/check_parquet_status.py` checker assumes generic OHLC parquet with a `date` column, which is correct for daily and the legacy extended-hours cache but not for the newer `intraday_research` and `intraday_live` contracts that use `timestamp`.
 
 It exits non-zero when any of those checks fail.
 

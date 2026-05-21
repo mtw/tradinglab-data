@@ -128,6 +128,10 @@ python scripts/parquet_status.py --config configs/config.local.yaml --daily
 python scripts/parquet_status.py --config configs/config.local.yaml --intraday --universe intraday_live_core
 ```
 
+The wrapper uses different validation paths on purpose:
+- `--daily` uses the legacy file-level OHLC checker plus universe completeness reporting.
+- `--intraday` uses the schema-aware research/live store validators and completeness checks for the requested universe shard.
+
 Build and validate the authoritative symbol master:
 
 ```bash

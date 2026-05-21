@@ -25,8 +25,14 @@ from tradinglab_data.config import (  # noqa: E402
     universe_dir_path,
 )
 from tradinglab_data.consistency_report import generate_universe_consistency_report  # noqa: E402
-from tradinglab_data.intraday_live import validate_intraday_live_store  # noqa: E402
-from tradinglab_data.intraday_research import validate_intraday_research_store  # noqa: E402
+from tradinglab_data.intraday_live import (  # noqa: E402
+    inspect_intraday_live_store,
+    validate_intraday_live_store,
+)
+from tradinglab_data.intraday_research import (  # noqa: E402
+    inspect_intraday_research_store,
+    validate_intraday_research_store,
+)
 from tradinglab_data.universe import load_universe_frame  # noqa: E402
 
 
@@ -131,7 +137,6 @@ def _run_daily(cfg: Config, *, check_mod, instrument_type: str, summary_path: Pa
 def _run_intraday(
     cfg: Config,
     *,
-    check_mod,
     universe_name: str,
     interval: str,
     summary_path: Path | None,
@@ -141,41 +146,6 @@ def _run_intraday(
     live_root = intraday_live_root_path(cfg)
 
     print(f"== Intraday parquet consistency ({universe_name}, {interval}) ==")
-
-    research_exit = _run_check(
-        check_mod,
-        [
-            "--config",
-            str(cfg.source_path or default_config_path()),
-            "--root",
-            str(research_root / interval),
-            "--parquet-kind",
-            "intraday",
-            "--symbols",
-            *symbols,
-            "--issues-only",
-            "--fail-on-issues",
-            "--fail-severity",
-            "critical",
-        ],
-    )
-    live_exit = _run_check(
-        check_mod,
-        [
-            "--config",
-            str(cfg.source_path or default_config_path()),
-            "--root",
-            str(live_root / interval),
-            "--parquet-kind",
-            "intraday",
-            "--symbols",
-            *symbols,
-            "--issues-only",
-            "--fail-on-issues",
-            "--fail-severity",
-            "critical",
-        ],
-    )
 
     research_validate = validate_intraday_research_store(
         symbols,
@@ -189,14 +159,33 @@ def _run_intraday(
         interval=interval,
         universe_name=universe_name,
     )
+    research_inspect = inspect_intraday_research_store(symbols, research_root=research_root, interval=interval)
+    live_inspect = inspect_intraday_live_store(symbols, live_root=live_root, interval=interval)
 
     research_dirty = len(research_validate["dirty_files"])
     live_dirty = len(live_validate["dirty_files"])
-    ok = research_exit == 0 and live_exit == 0 and bool(research_validate["ok"]) and bool(live_validate["ok"])
+    research_missing = sum(1 for item in research_inspect if not bool(item.get("exists")))
+    live_missing = sum(1 for item in live_inspect if not bool(item.get("exists")))
+    research_invalid = sum(1 for item in research_inspect if bool(item.get("exists")) and not bool(item.get("valid")))
+    live_invalid = sum(1 for item in live_inspect if bool(item.get("exists")) and not bool(item.get("valid")))
+    ok = bool(research_validate["ok"]) and bool(live_validate["ok"])
+
+    if research_dirty:
+        print("\nResearch dirty files")
+        for path in research_validate["dirty_files"]:
+            print(f"  {path}")
+    if live_dirty:
+        print("\nLive dirty files")
+        for path in live_validate["dirty_files"]:
+            print(f"  {path}")
 
     print("\nIntraday completeness")
     print(f"  symbols_checked: {len(symbols)}")
+    print(f"  research_missing_files: {research_missing}")
+    print(f"  research_invalid_files: {research_invalid}")
     print(f"  research_dirty_files: {research_dirty}")
+    print(f"  live_missing_files: {live_missing}")
+    print(f"  live_invalid_files: {live_invalid}")
     print(f"  live_dirty_files: {live_dirty}")
     print(f"  ok: {ok}")
 
@@ -208,9 +197,11 @@ def _run_intraday(
             "symbols_checked": len(symbols),
             "research_root": str(research_root / interval),
             "live_root": str(live_root / interval),
-            "research_check_exit": research_exit,
-            "live_check_exit": live_exit,
+            "research_missing_files": research_missing,
+            "research_invalid_files": research_invalid,
             "research_dirty_files": research_validate["dirty_files"],
+            "live_missing_files": live_missing,
+            "live_invalid_files": live_invalid,
             "live_dirty_files": live_validate["dirty_files"],
             "ok": ok,
         }
@@ -249,7 +240,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     return _run_intraday(
         cfg,
-        check_mod=check_mod,
         universe_name=str(args.universe).strip(),
         interval=str(args.interval).strip(),
         summary_path=summary_path,
