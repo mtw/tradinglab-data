@@ -31,6 +31,15 @@ def test_session_label_handles_boundaries_invalid_and_timezone_aware_values():
     assert moves.session_label(datetime(2026, 3, 27, 2, 0, tzinfo=timezone.utc)) == "closed"
 
 
+def test_session_label_handles_us_dst_transition_boundaries():
+    assert moves.session_label(datetime(2026, 3, 9, 13, 29, tzinfo=timezone.utc)) == "pre"
+    assert moves.session_label(datetime(2026, 3, 9, 13, 30, tzinfo=timezone.utc)) == "regular"
+    assert moves.session_label(datetime(2026, 3, 9, 20, 0, tzinfo=timezone.utc)) == "post"
+    assert moves.session_label(datetime(2026, 11, 2, 14, 29, tzinfo=timezone.utc)) == "pre"
+    assert moves.session_label(datetime(2026, 11, 2, 14, 30, tzinfo=timezone.utc)) == "regular"
+    assert moves.session_label(datetime(2026, 11, 2, 21, 0, tzinfo=timezone.utc)) == "post"
+
+
 def test_load_daily_reference_closes_reads_tail_currency_and_skips_bad_files(tmp_path: Path, monkeypatch):
     root = tmp_path / "daily"
     root.mkdir()

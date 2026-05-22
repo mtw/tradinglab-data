@@ -51,6 +51,37 @@ def test_normalize_intraday_research_frame_filters_to_regular_session_and_sets_s
     assert normalized.get_column("is_regular_session").unique().to_list() == [True]
 
 
+def test_normalize_intraday_research_frame_filters_to_regular_session_across_us_dst_boundaries():
+    frame = _raw_intraday_frame(
+        [
+            "2026-03-09T13:29:00",
+            "2026-03-09T13:30:00",
+            "2026-03-09T19:55:00",
+            "2026-03-09T20:00:00",
+            "2026-11-02T14:29:00",
+            "2026-11-02T14:30:00",
+            "2026-11-02T20:55:00",
+            "2026-11-02T21:00:00",
+        ]
+    )
+
+    normalized = normalize_intraday_research_frame(frame, symbol="SPY", currency="USD")
+
+    assert normalized.get_column("timestamp").dt.strftime("%Y-%m-%dT%H:%M:%S").to_list() == [
+        "2026-03-09T13:30:00",
+        "2026-03-09T19:55:00",
+        "2026-11-02T14:30:00",
+        "2026-11-02T20:55:00",
+    ]
+    assert normalized.get_column("session_date").dt.strftime("%Y-%m-%d").to_list() == [
+        "2026-03-09",
+        "2026-03-09",
+        "2026-11-02",
+        "2026-11-02",
+    ]
+    assert normalized.get_column("session").unique().to_list() == ["regular"]
+
+
 def test_update_intraday_research_store_merges_existing_and_new_rows(tmp_path: Path):
     root = tmp_path / "intraday_research"
     existing_path = root / "5m" / "AAA.parquet"

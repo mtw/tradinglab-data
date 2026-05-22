@@ -45,6 +45,30 @@ def test_normalize_intraday_live_frame_labels_sessions_and_preserves_extended_ho
     assert normalized.get_column("is_closed_bar").unique().to_list() == [True]
 
 
+def test_normalize_intraday_live_frame_labels_sessions_across_us_dst_boundaries():
+    frame = _raw_intraday_frame(
+        [
+            "2026-03-09T13:29:00",
+            "2026-03-09T13:30:00",
+            "2026-03-09T20:00:00",
+            "2026-11-02T14:29:00",
+            "2026-11-02T14:30:00",
+            "2026-11-02T21:00:00",
+        ]
+    )
+    normalized = normalize_intraday_live_frame(frame, symbol="SPY", currency="USD")
+    assert normalized.get_column("session").to_list() == ["pre", "regular", "post", "pre", "regular", "post"]
+    assert normalized.get_column("is_regular_session").to_list() == [False, True, False, False, True, False]
+    assert normalized.get_column("session_date").dt.strftime("%Y-%m-%d").to_list() == [
+        "2026-03-09",
+        "2026-03-09",
+        "2026-03-09",
+        "2026-11-02",
+        "2026-11-02",
+        "2026-11-02",
+    ]
+
+
 def test_update_intraday_live_store_merges_existing_and_new_rows(tmp_path: Path):
     root = tmp_path / "intraday_live"
     existing_path = root / "5m" / "AAA.parquet"

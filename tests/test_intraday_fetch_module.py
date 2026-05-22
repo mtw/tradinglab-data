@@ -54,6 +54,24 @@ def test_normalize_intraday_pd_converts_timezone_index_to_utc_naive():
     assert out.get_column("date").to_list() == [datetime(2026, 1, 1, 14, 30)]
 
 
+def test_normalize_intraday_pd_converts_timezone_index_to_utc_naive_across_us_dst_boundaries():
+    pdf = pd.DataFrame(
+        {
+            "Open": [1.0, 2.0],
+            "High": [2.0, 3.0],
+            "Low": [0.5, 1.5],
+            "Close": [1.5, 2.5],
+            "Adj Close": [1.4, 2.4],
+            "Volume": [100, 200],
+        },
+        index=pd.DatetimeIndex(["2026-03-09 09:30", "2026-11-02 09:30"], tz="America/New_York"),
+    )
+
+    out = intraday_fetch.normalize_intraday_pd(pdf)
+
+    assert out.get_column("date").to_list() == [datetime(2026, 3, 9, 13, 30), datetime(2026, 11, 2, 14, 30)]
+
+
 def test_fetch_intraday_one_result_returns_empty_with_classified_issue(monkeypatch):
     monkeypatch.setattr(
         intraday_fetch,
