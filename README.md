@@ -17,7 +17,7 @@ This repository owns:
 
 This repository does not own signal generation, screening decisions, research workflows, predictive modeling, experiment registries, or downstream plotting/report UX.
 
-Current release: `0.2.0`
+Current release: `0.3.0`
 
 Artifact schema version: `v0.3.0`
 

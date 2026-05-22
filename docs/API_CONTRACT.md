@@ -11,7 +11,7 @@ The package now uses a simpler model:
 
 Consumers should not depend on a second standalone API-version number.
 
-Current package version in [`pyproject.toml`](../pyproject.toml): `0.2.0`
+Current package version in [`pyproject.toml`](../pyproject.toml): `0.3.0`
 
 ## Compatibility Model
 
@@ -19,7 +19,7 @@ Use these signals for different needs:
 
 - package version
   - use this for dependency pins and Python/CLI compatibility
-  - example: `tradinglab-data>=0.2,<0.3`
+  - example: `tradinglab-data>=0.3,<0.4`
 - artifact schema version
   - use this when consuming parquet files or generated reports across package releases
   - current value: `v0.3.0`
@@ -814,7 +814,7 @@ Reference template:
 
 Artifact schema version for the produced data-store and report families:
 
-- `v0.2.0`
+- `v0.3.0`
 
 Machine-readable sources:
 
