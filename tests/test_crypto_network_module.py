@@ -21,14 +21,34 @@ def _skip_for_network_issue(exc: Exception) -> None:
         "timed out",
         "temporarily unavailable",
         "service unavailable",
-        "forbidden",
         "not known",
         "name or service not known",
         "nodename nor servname provided",
+        "temporary failure in name resolution",
+        "connection reset",
+        "connection aborted",
+        "connection refused",
+        "max retries exceeded",
+        "ssl",
     ]
     if any(marker in text for marker in transient_markers):
         pytest.skip(f"upstream/network unavailable: {exc}")
     raise exc
+
+
+def test_skip_for_network_issue_skips_transient_dns_errors():
+    with pytest.raises(pytest.skip.Exception):
+        _skip_for_network_issue(RuntimeError("Name or service not known"))
+
+
+def test_skip_for_network_issue_skips_timeouts():
+    with pytest.raises(pytest.skip.Exception):
+        _skip_for_network_issue(TimeoutError("request timed out"))
+
+
+def test_skip_for_network_issue_reraises_forbidden_responses():
+    with pytest.raises(RuntimeError, match="403 forbidden"):
+        _skip_for_network_issue(RuntimeError("403 forbidden"))
 
 
 @pytest.mark.network
