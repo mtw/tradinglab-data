@@ -82,6 +82,23 @@ def test_normalize_intraday_research_frame_filters_to_regular_session_across_us_
     assert normalized.get_column("session").unique().to_list() == ["regular"]
 
 
+def test_normalize_intraday_research_frame_infers_european_regular_session_from_symbol_suffix():
+    frame = _raw_intraday_frame(
+        [
+            "2026-05-26T06:55:00",
+            "2026-05-26T07:00:00",
+            "2026-05-26T15:25:00",
+            "2026-05-26T15:35:00",
+        ]
+    )
+    normalized = normalize_intraday_research_frame(frame, symbol="ALV.DE", currency="EUR")
+    assert normalized.get_column("timestamp").dt.strftime("%Y-%m-%dT%H:%M:%S").to_list() == [
+        "2026-05-26T07:00:00",
+        "2026-05-26T15:25:00",
+    ]
+    assert normalized.get_column("session_date").dt.strftime("%Y-%m-%d").to_list() == ["2026-05-26", "2026-05-26"]
+
+
 def test_update_intraday_research_store_merges_existing_and_new_rows(tmp_path: Path):
     root = tmp_path / "intraday_research"
     existing_path = root / "5m" / "AAA.parquet"

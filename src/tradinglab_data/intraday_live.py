@@ -16,11 +16,11 @@ from ._intraday_fetch import (
 from ._yf_utils import coerce_standard_schema
 from .contracts import IntradayLiveSyncResult, IntradayLiveValidateResult
 from .data_yf import fetch_symbol_currency, read_parquet_if_exists
+from .market_timezones import DEFAULT_EXCHANGE_TIMEZONE, resolve_market_session_spec_for_symbol
 from .schema import INTRADAY_LIVE_PARQUET_SCHEMA, validate_intraday_live_frame
 
 SUPPORTED_INTERVALS = {"5m"}
 SUPPORTED_PROVIDER = "yahoo"
-DEFAULT_EXCHANGE_TIMEZONE = "America/New_York"
 
 
 @dataclass(frozen=True)
@@ -59,7 +59,17 @@ def _local_ts(timestamp_column: str, *, exchange_timezone: str) -> pl.Expr:
     return pl.col(timestamp_column).dt.replace_time_zone("UTC").dt.convert_time_zone(exchange_timezone)
 
 
-def _session_label_expr(timestamp_column: str, *, exchange_timezone: str) -> pl.Expr:
+def _session_label_expr(
+    timestamp_column: str,
+    *,
+    exchange_timezone: str,
+    regular_open_hour: int,
+    regular_open_minute: int,
+    regular_close_hour: int,
+    regular_close_minute: int,
+    post_close_hour: int,
+    post_close_minute: int,
+) -> pl.Expr:
     local = _local_ts(timestamp_column, exchange_timezone=exchange_timezone)
     weekday = local.dt.weekday()
     hour = local.dt.hour()
@@ -67,11 +77,14 @@ def _session_label_expr(timestamp_column: str, *, exchange_timezone: str) -> pl.
     return (
         pl.when(weekday > 5)
         .then(pl.lit("unknown"))
-        .when((hour < 9) | ((hour == 9) & (minute < 30)))
+        .when((hour < regular_open_hour) | ((hour == regular_open_hour) & (minute < regular_open_minute)))
         .then(pl.lit("pre"))
-        .when(hour < 16)
+        .when(
+            (hour < regular_close_hour)
+            | ((hour == regular_close_hour) & (minute < regular_close_minute))
+        )
         .then(pl.lit("regular"))
-        .when((hour < 20) | ((hour == 20) & (minute == 0)))
+        .when((hour < post_close_hour) | ((hour == post_close_hour) & (minute <= post_close_minute)))
         .then(pl.lit("post"))
         .otherwise(pl.lit("unknown"))
     )
@@ -94,8 +107,18 @@ def normalize_intraday_live_frame(
     if prepared.is_empty():
         return empty_intraday_live_frame()
     timestamp_name = "date" if "date" in prepared.columns else "timestamp"
-    tz_name = ZoneInfo(exchange_timezone).key
-    session_expr = _session_label_expr("timestamp", exchange_timezone=tz_name)
+    session_spec = resolve_market_session_spec_for_symbol(symbol, default_timezone=exchange_timezone)
+    tz_name = ZoneInfo(session_spec.timezone_name).key
+    session_expr = _session_label_expr(
+        "timestamp",
+        exchange_timezone=tz_name,
+        regular_open_hour=session_spec.regular_open_hour,
+        regular_open_minute=session_spec.regular_open_minute,
+        regular_close_hour=session_spec.regular_close_hour,
+        regular_close_minute=session_spec.regular_close_minute,
+        post_close_hour=session_spec.post_close_hour,
+        post_close_minute=session_spec.post_close_minute,
+    )
     out = (
         prepared.rename({timestamp_name: "timestamp"})
         .select(["timestamp", "open", "high", "low", "close", "volume"])

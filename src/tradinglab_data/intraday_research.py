@@ -16,12 +16,12 @@ from ._intraday_fetch import (
 from ._yf_utils import coerce_standard_schema
 from .contracts import IntradayResearchSyncResult, IntradayResearchValidateResult
 from .data_yf import fetch_symbol_currency, read_parquet_if_exists
+from .market_timezones import DEFAULT_EXCHANGE_TIMEZONE, resolve_market_session_spec_for_symbol
 from .schema import INTRADAY_RESEARCH_PARQUET_SCHEMA, validate_intraday_research_frame
 
 SUPPORTED_INTERVALS = {"5m"}
 SUPPORTED_PROVIDER = "yahoo"
 SUPPORTED_SESSION = "regular"
-DEFAULT_EXCHANGE_TIMEZONE = "America/New_York"
 
 
 @dataclass(frozen=True)
@@ -58,15 +58,26 @@ def _validate_options(*, interval: str, provider: str, session: str) -> None:
         raise ValueError(f"Unsupported intraday research session policy: {session!r}. Supported session: {SUPPORTED_SESSION}.")
 
 
-def _regular_session_filter(timestamp_column: str, *, exchange_timezone: str) -> pl.Expr:
+def _regular_session_filter(
+    timestamp_column: str,
+    *,
+    exchange_timezone: str,
+    regular_open_hour: int,
+    regular_open_minute: int,
+    regular_close_hour: int,
+    regular_close_minute: int,
+) -> pl.Expr:
     local_ts = pl.col(timestamp_column).dt.replace_time_zone("UTC").dt.convert_time_zone(exchange_timezone)
     return (
         (local_ts.dt.weekday() <= 5)
         & (
-            (local_ts.dt.hour() > 9)
-            | ((local_ts.dt.hour() == 9) & (local_ts.dt.minute() >= 30))
+            (local_ts.dt.hour() > regular_open_hour)
+            | ((local_ts.dt.hour() == regular_open_hour) & (local_ts.dt.minute() >= regular_open_minute))
         )
-        & (local_ts.dt.hour() < 16)
+        & (
+            (local_ts.dt.hour() < regular_close_hour)
+            | ((local_ts.dt.hour() == regular_close_hour) & (local_ts.dt.minute() < regular_close_minute))
+        )
     )
 
 
@@ -88,7 +99,8 @@ def normalize_intraday_research_frame(
     if prepared.is_empty():
         return empty_intraday_research_frame()
     timestamp_name = "date" if "date" in prepared.columns else "timestamp"
-    tz_name = ZoneInfo(exchange_timezone).key
+    session_spec = resolve_market_session_spec_for_symbol(symbol, default_timezone=exchange_timezone)
+    tz_name = ZoneInfo(session_spec.timezone_name).key
     out = (
         prepared.rename({timestamp_name: "timestamp"})
         .select(["timestamp", "open", "high", "low", "close", "volume"])
@@ -101,7 +113,16 @@ def normalize_intraday_research_frame(
                 & pl.col("close").is_null()
             )
         )
-        .filter(_regular_session_filter("timestamp", exchange_timezone=tz_name))
+        .filter(
+            _regular_session_filter(
+                "timestamp",
+                exchange_timezone=tz_name,
+                regular_open_hour=session_spec.regular_open_hour,
+                regular_open_minute=session_spec.regular_open_minute,
+                regular_close_hour=session_spec.regular_close_hour,
+                regular_close_minute=session_spec.regular_close_minute,
+            )
+        )
         .with_columns(
             [
                 pl.col("timestamp").cast(pl.Datetime),

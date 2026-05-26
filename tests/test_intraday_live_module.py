@@ -69,6 +69,20 @@ def test_normalize_intraday_live_frame_labels_sessions_across_us_dst_boundaries(
     ]
 
 
+def test_normalize_intraday_live_frame_infers_european_sessions_from_symbol_suffix():
+    frame = _raw_intraday_frame(
+        [
+            "2026-05-26T06:55:00",
+            "2026-05-26T07:00:00",
+            "2026-05-26T15:29:00",
+            "2026-05-26T15:35:00",
+        ]
+    )
+    normalized = normalize_intraday_live_frame(frame, symbol="ALV.DE", currency="EUR")
+    assert normalized.get_column("session").to_list() == ["pre", "regular", "regular", "post"]
+    assert normalized.get_column("is_regular_session").to_list() == [False, True, True, False]
+
+
 def test_update_intraday_live_store_merges_existing_and_new_rows(tmp_path: Path):
     root = tmp_path / "intraday_live"
     existing_path = root / "5m" / "AAA.parquet"
