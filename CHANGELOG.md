@@ -2,13 +2,31 @@
 
 ## [Unreleased]
 
-Release candidate scope since `0.2.0`:
+## [0.3.1] - 2026-05-26
+
+Maintenance release.
+
+- fix EU intraday session classification for the canonical intraday research and live stores
+- restore the missing `0.3.0` changelog entry
+- bump package metadata for a follow-up patch release
+
+## [0.3.0] - 2026-05-26
+
+Third public release.
+
+This release adds the first canonical `5m` intraday stores for research and live operational use, with a shared sync workflow that fetches Yahoo data once and writes both stores.
+
+Highlights:
 
 - dedicated regular-session `5m` intraday research parquet store
 - session-aware `5m` intraday live parquet store
 - shared `intraday-sync` workflow that fetches once and writes both intraday stores
 - public CLI, config, schema, workflow, and API-contract documentation for the new intraday stores
 - source-tree config templates aligned with the bundled package config template
+- migrated legacy data maintenance scripts into this package
+- broader parquet store reporting and validation coverage for configured intraday stores
+- stronger empty-fetch, status-validation, crypto OHLCV, and network-smoke handling
+- expanded regression coverage for intraday DST handling and maintenance workflows
 
 ## [0.2.0] - 2026-04-20
 
