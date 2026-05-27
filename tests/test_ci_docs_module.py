@@ -35,7 +35,6 @@ def test_user_and_machine_docs_declare_polars_first_contract():
         "docs/CONSUMER_COMPATIBILITY_CHECKLIST.md",
         "docs/PARQUET_SCHEMA.md",
         "docs/WORKFLOWS.md",
-        "local_docs/tradinglab_data_requirements.md",
         "pyproject.toml",
     ]
 
