@@ -2,19 +2,24 @@
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-05-26
+## [0.4.0] - 2026-05-27
 
 Fourth public release.
 
-This release adds the public market-data API and artifact contracts needed by downstream analytical packages.
+This release adds the public market-data API and artifact contracts needed by downstream analytical packages, and makes the package's public tabular contract explicitly Polars-first.
 
 Highlights:
 
-- add the public `tradinglab_data.market_data` pandas facade for downstream packages
+- add the public `tradinglab_data.market_data` Polars-first facade for downstream packages
 - add `market-data sync|validate|inspect` producer workflows for consumer artifacts
 - add `DataNotFoundError` and `UniverseNotFoundError` public exception types
 - add artifact contracts for market caps, sector assignments, and index total returns
 - expose schema validators and config path helpers for the new artifact families
+- convert the public market-data consumer API and producer-side market-data workflows to Polars-first dataframe handling
+- document and export `DATAFRAME_POLICY == "polars-first"` in manifests, schema output, and compatibility docs
+- remove public documentation wording that implied a separate private application repository
+- fix Python 3.10 CI compatibility in intraday-fetch tests
+- fix the docs policy test to ignore untracked `local_docs/` notes in CI
 - bump package metadata and artifact schema contract to `0.4.0` / `v0.4.0`
 
 ## [0.3.1] - 2026-05-26
