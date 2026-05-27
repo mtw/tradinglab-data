@@ -134,6 +134,58 @@ Pair convention:
 - `USDEUR` means EUR value of `1` USD
 - inverse derivation must preserve high/low correctly by using `1/low` for inverse high and `1/high` for inverse low
 
+## Consumer Market Data API
+
+Primary CLI commands:
+
+```bash
+tradinglab-data --config /path/to/config.yaml market-data sync
+tradinglab-data --config /path/to/config.yaml market-data validate
+tradinglab-data --config /path/to/config.yaml market-data inspect
+```
+
+Primary Python modules:
+
+```python
+from tradinglab_data.market_data import (
+    get_adjusted_prices,
+    get_index_returns,
+    get_market_caps,
+    get_sector_assignments,
+    get_total_returns,
+    get_universe_symbols,
+)
+from tradinglab_data.market_data_workflows import sync_market_data_from_config
+```
+
+High-level behavior:
+
+1. resolve the local data store through normal config discovery, usually `TRADINGLAB_DATA_CONFIG`
+2. load canonical daily adjusted prices from `paths.parquet_root`
+3. derive total returns from the cleaned adjusted-price matrix
+4. produce market caps in `paths.market_cap_root` from Yahoo shares outstanding history and local USD daily close prices
+5. produce current sector assignments in `paths.sector_assignments_csv` from Yahoo quote metadata
+6. produce index total returns in `paths.index_returns_root` from Yahoo total-return index symbols
+7. return Polars frames with inclusive date bounds and trading-day-only `date` columns
+
+Polars-first rule:
+
+- public tabular Python outputs from this workflow are `polars.DataFrame`; pandas-shaped objects are provider-boundary internals only
+
+Outputs consumed:
+
+- adjusted daily prices and total returns from `<paths.parquet_root>/<SYMBOL>.parquet`
+- market caps from `<paths.market_cap_root>/<SYMBOL>.parquet`
+- sector assignments from `<paths.sector_assignments_csv>`
+- index total returns from `<paths.index_returns_root>/<INDEX_ID>.parquet`
+
+Important rule:
+
+- this API is a data facade only; signal generation, spin construction, model fitting, and research logic remain outside this package
+- historical universe membership requires point-in-time columns; the loader fails closed when `as_of` is requested without them
+- current-only sector assignments emit a warning when `as_of` is supplied
+- default index total-return symbols are `SPX -> ^SP500TR`, `RTY -> ^RUTTR`, and `NDX -> ^XNDX`
+
 ## Crypto Workflow
 
 Primary commands:

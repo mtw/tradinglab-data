@@ -11,7 +11,7 @@ The package now uses a simpler model:
 
 Consumers should not depend on a second standalone API-version number.
 
-Current package version in [`pyproject.toml`](../pyproject.toml): `0.3.0`
+Current package version in [`pyproject.toml`](../pyproject.toml): `0.4.0`
 
 ## Compatibility Model
 
@@ -19,18 +19,24 @@ Use these signals for different needs:
 
 - package version
   - use this for dependency pins and Python/CLI compatibility
-  - example: `tradinglab-data>=0.3,<0.4`
+  - example: `tradinglab-data>=0.4,<0.5`
 - artifact schema version
   - use this when consuming parquet files or generated reports across package releases
-  - current value: `v0.3.0`
+  - current value: `v0.4.0`
+- dataframe policy
+  - use this when asserting the public tabular Python contract
+  - current value: `polars-first`
 
 Programmatic surface:
 
 - `tradinglab_data.ARTIFACT_SCHEMA_VERSION`
+- `tradinglab_data.DATAFRAME_POLICY`
 - `tradinglab_data.contracts.ARTIFACT_SCHEMA_VERSION`
+- `tradinglab_data.contracts.DATAFRAME_POLICY`
 - `tradinglab_data.compatibility_manifest()`
 - `tradinglab_data.schema.compatibility_manifest()`
 - `tradinglab_data.schema.schema_manifest()["artifact_schema_version"]`
+- `tradinglab_data.schema.schema_manifest()["dataframe_policy"]`
 
 Recommended consumer model:
 
@@ -49,6 +55,9 @@ What this package provides:
 - canonical local data artifacts for regular-session intraday research stock/ETF history
 - canonical local data artifacts for daily FX conversion pairs
 - canonical local data artifacts for crypto OHLCV history
+- canonical local data artifacts for point-in-time market capitalisation
+- canonical local data artifacts for market index total returns
+- canonical local GICS sector assignment artifacts
 - authoritative symbol-master accounting metadata, exchange defaults, and symbol overrides
 - universe metadata artifacts and ticker normalization behavior
 - verification, integrity reporting, and maintenance wrappers around those artifacts
@@ -61,6 +70,9 @@ What downstream packages may rely on:
 - intraday live parquet under `<intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet`
 - FX daily parquet under `<paths.fx_daily_root>/<PAIR>.parquet`
 - crypto parquet under `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet`
+- market-cap parquet under `<paths.market_cap_root>/<SYMBOL>.parquet`
+- sector assignments under `<paths.sector_assignments_csv>`
+- index-return parquet under `<paths.index_returns_root>/<INDEX_ID>.parquet`
 - authoritative symbol master under `<paths.meta_root>/symbol_master.csv`
 - exchange defaults under `<paths.meta_root>/exchange_defaults.csv`
 - symbol overrides under `<paths.meta_root>/symbol_overrides.csv`
@@ -69,6 +81,7 @@ What downstream packages may rely on:
 - public Python exports documented in this file
 - additive config keys documented in this file
 - `ARTIFACT_SCHEMA_VERSION` as the compatibility signal for on-disk parquet and report artifacts
+- `DATAFRAME_POLICY == "polars-first"` as the compatibility signal for public tabular Python APIs
 
 What downstream packages must not assume:
 
@@ -84,6 +97,7 @@ What downstream packages should do:
 - load `symbol_master.csv` before portfolio simulation or accounting-sensitive workflows
 - treat `fx_pair_to_base` as authoritative and use identity pairs such as `EUREUR` as a conversion factor of `1.0`
 - consume the published artifact paths and schemas rather than re-deriving provider-specific formats
+- consume public Python dataframe outputs as `polars.DataFrame`; pandas objects are not part of the public contract
 - tolerate additive fields and additive CLI/config surface where this document does not promise exact closure
 - pin package versions for Python/CLI compatibility
 - check `ARTIFACT_SCHEMA_VERSION` when validating artifact compatibility
@@ -120,6 +134,7 @@ Current top-level keys:
 - `python_package_name`
 - `package_version`
 - `artifact_schema_version`
+- `dataframe_policy`
 - `artifact_families`
 
 `schema_manifest()` extends that manifest with:
@@ -130,6 +145,9 @@ Current top-level keys:
 - `intraday_live`
 - `crypto`
 - `fx_daily`
+- `market_cap`
+- `sector_assignments`
+- `index_returns`
 - `symbol_master`
 - `notes`
 
@@ -162,11 +180,15 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 - `data_stooq`
 - `data_yf`
 - `extended_hours_monitor`
+- `fx`
 - `intraday_research`
 - `intraday_live`
+- `market_data`
+- `market_data_workflows`
 - `parquet_verify`
 - `schema`
 - `store_report`
+- `symbol_master`
 - `ticker_map`
 - `universe`
 - `universe_build`
@@ -175,6 +197,7 @@ Module-level exports declared in [`src/tradinglab_data/__init__.py`](../src/trad
 Additive top-level lazy re-exports are also available for commonly used public names, including:
 
 - `ARTIFACT_SCHEMA_VERSION`
+- `DATAFRAME_POLICY`
 - `compatibility_manifest`
 - `load_universe`
 - `load_universe_frame`
@@ -189,7 +212,18 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `build_symbol_master_frame`
 - `validate_symbol_master`
 - `load_fx_pair`
+- `get_universe_symbols`
+- `get_total_returns`
+- `get_adjusted_prices`
+- `get_market_caps`
+- `get_sector_assignments`
+- `get_index_returns`
 - `available_fx_pairs`
+- `sync_market_data_from_config`
+- `sync_market_caps_yahoo`
+- `sync_sector_assignments_yahoo`
+- `sync_index_returns_yahoo`
+- `validate_market_data_from_config`
 - `sync_fx_pair_yahoo`
 - `crypto_backfill_from_config`
 - `crypto_diff_universe_from_config`
@@ -206,6 +240,9 @@ Additive top-level lazy re-exports are also available for commonly used public n
 - `validate_intraday_live_frame`
 - `validate_symbol_master_frame`
 - `validate_fx_daily_frame`
+- `validate_market_cap_frame`
+- `validate_sector_assignment_frame`
+- `validate_index_return_frame`
 - `validate_moves_frame`
 - `validate_alerts_frame`
 - `update_from_config`
@@ -243,7 +280,7 @@ Global option:
     - `./config.yaml`
     - `./configs/config.yaml`
 - is not required for `schema`
-- is required in practice for `update`, `intraday ...`, `monitor-extended-hours`, `build-universe`, `report-parquet-store`, and `crypto ...` because those code paths load `Config`
+- is required in practice for `update`, `build-symbol-master`, `validate-symbol-master`, `inspect-symbol-master`, `fx-*`, `market-data ...`, `intraday ...`, `monitor-extended-hours`, `build-universe`, `report-parquet-store`, and `crypto ...` because those code paths load `Config`
 
 ## Accounting Metadata Contract
 
@@ -346,6 +383,101 @@ Contract:
 - keeps only `active == 1` rows unless `--inactive-too` is passed
 - raises `RuntimeError` if no constituents can be built
 
+### `build-symbol-master`
+
+Usage:
+
+```bash
+tradinglab-data build-symbol-master [--base-currency CCY] [--universe-csv PATH] [--exchange-defaults PATH] [--symbol-overrides PATH] [--output PATH] [--strict|--no-strict]
+```
+
+Contract:
+
+- builds the authoritative `symbol_master.csv` artifact from universe rows, exchange defaults, and symbol overrides
+- writes to `--output` when provided, otherwise to `paths.symbol_master_csv`
+- uses `--base-currency` to derive `fx_pair_to_base`, default `EUR`
+- validates the produced frame when strict mode is enabled
+
+### `validate-symbol-master`
+
+Usage:
+
+```bash
+tradinglab-data validate-symbol-master [--path PATH] [--strict]
+```
+
+Contract:
+
+- validates `symbol_master.csv` required columns, active-row metadata completeness, positive lot metadata, and explicit FX pair direction
+- reads `--path` when provided, otherwise `paths.symbol_master_csv`
+- exits non-zero when validation errors remain
+
+### `inspect-symbol-master`
+
+Usage:
+
+```bash
+tradinglab-data inspect-symbol-master [--path PATH] [--exchange EXCHANGE] [--fx-pair PAIR] [--issues ISSUE[,ISSUE...]] [--symbols SYMBOL ...] [--limit N] [--format markdown|json|csv] [--out PATH]
+```
+
+Contract:
+
+- filters symbol-master rows for review without modifying artifacts
+- supports markdown, JSON, and CSV output
+- writes to stdout unless `--out` is provided
+
+### `fx-backfill`
+
+Usage:
+
+```bash
+tradinglab-data fx-backfill --pairs PAIR ... [--start DATE] [--end DATE] [--provider yahoo] [--allow-inverse|--no-allow-inverse]
+```
+
+Contract:
+
+- fetches and writes daily FX parquet under `<paths.fx_daily_root>/<PAIR>.parquet`
+- treats pair direction as explicit, e.g. `USDEUR` means EUR value of `1` USD
+- may derive from the inverse Yahoo pair only when inverse fallback is allowed
+
+### `fx-update`
+
+Usage:
+
+```bash
+tradinglab-data fx-update [--pairs PAIR ...] [--provider yahoo] [--allow-inverse|--no-allow-inverse]
+```
+
+Contract:
+
+- refreshes requested pairs or infers required non-identity pairs from `symbol_master.csv`
+- preserves the same explicit pair-direction contract as `fx-backfill`
+
+### `fx-validate`
+
+Usage:
+
+```bash
+tradinglab-data fx-validate [--pairs PAIR ...]
+```
+
+Contract:
+
+- validates local FX parquet files for required schema, pair direction, positive rates, sorted dates, and unique dates
+- exits non-zero when validation errors remain
+
+### `fx-inspect`
+
+Usage:
+
+```bash
+tradinglab-data fx-inspect [--pairs PAIR ...] [--tail N]
+```
+
+Contract:
+
+- inspects local FX parquet coverage and recent rows without modifying artifacts
+
 ### `update`
 
 Usage:
@@ -361,6 +493,47 @@ Contract:
 - may also write intraday parquet and extended-hours artifacts when `extended_hours.enabled` is true
 - accepts an optional symbol subset; unknown requested symbols are skipped with a warning, and an all-missing selection exits with an error
 - returns a dict from the Python entrypoint `update_from_config(...)`; CLI itself returns exit code `0` when no exception is raised
+
+### `market-data sync`
+
+Usage:
+
+```bash
+tradinglab-data market-data sync [--symbols SYMBOL ...] [--index-ids INDEX ...] [--start DATE] [--end DATE] [--skip-market-caps] [--skip-sectors] [--skip-index-returns] [--allow-price-index-fallback]
+```
+
+Contract:
+
+- writes market-cap parquet, sector assignments, and index-return parquet for downstream consumers
+- accepts repeated values or comma-separated values for `--symbols` and `--index-ids`
+- defaults index ids to all supported ids when `--index-ids` is omitted
+- prints one `[MARKET_DATA_SYNC]` summary line per artifact family attempted
+
+### `market-data validate`
+
+Usage:
+
+```bash
+tradinglab-data market-data validate [--symbols SYMBOL ...] [--index-ids INDEX ...]
+```
+
+Contract:
+
+- validates configured market-cap, sector-assignment, and index-return artifacts
+- accepts repeated values or comma-separated values for `--symbols` and `--index-ids`
+- prints `[MARKET_DATA_VALIDATE] ok=1` on success and exits non-zero with validation errors on failure
+
+### `market-data inspect`
+
+Usage:
+
+```bash
+tradinglab-data market-data inspect [--symbols SYMBOL ...] [--index-ids INDEX ...]
+```
+
+Contract:
+
+- prints artifact existence, row count, and path for each requested market-data consumer artifact
 
 ### `intraday backfill`
 
@@ -687,8 +860,22 @@ Derived path defaults:
   - defaults to `<meta_root>/update_warning_state.json`
 - `paths.ticker_overrides_csv`
   - defaults to `<meta_root>/ticker_overrides.csv`
+- `paths.symbol_master_csv`
+  - defaults to `<meta_root>/symbol_master.csv`
+- `paths.exchange_defaults_csv`
+  - defaults to `<meta_root>/exchange_defaults.csv`
+- `paths.symbol_overrides_csv`
+  - defaults to `<meta_root>/symbol_overrides.csv`
+- `paths.fx_daily_root`
+  - defaults to `<paths.store_root>/parquet/fx_daily`
 - `paths.crypto_root`
   - defaults to sibling directory of daily parquet root: `<parent(paths.parquet_root)>/crypto`
+- `paths.market_cap_root`
+  - defaults to `<paths.store_root>/parquet/market_caps`
+- `paths.sector_assignments_csv`
+  - defaults to `<paths.meta_root>/sector_assignments.csv`
+- `paths.index_returns_root`
+  - defaults to `<paths.store_root>/parquet/index_returns`
 - `paths.crypto_metadata_root`
   - defaults to `<meta_root>/crypto`
 - `paths.crypto_registry_json`
@@ -814,7 +1001,7 @@ Reference template:
 
 Artifact schema version for the produced data-store and report families:
 
-- `v0.3.0`
+- `v0.4.0`
 
 Machine-readable sources:
 
@@ -1181,8 +1368,15 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `universe_dir_path(cfg) -> Path`
 - `update_log_path(cfg) -> Path`
 - `ticker_overrides_path(cfg) -> Path`
+- `symbol_master_path(cfg) -> Path`
+- `exchange_defaults_path(cfg) -> Path`
+- `symbol_overrides_path(cfg) -> Path`
 - `parquet_root_path(cfg) -> Path`
 - `crypto_root_path(cfg) -> Path`
+- `fx_daily_root_path(cfg) -> Path`
+- `market_cap_root_path(cfg) -> Path`
+- `sector_assignments_path(cfg) -> Path`
+- `index_returns_root_path(cfg) -> Path`
 - `intraday_root_path(cfg) -> Path`
 - `intraday_research_root_path(cfg) -> Path`
 - `intraday_live_root_path(cfg) -> Path`
@@ -1201,8 +1395,71 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `validate_intraday_frame(df, allow_extra_columns=True) -> None`
 - `validate_intraday_research_frame(df, allow_extra_columns=True) -> None`
 - `validate_intraday_live_frame(df, allow_extra_columns=True) -> None`
+- `validate_market_cap_frame(df, allow_extra_columns=True) -> None`
+- `validate_sector_assignment_frame(df, allow_extra_columns=True) -> None`
+- `validate_index_return_frame(df, allow_extra_columns=True) -> None`
 - `validate_moves_frame(df, allow_extra_columns=True) -> None`
 - `validate_alerts_frame(df, allow_extra_columns=True) -> None`
+
+### `tradinglab_data.market_data`
+
+Generic Polars-first public data facade for sibling packages. It has no dependency on the private `tradinglab` package.
+
+Configuration:
+
+- resolves artifacts through normal config discovery, so callers should set `TRADINGLAB_DATA_CONFIG` or run with a valid default config
+- returns only `polars.DataFrame` or built-in Python values
+- accepts inclusive `start`/`end` date bounds
+- omits non-trading days from returned `date` columns
+
+Public functions:
+
+- `get_universe_symbols(as_of=None, universe_id="default") -> list[str]`
+- `get_adjusted_prices(symbols, start, end, max_ffill=5) -> polars.DataFrame`
+- `get_total_returns(symbols, start, end, max_ffill=5) -> polars.DataFrame`
+- `get_market_caps(symbols, start, end, frequency="monthly") -> polars.DataFrame`
+- `get_sector_assignments(symbols, as_of=None) -> polars.DataFrame`
+- `get_index_returns(index_ids, start, end) -> polars.DataFrame`
+
+Behavioral contract:
+
+- wide time-series frames contain a `date` column plus one numeric column per requested symbol or index id
+- `get_sector_assignments` returns `symbol` and `sector` columns in the same order as requested symbols
+- `get_total_returns` derives simple total returns from the same cleaned adjusted-price matrix as `get_adjusted_prices`
+- missing symbols and unsupported index identifiers are dropped with logged warnings
+- `DataNotFoundError` is raised when no requested data can be loaded
+- `get_universe_symbols(as_of=...)` raises `DataNotFoundError` unless the universe artifact has point-in-time history columns
+- `UniverseNotFoundError` is raised for unknown universe identifiers
+- sector assignments must use the fixed 11-sector GICS vocabulary
+- current-only sector artifacts emit `UserWarning` when `as_of` is provided
+- index returns must be total returns; price-return fallback emits `UserWarning`
+
+### `tradinglab_data.exceptions`
+
+- `DataNotFoundError`
+- `UniverseNotFoundError`
+
+### `tradinglab_data.market_data_workflows`
+
+Producer-side workflows for the artifact families consumed by `tradinglab_data.market_data`.
+
+Public functions:
+
+- `sync_market_data_from_config(cfg, symbols_override=None, index_ids=None, start=None, end=None, ...) -> dict[str, object]`
+- `validate_market_data_from_config(cfg, symbols_override=None, index_ids=None) -> dict[str, object]`
+- `inspect_market_data_from_config(cfg, symbols_override=None, index_ids=None) -> list[dict[str, object]]`
+- `sync_market_caps_yahoo(symbols, daily_root, market_cap_root, start=None, end=None) -> dict[str, object]`
+- `sync_sector_assignments_yahoo(symbols, output_path) -> dict[str, object]`
+- `sync_index_returns_yahoo(index_ids, root, start=None, end=None, allow_price_fallback=False) -> dict[str, object]`
+- `validate_market_cap_store(root, symbols=None) -> dict[str, object]`
+- `validate_sector_assignment_file(path) -> dict[str, object]`
+- `validate_index_return_store(root, index_ids=None) -> dict[str, object]`
+
+Provider defaults:
+
+- market caps use Yahoo shares outstanding history plus local daily USD close prices
+- sector assignments use current Yahoo quote metadata and are therefore current-only unless replaced by a curated point-in-time CSV
+- index total-return provider symbols are `SPX -> ^SP500TR`, `RTY -> ^RUTTR`, and `NDX -> ^XNDX`
 
 ### `tradinglab_data.intraday_research`
 

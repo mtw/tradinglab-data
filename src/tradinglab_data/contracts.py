@@ -6,7 +6,8 @@ import polars as pl
 
 PACKAGE_NAME = "tradinglab-data"
 PYTHON_PACKAGE_NAME = "tradinglab_data"
-ARTIFACT_SCHEMA_VERSION = "v0.3.0"
+ARTIFACT_SCHEMA_VERSION = "v0.4.0"
+DATAFRAME_POLICY = "polars-first"
 
 SessionLabel = Literal["pre", "regular", "post", "closed", "unknown"]
 VerifyStatus = Literal["ok", "fail"]
@@ -85,6 +86,34 @@ FX_DAILY_COLUMNS = (
     "ingested_at",
 )
 
+MARKET_CAP_COLUMNS = (
+    "date",
+    "symbol",
+    "market_cap_usd_millions",
+    "provider",
+    "source_symbol",
+    "ingested_at",
+)
+
+SECTOR_ASSIGNMENT_COLUMNS = (
+    "symbol",
+    "sector",
+    "effective_start",
+    "effective_end",
+    "source",
+    "ingested_at",
+)
+
+INDEX_RETURN_COLUMNS = (
+    "date",
+    "index_id",
+    "return",
+    "total_return_level",
+    "provider",
+    "source_symbol",
+    "ingested_at",
+)
+
 MOVE_FRAME_COLUMNS = (
     "symbol",
     "ref_close",
@@ -118,6 +147,7 @@ class CompatibilityManifest(TypedDict):
     python_package_name: str
     package_version: str | None
     artifact_schema_version: str
+    dataframe_policy: str
     artifact_families: dict[str, ArtifactFamilyEntry]
 
 

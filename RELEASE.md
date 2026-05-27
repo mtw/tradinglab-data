@@ -17,20 +17,21 @@ Consumers should import `tradinglab_data` from the installed package, not from i
 1. Bump version in `pyproject.toml`
 2. Run `python -m ruff check src tests`
 3. Run `python -m mypy src`
-4. Run `PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests`
+4. Run `PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85 -m "not network" tests`
 5. Run `PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown`
-6. Build distributions with `python -m build`
-7. Check distributions with `python -m twine check dist/*`
-8. Verify the CLI locally with a real config path, for example:
+6. Verify `tradinglab_data.DATAFRAME_POLICY == "polars-first"` remains true for public tabular Python APIs
+7. Build distributions with `python -m build`
+8. Check distributions with `python -m twine check dist/*`
+9. Verify the CLI locally with a real config path, for example:
    - `tradinglab-data --config /path/to/config.yaml update`
    - `tradinglab-data --config /path/to/config.yaml report-parquet-store`
    - `tradinglab-data --config /path/to/config.yaml intraday-sync update --universe intraday_live_core`
    - `tradinglab-data --config /path/to/config.yaml intraday-live validate --universe intraday_live_core`
    - `tradinglab-data --config /path/to/config.yaml intraday validate --universe intraday_live_core`
-9. Publish to TestPyPI
-10. Publish to PyPI
-11. Tag the release in Git
-12. Update consumer dependency pins
+10. Publish to TestPyPI
+11. Publish to PyPI
+12. Tag the release in Git
+13. Update consumer dependency pins
 
 Package CI:
 

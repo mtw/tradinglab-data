@@ -1,7 +1,7 @@
 [project]
 name = "tradinglab-data"
-version = "0.3.1"
-description = "Market data maintenance package for parquet and universe artifacts"
+version = "0.4.0"
+description = "Polars-first market data maintenance package for parquet and universe artifacts"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
@@ -9,7 +9,7 @@ authors = [
 ]
 license = { text = "MIT" }
 license-files = []
-keywords = ["market-data", "parquet", "polars", "trading", "finance"]
+keywords = ["market-data", "parquet", "polars", "polars-first", "trading", "finance"]
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
@@ -62,7 +62,7 @@ build-backend = "hatchling.build"
 features = ["test", "dev"]
 
 [tool.hatch.envs.default.scripts]
-test = "pytest -q -m 'not network' tests"
+test = "pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85 -m 'not network' tests"
 lint = "ruff check src tests scripts"
 typecheck = "mypy src"
 build-check = "python -m build && python -m twine check dist/*"
@@ -77,6 +77,9 @@ include = [
 
 [tool.pytest.ini_options]
 addopts = "-m 'not network'"
+filterwarnings = [
+  "error",
+]
 markers = [
   "network: tests that require live network access",
 ]

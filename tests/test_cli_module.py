@@ -301,8 +301,13 @@ def test_cli_intraday_sync_update_dispatch(monkeypatch, tmp_path: Path, capsys):
 
 def test_cli_module_invokes_main_when_run_as_module(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["tradinglab-data", "schema", "--format", "json"])
+    existing_module = sys.modules.pop("tradinglab_data.cli", None)
     with pytest.raises(SystemExit, match="0"):
-        runpy.run_module("tradinglab_data.cli", run_name="__main__")
+        try:
+            runpy.run_module("tradinglab_data.cli", run_name="__main__")
+        finally:
+            if existing_module is not None:
+                sys.modules["tradinglab_data.cli"] = existing_module
 
 
 def test_cli_build_symbol_master_writes_output(tmp_path: Path, capsys):
@@ -461,3 +466,40 @@ def test_cli_inspect_symbol_master_filters_and_renders_markdown(tmp_path: Path, 
     assert "Symbol Master Inspection" in out
     assert "EBS.VI" in out
     assert "AAPL" not in out
+
+
+def test_cli_market_data_sync_validate_and_inspect(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  store_root: {tmp_path / 'store'}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    calls: list[dict[str, object]] = []
+
+    def _sync_market_data(*args, **kwargs):
+        calls.append({"cmd": "sync", **kwargs})
+        return {
+            "ok": True,
+            "market_caps": {"symbols_written": 1, "skipped": {}},
+            "sectors": {"symbols_written": 1, "skipped": {}},
+            "index_returns": {"index_ids_written": 1, "skipped": {}},
+        }
+
+    def _validate_market_data(*args, **kwargs):
+        calls.append({"cmd": "validate", **kwargs})
+        return {"ok": True}
+
+    def _inspect_market_data(*args, **kwargs):
+        calls.append({"cmd": "inspect", **kwargs})
+        return [{"artifact": "market_cap", "id": "AAA", "exists": True, "rows": 2, "path": "/tmp/AAA.parquet"}]
+
+    monkeypatch.setattr(cli, "sync_market_data_from_config", _sync_market_data)
+    monkeypatch.setattr(cli, "validate_market_data_from_config", _validate_market_data)
+    monkeypatch.setattr(cli, "inspect_market_data_from_config", _inspect_market_data)
+
+    assert cli.main(["--config", str(config_path), "market-data", "sync", "--symbols", "AAPL,MSFT", "NVDA", "--index-ids", "spx,ndx", "rty"]) == 0
+    assert cli.main(["--config", str(config_path), "market-data", "validate", "--symbols", "AAPL,MSFT", "NVDA", "--index-ids", "spx,ndx", "rty"]) == 0
+    assert cli.main(["--config", str(config_path), "market-data", "inspect", "--symbols", "AAPL,MSFT", "NVDA", "--index-ids", "spx,ndx", "rty"]) == 0
+    out = capsys.readouterr().out
+    assert "[MARKET_DATA_SYNC] artifact=market_caps written=1 skipped=0" in out
+    assert "[MARKET_DATA_VALIDATE] ok=1" in out
+    assert "market_cap id=AAA exists=True rows=2" in out
+    assert [call["symbols_override"] for call in calls] == [["AAPL", "MSFT", "NVDA"]] * 3
+    assert [call["index_ids"] for call in calls] == [["SPX", "NDX", "RTY"]] * 3

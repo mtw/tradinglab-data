@@ -17,9 +17,13 @@ This repository owns:
 
 This repository does not own signal generation, screening decisions, research workflows, predictive modeling, experiment registries, or downstream plotting/report UX.
 
-Current release: `0.3.0`
+Current release: `0.4.0`
 
-Artifact schema version: `v0.3.0`
+Artifact schema version: `v0.4.0`
+
+Dataframe policy: `polars-first`
+
+`tradinglab-data` is Polars-first. Public tabular Python APIs return `polars.DataFrame` objects, persisted schemas are expressed with Polars dtypes, and pandas is permitted only at external provider or ingestion boundaries such as Yahoo Finance and HTML table parsing before immediate normalization into Polars.
 
 ## Install
 
@@ -95,6 +99,9 @@ TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_daily_update_verify.sh
 | Intraday live | `<intraday_live.live_root>/5m/<SYMBOL>.parquet` | session-aware US stock/ETF `5m` bars labeled `pre`, `regular`, `post`, or `unknown` |
 | Crypto | `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet` | exchange-native closed OHLCV bars |
 | FX daily | `<paths.fx_daily_root>/<PAIR>.parquet` | explicit source-to-target daily conversion pairs such as `USDEUR` |
+| Market caps | `<paths.market_cap_root>/<SYMBOL>.parquet` | point-in-time market capitalisation in USD millions |
+| Sector assignments | `<paths.sector_assignments_csv>` | GICS sector assignments using the fixed 11-sector vocabulary |
+| Index returns | `<paths.index_returns_root>/<INDEX_ID>.parquet` | daily total returns for supported market indices |
 | Symbol master | `<paths.meta_root>/symbol_master.csv` | authoritative accounting metadata for downstream consumers |
 | Exchange defaults | `<paths.meta_root>/exchange_defaults.csv` | maintained exchange-level metadata defaults |
 | Symbol overrides | `<paths.meta_root>/symbol_overrides.csv` | last-wins per-symbol metadata overrides |
@@ -103,6 +110,15 @@ TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_daily_update_verify.sh
 
 Schema details live in `docs/PARQUET_SCHEMA.md`.
 Consumer compatibility details live in `docs/API_CONTRACT.md`.
+
+The market-data consumer facade is available from `tradinglab_data.market_data`.
+Producer workflows for market caps, sector assignments, and index total returns are available via:
+
+```bash
+tradinglab-data --config /path/to/config.yaml market-data sync
+tradinglab-data --config /path/to/config.yaml market-data validate
+tradinglab-data --config /path/to/config.yaml market-data inspect
+```
 
 ## Core Commands
 
@@ -284,6 +300,7 @@ Compatibility and schema manifests:
 
 ```python
 tradinglab_data.ARTIFACT_SCHEMA_VERSION
+tradinglab_data.DATAFRAME_POLICY
 tradinglab_data.compatibility_manifest()
 tradinglab_data.schema_manifest()
 ```
@@ -298,7 +315,7 @@ Run the package checks before finishing code changes:
 ```bash
 python -m ruff check src tests
 python -m mypy src
-PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
+PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85 -m "not network" tests
 PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown
 python -m build
 python -m twine check dist/*

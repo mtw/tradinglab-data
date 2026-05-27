@@ -32,6 +32,12 @@ from .crypto.workflows import (
     crypto_validate_from_config,
 )
 from .fx import available_fx_pairs, load_fx_pair, sync_fx_pair_yahoo, validate_fx_pair
+from .market_data import SUPPORTED_INDEX_IDS
+from .market_data_workflows import (
+    inspect_market_data_from_config,
+    sync_market_data_from_config,
+    validate_market_data_from_config,
+)
 from .schema import render_schema_json, render_schema_markdown
 from .store_report import generate_parquet_store_report
 from .symbol_master import (
@@ -65,6 +71,18 @@ def _display_value(value: object) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return str(value)
+
+
+def _split_cli_values(values: list[str] | None, *, uppercase: bool = False) -> list[str] | None:
+    if values is None:
+        return None
+    out: list[str] = []
+    for value in values:
+        for part in str(value).split(","):
+            clean = part.strip()
+            if clean:
+                out.append(clean.upper() if uppercase else clean)
+    return out
 
 
 def _render_symbol_master_markdown(frame, *, exchange: str | None = None, fx_pair: str | None = None, issues: str | None = None) -> str:
@@ -230,6 +248,27 @@ def main(argv: list[str] | None = None) -> int:
     p_consistency.add_argument("--symbols", nargs="*", default=None)
     p_consistency.add_argument("--format", default="markdown", choices=["markdown", "json", "csv"])
     p_consistency.add_argument("--out", default="", help="Optional output path")
+
+    p_market_data = sub.add_parser("market-data", help="Market-data artifact workflows for downstream consumers")
+    market_data_sub = p_market_data.add_subparsers(dest="market_data_cmd", required=True)
+
+    p_market_data_sync = market_data_sub.add_parser("sync", help="Fetch and write market cap, sector, and index-return artifacts")
+    p_market_data_sync.add_argument("--symbols", nargs="*", default=None)
+    p_market_data_sync.add_argument("--index-ids", nargs="*", default=None)
+    p_market_data_sync.add_argument("--start", default="")
+    p_market_data_sync.add_argument("--end", default="")
+    p_market_data_sync.add_argument("--skip-market-caps", action="store_true")
+    p_market_data_sync.add_argument("--skip-sectors", action="store_true")
+    p_market_data_sync.add_argument("--skip-index-returns", action="store_true")
+    p_market_data_sync.add_argument("--allow-price-index-fallback", action="store_true")
+
+    p_market_data_validate = market_data_sub.add_parser("validate", help="Validate local market-data consumer artifacts")
+    p_market_data_validate.add_argument("--symbols", nargs="*", default=None)
+    p_market_data_validate.add_argument("--index-ids", nargs="*", default=None)
+
+    p_market_data_inspect = market_data_sub.add_parser("inspect", help="Inspect local market-data consumer artifact coverage")
+    p_market_data_inspect.add_argument("--symbols", nargs="*", default=None)
+    p_market_data_inspect.add_argument("--index-ids", nargs="*", default=None)
 
     p_crypto = sub.add_parser("crypto", help="Crypto universe and parquet workflows")
     crypto_sub = p_crypto.add_subparsers(dest="crypto_cmd", required=True)
@@ -546,6 +585,42 @@ def main(argv: list[str] | None = None) -> int:
             ticker_overrides_path=ticker_overrides_path(cfg),
         )
         return 0
+
+    if args.cmd == "market-data":
+        index_ids = _split_cli_values(getattr(args, "index_ids", None), uppercase=True) or sorted(SUPPORTED_INDEX_IDS)
+        symbols = _split_cli_values(getattr(args, "symbols", None))
+        if args.market_data_cmd == "sync":
+            result = sync_market_data_from_config(
+                cfg,
+                symbols_override=symbols,
+                index_ids=index_ids,
+                start=str(args.start or "").strip() or None,
+                end=str(args.end or "").strip() or None,
+                include_market_caps=not bool(args.skip_market_caps),
+                include_sectors=not bool(args.skip_sectors),
+                include_index_returns=not bool(args.skip_index_returns),
+                allow_price_fallback=bool(args.allow_price_index_fallback),
+            )
+            for key in ("market_caps", "sectors", "index_returns"):
+                if key in result:
+                    item = cast(dict[str, object], result[key])
+                    skipped = cast(dict[str, str], item.get("skipped", {}))
+                    print(f"[MARKET_DATA_SYNC] artifact={key} written={item.get('symbols_written', item.get('index_ids_written', 0))} skipped={len(skipped)}")
+            return 0
+        if args.market_data_cmd == "validate":
+            result = validate_market_data_from_config(cfg, symbols_override=symbols, index_ids=index_ids)
+            if not result["ok"]:
+                market_data_errors: list[str] = []
+                for key in ("market_caps", "sectors", "index_returns"):
+                    item = cast(dict[str, object], result[key])
+                    market_data_errors.extend(str(error) for error in cast(list[object], item.get("errors", [])))
+                raise SystemExit("\n".join(market_data_errors or ["market-data validation failed"]))
+            print("[MARKET_DATA_VALIDATE] ok=1")
+            return 0
+        if args.market_data_cmd == "inspect":
+            for item in inspect_market_data_from_config(cfg, symbols_override=symbols, index_ids=index_ids):
+                print(f"{item['artifact']} id={item['id']} exists={item['exists']} rows={item['rows']} path={item['path']}")
+            return 0
 
     if args.cmd == "crypto":
         exchange = str(args.exchange or "").strip() or None

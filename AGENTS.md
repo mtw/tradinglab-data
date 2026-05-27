@@ -28,6 +28,7 @@ Those remain out of scope for this package.
 
 - Do not add research or prediction logic here.
 - Treat parquet and universe CSVs as public artifacts consumed by external applications.
+- Treat `tradinglab-data` as Polars-first: public tabular Python APIs return `polars.DataFrame`, schemas use Polars dtypes, and pandas belongs only at external provider or parser boundaries before immediate conversion into Polars.
 - Schema modifications require edits to `docs/PARQUET_SCHEMA.md`.
 - Workflow modifications require edits to `docs/WORKFLOWS.md` when user-visible behavior changes.
 
@@ -47,7 +48,7 @@ For sibling packages and agentic consumers, treat `docs/API_CONTRACT.md` as the 
 Package tests:
 
 ```bash
-PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
+PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85 -m "not network" tests
 ```
 
 Use `@pytest.mark.network` for live upstream smoke tests so CI can exclude them by default.

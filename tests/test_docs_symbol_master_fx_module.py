@@ -4,6 +4,7 @@ from pathlib import Path
 
 import polars as pl
 
+from tradinglab_data.contracts import ARTIFACT_SCHEMA_VERSION
 from tradinglab_data.schema import render_schema_markdown
 from tradinglab_data.symbol_master import load_exchange_defaults, load_symbol_master_frame, load_symbol_overrides
 
@@ -12,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_readme_documents_symbol_master_and_fx_commands():
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "Artifact schema version: `v0.3.0`" in readme
+    assert f"Artifact schema version: `{ARTIFACT_SCHEMA_VERSION}`" in readme
     assert "build-symbol-master" in readme
     assert "validate-symbol-master" in readme
     assert "fx-backfill" in readme
@@ -22,19 +23,50 @@ def test_readme_documents_symbol_master_and_fx_commands():
     assert "Daily OHLC `currency` remains provider-derived diagnostic data." in readme
     assert "non_authoritative_country" in readme
     assert "non_authoritative_tax_country" in readme
+    assert "Dataframe policy: `polars-first`" in readme
 
 
 def test_api_contract_documents_authoritative_symbol_master_and_fx_surface():
     text = (REPO_ROOT / "docs" / "API_CONTRACT.md").read_text(encoding="utf-8")
-    assert "current value: `v0.3.0`" in text
+    assert f"current value: `{ARTIFACT_SCHEMA_VERSION}`" in text
     assert "symbol_master.csv" in text
     assert "exchange_defaults.csv" in text
     assert "symbol_overrides.csv" in text
     assert "<paths.fx_daily_root>/<PAIR>.parquet" in text
+    assert "### `build-symbol-master`" in text
+    assert "### `fx-backfill`" in text
     assert "daily OHLC `currency` is diagnostic provider data" in text
     assert "`USDEUR` means EUR value of `1` USD" in text
     assert "non_authoritative_country" in text
     assert "non_authoritative_tax_country" in text
+    assert 'DATAFRAME_POLICY == "polars-first"' in text
+
+
+def test_api_contract_documents_market_data_cli_and_config_surface():
+    text = (REPO_ROOT / "docs" / "API_CONTRACT.md").read_text(encoding="utf-8")
+    boundary = (REPO_ROOT / "docs" / "BOUNDARY.md").read_text(encoding="utf-8")
+    checklist = (REPO_ROOT / "docs" / "CONSUMER_COMPATIBILITY_CHECKLIST.md").read_text(encoding="utf-8")
+
+    for needle in [
+        "### `market-data sync`",
+        "### `market-data validate`",
+        "### `market-data inspect`",
+        "`paths.market_cap_root`",
+        "`paths.sector_assignments_csv`",
+        "`paths.index_returns_root`",
+        "`market_cap_root_path(cfg) -> Path`",
+        "`sector_assignments_path(cfg) -> Path`",
+        "`index_returns_root_path(cfg) -> Path`",
+    ]:
+        assert needle in text
+
+    for needle in [
+        "<paths.market_cap_root>/<SYMBOL>.parquet",
+        "<paths.sector_assignments_csv>",
+        "<paths.index_returns_root>/<INDEX_ID>.parquet",
+    ]:
+        assert needle in boundary
+        assert needle in checklist
 
 
 def test_workflows_and_troubleshooting_cover_symbol_master_and_fx_paths():
@@ -64,19 +96,27 @@ def test_workflows_and_troubleshooting_cover_symbol_master_and_fx_paths():
 def test_parquet_schema_doc_tracks_rendered_symbol_master_and_fx_sections():
     doc_text = (REPO_ROOT / "docs" / "PARQUET_SCHEMA.md").read_text(encoding="utf-8")
     rendered = render_schema_markdown()
+    assert doc_text == rendered
 
     for needle in [
         "## FX Daily",
         "## Symbol Master CSV",
         "| `pair` | `String` |",
         "| `fx_pair_to_base` | `String` |",
-        "Artifact schema version: `v0.3.0`",
+        f"Artifact schema version: `{ARTIFACT_SCHEMA_VERSION}`",
+        "## Market Cap",
+        "## Sector Assignments CSV",
+        "## Index Returns",
         "non_authoritative_country",
         "non_authoritative_tax_country",
+        "Polars-first",
     ]:
         assert needle in doc_text
     for needle in [
         "## FX Daily",
+        "## Market Cap",
+        "## Sector Assignments CSV",
+        "## Index Returns",
         "## Symbol Master CSV",
         "| `pair` | `String` |",
         "| `fx_pair_to_base` | `String` |",

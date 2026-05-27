@@ -247,6 +247,18 @@ def fx_daily_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "fx_daily_root") or (store_root_path(cfg) / "parquet" / "fx_daily")
 
 
+def market_cap_root_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "market_cap_root") or (store_root_path(cfg) / "parquet" / "market_caps")
+
+
+def sector_assignments_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "sector_assignments_csv") or (meta_root_path(cfg) / "sector_assignments.csv")
+
+
+def index_returns_root_path(cfg: ConfigLike) -> Path:
+    return cfg.path("paths", "index_returns_root") or (store_root_path(cfg) / "parquet" / "index_returns")
+
+
 def crypto_metadata_root_path(cfg: ConfigLike) -> Path:
     return cfg.path("paths", "crypto_metadata_root") or (meta_root_path(cfg) / "crypto")
 

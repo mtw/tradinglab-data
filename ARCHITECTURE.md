@@ -2,6 +2,8 @@
 
 `tradinglab-data` is a market-data maintenance package. It retrieves upstream data, normalizes it into a canonical parquet schema, maintains a universe registry, and produces integrity reports and monitoring artifacts.
 
+The package is Polars-first. Internal normalization, validation, parquet schema definitions, and public tabular Python APIs use `polars.DataFrame` and Polars dtypes. Pandas-shaped data is allowed only at external provider boundaries and must be converted into Polars before entering the package's canonical workflow logic.
+
 ## Data Flow
 
 1. Universe inputs define the target symbol set.
@@ -24,6 +26,8 @@
 - `src/tradinglab_data/extended_hours_monitor.py`: intraday orchestration and alert/report outputs
 - `src/tradinglab_data/intraday_research.py`: regular-session `5m` research parquet normalization, writes, validation, and inspection
 - `src/tradinglab_data/intraday_live.py`: session-aware `5m` live parquet normalization, writes, validation, and inspection
+- `src/tradinglab_data/market_data.py`: Polars-first public consumer facade for adjusted prices, returns, market caps, sectors, index returns, and universes
+- `src/tradinglab_data/market_data_workflows.py`: Polars-first sync, validation, and inspection workflows for consumer market-data artifacts
 - `src/tradinglab_data/_intraday_fetch.py`: intraday Yahoo fetch helpers
 - `src/tradinglab_data/_move_compute.py`: move-vs-close computation
 - `src/tradinglab_data/_alert_report.py`: alert filtering and HTML rendering
@@ -47,3 +51,4 @@
 - The shared `intraday-sync` workflow derives regular-session research bars from the same fetched frames used for the live store.
 - Crypto data is stored under exchange/market-type/interval-specific directories.
 - Provider adapters are isolated behind normalization helpers for consistency.
+- Pandas is not part of the public dataframe contract; it is an upstream adapter detail only.

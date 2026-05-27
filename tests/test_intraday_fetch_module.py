@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import polars as pl
@@ -112,7 +112,7 @@ def test_fetch_extended_intraday_uses_single_symbol_fallback(monkeypatch, tmp_pa
 
 
 def test_trim_rolling_window_keeps_recent_rows(monkeypatch):
-    now = datetime.utcnow()
+    now = datetime.now(UTC).replace(tzinfo=None)
     frame = pl.DataFrame({"date": [now - timedelta(days=5), now], "open": [1.0, 2.0]})
 
     assert intraday_fetch.trim_rolling_window(frame, 0).height == 2

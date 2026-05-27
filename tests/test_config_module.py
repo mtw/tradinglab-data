@@ -15,13 +15,16 @@ from tradinglab_data.config import (
     default_config_path,
     exchange_defaults_path,
     fx_daily_root_path,
+    index_returns_root_path,
     intraday_live_root_path,
     intraday_research_root_path,
     intraday_root_path,
+    market_cap_root_path,
     packaged_config_example_text,
     parquet_root_path,
     registry_root_path,
     resolve_config_path,
+    sector_assignments_path,
     store_root_path,
     symbol_master_path,
     symbol_overrides_path,
@@ -154,6 +157,9 @@ def test_config_derived_paths(tmp_path: Path):
     assert intraday_live_root_path(cfg) == tmp_path / "parquet" / "intraday_live"
     assert crypto_root_path(cfg) == tmp_path / "parquet" / "crypto"
     assert fx_daily_root_path(cfg) == tmp_path / "parquet" / "fx_daily"
+    assert market_cap_root_path(cfg) == tmp_path / "parquet" / "market_caps"
+    assert sector_assignments_path(cfg) == tmp_path / "meta" / "sector_assignments.csv"
+    assert index_returns_root_path(cfg) == tmp_path / "parquet" / "index_returns"
     assert crypto_metadata_root_path(cfg) == tmp_path / "meta" / "crypto"
     assert crypto_registry_path(cfg) == tmp_path / "meta" / "crypto" / "registry.json"
     assert crypto_universe_dir_path(cfg) == tmp_path / "meta" / "crypto" / "universes"
@@ -188,6 +194,9 @@ def test_config_store_root_derives_artifact_paths(tmp_path: Path):
     assert intraday_live_root_path(cfg) == store_root / "parquet" / "intraday_live"
     assert crypto_root_path(cfg) == store_root / "parquet" / "crypto"
     assert fx_daily_root_path(cfg) == store_root / "parquet" / "fx_daily"
+    assert market_cap_root_path(cfg) == store_root / "parquet" / "market_caps"
+    assert sector_assignments_path(cfg) == store_root / "meta" / "sector_assignments.csv"
+    assert index_returns_root_path(cfg) == store_root / "parquet" / "index_returns"
     assert crypto_metadata_root_path(cfg) == store_root / "meta" / "crypto"
     assert crypto_registry_path(cfg) == store_root / "meta" / "crypto" / "registry.json"
     assert crypto_universe_dir_path(cfg) == store_root / "meta" / "crypto" / "universes"

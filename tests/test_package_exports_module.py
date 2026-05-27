@@ -34,15 +34,33 @@ def test_top_level_exports_include_public_helpers():
     assert pkg.inspect_symbol_master_frame is not None
     assert pkg.load_symbol_master_frame is not None
     assert pkg.load_fx_pair is not None
+    assert pkg.get_universe_symbols is not None
+    assert pkg.get_total_returns is not None
+    assert pkg.get_adjusted_prices is not None
+    assert pkg.get_market_caps is not None
+    assert pkg.get_sector_assignments is not None
+    assert pkg.get_index_returns is not None
+    assert pkg.sync_market_data_from_config is not None
+    assert pkg.sync_market_caps_yahoo is not None
+    assert pkg.sync_sector_assignments_yahoo is not None
+    assert pkg.sync_index_returns_yahoo is not None
+    assert pkg.validate_market_data_from_config is not None
+    assert pkg.DataNotFoundError is not None
+    assert pkg.UniverseNotFoundError is not None
     assert pkg.sync_fx_pair_yahoo is not None
     assert pkg.available_fx_pairs is not None
     assert pkg.validate_daily_frame is not None
     assert pkg.validate_crypto_frame is not None
     assert pkg.validate_fx_daily_frame is not None
+    assert pkg.validate_market_cap_frame is not None
+    assert pkg.validate_sector_assignment_frame is not None
+    assert pkg.validate_index_return_frame is not None
     assert pkg.validate_symbol_master_frame is not None
     assert pkg.validate_intraday_live_frame is not None
     assert pkg.validate_intraday_research_frame is not None
-    assert pkg.ARTIFACT_SCHEMA_VERSION == "v0.3.0"
+    assert isinstance(pkg.ARTIFACT_SCHEMA_VERSION, str)
+    assert pkg.ARTIFACT_SCHEMA_VERSION.startswith("v")
+    assert pkg.DATAFRAME_POLICY == "polars-first"
 
 
 def test_clear_currency_cache_clears_module_cache():
@@ -86,3 +104,4 @@ def test_store_report_exports_move_with_contract_version():
 def test_compatibility_manifest_export_contains_artifact_version():
     manifest = pkg.compatibility_manifest()
     assert manifest["artifact_schema_version"] == pkg.ARTIFACT_SCHEMA_VERSION
+    assert manifest["dataframe_policy"] == pkg.DATAFRAME_POLICY

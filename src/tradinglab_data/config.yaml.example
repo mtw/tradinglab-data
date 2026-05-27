@@ -5,6 +5,9 @@ paths:
   exchange_defaults_csv: "${TRADINGLAB_STORE:-../tradinglab-store}/meta/exchange_defaults.csv"
   symbol_overrides_csv: "${TRADINGLAB_STORE:-../tradinglab-store}/meta/symbol_overrides.csv"
   fx_daily_root: "${TRADINGLAB_STORE:-../tradinglab-store}/parquet/fx_daily"
+  market_cap_root: "${TRADINGLAB_STORE:-../tradinglab-store}/parquet/market_caps"
+  sector_assignments_csv: "${TRADINGLAB_STORE:-../tradinglab-store}/meta/sector_assignments.csv"
+  index_returns_root: "${TRADINGLAB_STORE:-../tradinglab-store}/parquet/index_returns"
 
 timeframe: "1d"
 lookback_days: 2000

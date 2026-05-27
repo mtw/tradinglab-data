@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-26
+
+Fourth public release.
+
+This release adds the public market-data API and artifact contracts needed by downstream analytical packages.
+
+Highlights:
+
+- add the public `tradinglab_data.market_data` pandas facade for downstream packages
+- add `market-data sync|validate|inspect` producer workflows for consumer artifacts
+- add `DataNotFoundError` and `UniverseNotFoundError` public exception types
+- add artifact contracts for market caps, sector assignments, and index total returns
+- expose schema validators and config path helpers for the new artifact families
+- bump package metadata and artifact schema contract to `0.4.0` / `v0.4.0`
+
 ## [0.3.1] - 2026-05-26
 
 Maintenance release.

@@ -42,7 +42,7 @@ jobs:
         run: python -m mypy src
 
       - name: Run package tests
-        run: PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=60 -m "not network" tests
+        run: PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85 -m "not network" tests
 
       - name: Smoke-check schema CLI
         run: PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown
@@ -91,8 +91,11 @@ jobs:
 
           manifest = compatibility_manifest()
           assert manifest["package_name"] == "tradinglab-data"
+          assert manifest["dataframe_policy"] == "polars-first"
           assert manifest["artifact_schema_version"].startswith("v")
+          assert tradinglab_data.DATAFRAME_POLICY == "polars-first"
           print(manifest["artifact_schema_version"])
+          print(manifest["dataframe_policy"])
           print(tradinglab_data.__name__)
           PY
 
