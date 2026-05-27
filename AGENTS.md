@@ -41,7 +41,7 @@ Those remain out of scope for this package.
 - architecture overview: `ARCHITECTURE.md`
 - release process: `RELEASE.md`
 
-For sibling packages and agentic consumers, treat `docs/API_CONTRACT.md` as the primary published statement of what this package provides and what downstream code may rely on.
+For downstream packages and agentic consumers, treat `docs/API_CONTRACT.md` as the primary published statement of what this package provides and what downstream code may rely on.
 
 ## Commands To Run Before Finishing Changes
 

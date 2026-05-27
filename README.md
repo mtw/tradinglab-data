@@ -1,6 +1,6 @@
 # tradinglab-data
 
-`tradinglab-data` is the standalone data-maintenance package for TradingLab market-data artifacts.
+`tradinglab-data` is a standalone data-maintenance package for market-data artifacts.
 It retrieves upstream market data, normalizes it into versioned parquet contracts, maintains universe metadata, and verifies the local data store consumed by downstream applications.
 
 This repository owns:

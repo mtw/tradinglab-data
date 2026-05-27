@@ -15,7 +15,7 @@ The current implementation intentionally covers the first narrow slice: separate
 - retention and backfill policy
 - store-health validation
 
-`tradinglab` should later consume this store for:
+Downstream applications can consume this store for:
 
 - intraday feature engineering
 - intraday research and replay
@@ -202,9 +202,9 @@ tradinglab-data --config /path/to/config.yaml intraday-sync update --universe in
 
 The command surface intentionally omits an interval flag for the first implementation; `5m` is configured through `intraday.interval` and `intraday_live.interval`.
 
-## Consumer Contract For `tradinglab`
+## Consumer Contract
 
-The consuming `tradinglab` repo should assume:
+Consumers should assume:
 
 - a stable per-symbol parquet contract
 - explicit session semantics
@@ -214,7 +214,7 @@ The consuming `tradinglab` repo should assume:
 That boundary keeps:
 
 - retrieval and normalization in `tradinglab-data`
-- strategy/research logic in `tradinglab`
+- strategy/research logic outside this package
 
 ## Rollout State
 
@@ -246,4 +246,4 @@ Avoid adding all of this at once:
 
 The first success criterion is:
 
-- a clean, durable, validated, regular-session `5m` archive that `tradinglab` can consume reproducibly.
+- a clean, durable, validated, regular-session `5m` archive that downstream applications can consume reproducibly.

@@ -43,7 +43,7 @@ Use this checklist before upgrading external consumers to a new `tradinglab-data
   - `<paths.crypto_registry_json>`
   - `<paths.crypto_universe_dir>/<UNIVERSE>.json`
 
-## TradingLab Accounting Consumer Checks
+## Accounting Consumer Checks
 
 - load `symbol_master.csv` before portfolio simulation
 - treat `fx_pair_to_base` as authoritative

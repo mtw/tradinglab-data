@@ -46,7 +46,7 @@ Recommended consumer model:
 
 ## For Downstream Agents
 
-This section is the shortest accurate description of what sibling packages and agents should assume about `tradinglab-data`.
+This section is the shortest accurate description of what downstream packages and agents should assume about `tradinglab-data`.
 
 What this package provides:
 
@@ -103,7 +103,7 @@ What downstream packages should do:
 - check `ARTIFACT_SCHEMA_VERSION` when validating artifact compatibility
 - keep their own integration tests that exercise their real usage of this package
 
-If a sibling package needs to know whether a behavior is safe to depend on, this document is the primary source of truth, with `docs/PARQUET_SCHEMA.md` as the schema-level companion.
+If a downstream package needs to know whether a behavior is safe to depend on, this document is the primary source of truth, with `docs/PARQUET_SCHEMA.md` as the schema-level companion.
 
 ## Stability Boundary
 
@@ -1403,7 +1403,7 @@ Python API/CLI compatibility follows the package version rather than a second AP
 
 ### `tradinglab_data.market_data`
 
-Generic Polars-first public data facade for sibling packages. It has no dependency on the private `tradinglab` package.
+Generic Polars-first public data facade for downstream consumers. It has no dependency on any private application package.
 
 Configuration:
 
