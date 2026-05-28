@@ -28,15 +28,48 @@ Consumers should import `tradinglab_data` from the installed package, not from i
    - `tradinglab-data --config /path/to/config.yaml intraday-sync update --universe intraday_live_core`
    - `tradinglab-data --config /path/to/config.yaml intraday-live validate --universe intraday_live_core`
    - `tradinglab-data --config /path/to/config.yaml intraday validate --universe intraday_live_core`
-10. Publish to TestPyPI
-11. Publish to PyPI
-12. Tag the release in Git
+10. Push the release branch and release tag to GitHub
+11. Let `.github/workflows/publish.yml` publish to PyPI through Trusted Publishing
+12. Verify the PyPI release and clean install path
 13. Update consumer dependency pins
 
 Package CI:
 
 - `.github/workflows/ci.yml`
 - tests Python 3.10, 3.11, 3.12, and 3.13
+- `.github/workflows/publish.yml`
+  - builds distributions on `v*` tags, published GitHub releases, or manual dispatch
+  - publishes to PyPI through GitHub OIDC Trusted Publishing
+
+## Trusted Publishing Setup
+
+Configure the `tradinglab-data` project on PyPI to trust this GitHub repository.
+
+PyPI Trusted Publisher fields:
+
+- owner: your GitHub owner or organization
+- repository: `tradinglab-data`
+- workflow filename: `publish.yml`
+- environment name: `pypi`
+
+GitHub repository requirements:
+
+- keep `.github/workflows/publish.yml` as the publishing workflow filename registered on PyPI
+- create a GitHub environment named `pypi`
+- no `TWINE_USERNAME`, `TWINE_PASSWORD`, or PyPI API token secret is needed for publishing
+
+Release execution:
+
+```bash
+git push origin <branch>
+git push origin vX.Y.Z
+```
+
+The publish workflow will:
+
+1. build `sdist` and wheel artifacts
+2. run `twine check dist/*`
+3. publish to PyPI using `pypa/gh-action-pypi-publish` with `id-token: write`
 
 ## Build Commands
 

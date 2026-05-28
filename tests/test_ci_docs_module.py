@@ -24,6 +24,17 @@ def test_readme_and_ci_workflow_reference_same_core_commands():
     assert 'manifest["dataframe_policy"] == "polars-first"' in workflow
 
 
+def test_publish_workflow_uses_trusted_publishing():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    release_doc = (REPO_ROOT / "RELEASE.md").read_text(encoding="utf-8")
+
+    assert "pypa/gh-action-pypi-publish@release/v1" in workflow
+    assert "id-token: write" in workflow
+    assert "environment: pypi" in workflow
+    assert "workflow filename: `publish.yml`" in release_doc
+    assert "environment name: `pypi`" in release_doc
+
+
 def test_user_and_machine_docs_declare_polars_first_contract():
     files = [
         "README.md",
