@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-28
+
+Patch release.
+
+This release keeps the `v0.4.0` artifact schema and public data contract intact while tightening release and CI behavior around the `0.4.x` package line.
+
+Highlights:
+
+- add GitHub Trusted Publishing through `.github/workflows/publish.yml`
+- document the Trusted Publishing release flow and required PyPI publisher configuration
+- remove public documentation wording that implied a separate private application repository
+- fix Python 3.10 CI compatibility in intraday-fetch tests
+- fix the docs policy test to ignore untracked `local_docs/` notes in CI
+- bump package metadata to `0.4.1` while keeping `ARTIFACT_SCHEMA_VERSION` at `v0.4.0`
+
 ## [0.4.0] - 2026-05-27
 
 Fourth public release.

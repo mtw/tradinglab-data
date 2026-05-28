@@ -1,6 +1,6 @@
 [project]
 name = "tradinglab-data"
-version = "0.4.0"
+version = "0.4.1"
 description = "Polars-first market data maintenance package for parquet and universe artifacts"
 readme = "README.md"
 requires-python = ">=3.10"
