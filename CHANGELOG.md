@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+Work targeting the next patch release, `0.4.2`, should be recorded here.
+
 ## [0.4.1] - 2026-05-28
 
 Patch release.

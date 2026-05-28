@@ -11,7 +11,7 @@ The package now uses a simpler model:
 
 Consumers should not depend on a second standalone API-version number.
 
-Current package version in [`pyproject.toml`](../pyproject.toml): `0.4.1`
+Current package version in [`pyproject.toml`](../pyproject.toml): `0.4.2`
 
 ## Compatibility Model
 
