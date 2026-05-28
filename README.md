@@ -1,6 +1,6 @@
 # tradinglab-data
 
-`tradinglab-data` is a standalone data-maintenance package for market-data artifacts.
+`tradinglab-data` is a Polars-first market-data maintenance toolkit for building canonical parquet data stores across daily, intraday, FX, crypto, market-cap, sector, and index-return workflows.
 It retrieves upstream market data, normalizes it into versioned parquet contracts, maintains universe metadata, and verifies the local data store consumed by downstream applications.
 
 This repository owns:
