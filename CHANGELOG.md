@@ -4,6 +4,8 @@
 
 Work targeting the next patch release, `0.4.2`, should be recorded here.
 
+- harden CI and package metadata around the Hatch development environment so declared quality tools are provisioned and smoke-checked from a clean checkout
+
 ## [0.4.1] - 2026-05-28
 
 Patch release.

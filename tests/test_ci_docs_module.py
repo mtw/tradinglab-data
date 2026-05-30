@@ -35,6 +35,21 @@ def test_publish_workflow_uses_trusted_publishing():
     assert "environment name: `pypi`" in release_doc
 
 
+def test_pyproject_and_ci_define_hatch_quality_environment():
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "[tool.hatch.envs.default]" in pyproject
+    assert 'features = ["test", "dev"]' in pyproject
+    assert '[tool.hatch.envs.default.scripts]' in pyproject
+    assert 'test = "pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85 -m \'not network\' tests"' in pyproject
+    assert 'lint = "ruff check src tests scripts"' in pyproject
+    assert 'typecheck = "mypy src"' in pyproject
+    assert "python -m pip install hatch" in workflow
+    assert "Smoke-check Hatch environment tools" in workflow
+    assert "hatch run python - <<'PY'" in workflow
+
+
 def test_user_and_machine_docs_declare_polars_first_contract():
     files = [
         "README.md",
