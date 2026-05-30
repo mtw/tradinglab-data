@@ -137,8 +137,14 @@ def test_validate_and_inspect_intraday_live_store_report_missing_files(tmp_path:
 def test_intraday_live_empty_invalid_and_trim_paths(tmp_path: Path):
     assert empty_intraday_live_frame().is_empty()
     assert normalize_intraday_live_frame(None, symbol="AAA", currency="USD").is_empty()
-    with pytest.raises(ValueError, match="Unsupported intraday live interval"):
-        normalize_intraday_live_frame(_raw_intraday_frame(["2026-03-27T13:30:00"]), symbol="AAA", currency="USD", interval="1m")
+    one_minute = normalize_intraday_live_frame(
+        _raw_intraday_frame(["2026-03-27T13:30:00"]),
+        symbol="AAA",
+        currency="USD",
+        interval="1m",
+    )
+    assert one_minute.height == 1
+    assert one_minute.get_column("interval").to_list() == ["1m"]
     with pytest.raises(ValueError, match="Unsupported intraday live provider"):
         normalize_intraday_live_frame(_raw_intraday_frame(["2026-03-27T13:30:00"]), symbol="AAA", currency="USD", provider="other")
 

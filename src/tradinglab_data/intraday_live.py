@@ -19,7 +19,7 @@ from .data_yf import fetch_symbol_currency, read_parquet_if_exists
 from .market_timezones import DEFAULT_EXCHANGE_TIMEZONE, resolve_market_session_spec_for_symbol
 from .schema import INTRADAY_LIVE_PARQUET_SCHEMA, validate_intraday_live_frame
 
-SUPPORTED_INTERVALS = {"5m"}
+SUPPORTED_INTERVALS = {"1m", "5m"}
 SUPPORTED_PROVIDER = "yahoo"
 
 
