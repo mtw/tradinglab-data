@@ -371,6 +371,21 @@ def test_cli_validate_symbol_master_returns_nonzero_for_invalid_file(tmp_path: P
         cli.main(["--config", str(config_path), "validate-symbol-master", "--path", str(path), "--strict"])
 
 
+def test_cli_validate_symbol_master_non_strict_tolerates_invalid_file(tmp_path: Path, capsys):
+    meta = tmp_path / "meta"
+    path = meta / "symbol_master.csv"
+    meta.mkdir(parents=True, exist_ok=True)
+    path.write_text("symbol,exchange\nAAPL,NASDAQ\n", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  symbol_master_csv: {path}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+
+    rc = cli.main(["--config", str(config_path), "validate-symbol-master", "--path", str(path)])
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[VALIDATE_SYMBOL_MASTER]" in out
+
+
 def test_cli_fx_validate_checks_existing_pair(tmp_path: Path, capsys):
     fx_root = tmp_path / "store" / "parquet" / "fx_daily"
     fx_root.mkdir(parents=True, exist_ok=True)

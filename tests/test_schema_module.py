@@ -156,6 +156,32 @@ def test_validate_intraday_research_frame_accepts_canonical_schema():
     validate_intraday_research_frame(df)
 
 
+def test_validate_intraday_research_frame_accepts_non_5m_interval():
+    df = pl.DataFrame(
+        {
+            "timestamp": ["2026-03-27T13:30:00"],
+            "open": [1.0],
+            "high": [1.1],
+            "low": [0.9],
+            "close": [1.0],
+            "volume": [100.0],
+            "currency": ["USD"],
+            "symbol": ["SPY"],
+            "interval": ["1m"],
+            "provider": ["yahoo"],
+            "session": ["regular"],
+            "session_date": ["2026-03-27"],
+            "is_regular_session": [True],
+            "ingested_at": ["2026-03-27T20:01:00"],
+        },
+    ).with_columns(
+        pl.col("timestamp").str.strptime(pl.Datetime, strict=False),
+        pl.col("session_date").str.strptime(pl.Date, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    )
+    validate_intraday_research_frame(df)
+
+
 def test_validate_intraday_research_frame_rejects_bad_metadata():
     df = pl.DataFrame(
         {
@@ -275,6 +301,29 @@ def test_validate_fx_daily_frame_accepts_valid_frame():
         pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
     )
     assert validate_fx_daily_frame(df, pair="USDEUR") == []
+
+
+def test_validate_fx_daily_frame_counts_invalid_rows_once():
+    df = pl.DataFrame(
+        {
+            "date": ["2026-03-27"],
+            "open": [-0.92],
+            "high": [0.93],
+            "low": [0.91],
+            "close": [0.925],
+            "provider": ["yahoo"],
+            "pair": ["GBPEUR"],
+            "base_currency": ["USD"],
+            "quote_currency": ["EUR"],
+            "source_symbol": ["GBPEUR=X"],
+            "ingested_at": ["2026-03-27T20:01:00"],
+        }
+    ).with_columns(
+        pl.col("date").str.strptime(pl.Datetime, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    )
+
+    assert validate_fx_daily_frame(df, pair="USDEUR") == ["invalid_rows=1"]
 
 
 def test_validate_market_cap_frame_accepts_valid_frame():
@@ -405,3 +454,24 @@ def test_validate_symbol_master_frame_accepts_valid_frame():
         }
     )
     assert validate_symbol_master_frame(df) == []
+
+
+def test_validate_symbol_master_frame_non_strict_is_warn_only():
+    df = pl.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "exchange": ["NASDAQ"],
+            "country": [""],
+            "asset_currency": ["USD"],
+            "base_listing_currency": ["USD"],
+            "tax_country": ["US"],
+            "asset_class": ["stock"],
+            "fx_pair_to_base": ["USDEUR"],
+            "lot_size": [1.0],
+            "price_multiplier": [1.0],
+            "active": [1],
+        }
+    )
+
+    assert validate_symbol_master_frame(df, strict=True) == ["empty_country_rows=1"]
+    assert validate_symbol_master_frame(df, strict=False) == []

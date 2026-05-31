@@ -526,16 +526,14 @@ def _pair_is_valid(pair: str) -> bool:
     return len(pair) == 6 and pair.isalpha() and pair == pair.upper()
 
 
-def _column_nonempty_count(df: pl.DataFrame, column: str) -> int:
-    return int(df.select(pl.col(column).cast(pl.String, strict=False).fill_null("").str.strip_chars().eq("").sum()).item())
-
-
 def validate_symbol_master_frame(df: pl.DataFrame, *, strict: bool = True) -> list[str]:
     errors: list[str] = []
     missing = [column for column in SYMBOL_MASTER_COLUMNS if column not in df.columns]
     if missing:
         errors.append("missing_required_columns=" + ",".join(missing))
-        return errors
+        if strict:
+            return errors
+        return []
     active_mask = pl.lit(True)
     if "active" in df.columns:
         active_mask = (
@@ -589,9 +587,9 @@ def validate_symbol_master_frame(df: pl.DataFrame, *, strict: bool = True) -> li
             bad_pairs += 1
     if bad_pairs > 0:
         errors.append(f"invalid_fx_pair_rows={bad_pairs}")
-    if strict and errors:
+    if strict:
         return errors
-    return errors
+    return []
 
 
 def validate_fx_daily_frame(df: pl.DataFrame, *, pair: str | None = None) -> list[str]:
@@ -615,15 +613,18 @@ def validate_fx_daily_frame(df: pl.DataFrame, *, pair: str | None = None) -> lis
         errors.append(f"duplicate_dates={duplicate_dates}")
     bad_rows = 0
     for row in df.select(["open", "high", "low", "close", "pair", "base_currency", "quote_currency"]).iter_rows(named=True):
+        row_invalid = False
         if expected_pair and _normalize_upper(row["pair"]) != expected_pair:
-            bad_rows += 1
+            row_invalid = True
         if _normalize_upper(row["base_currency"]) + _normalize_upper(row["quote_currency"]) != _normalize_upper(row["pair"]):
-            bad_rows += 1
+            row_invalid = True
         for column in ("open", "high", "low", "close"):
             value = row[column]
             if value is None or not math.isfinite(float(value)) or float(value) <= 0:
-                bad_rows += 1
+                row_invalid = True
                 break
+        if row_invalid:
+            bad_rows += 1
     if bad_rows > 0:
         errors.append(f"invalid_rows={bad_rows}")
     return errors
@@ -776,7 +777,7 @@ def validate_intraday_research_frame(df: pl.DataFrame, *, allow_extra_columns: b
             (
                 (pl.col("session") != "regular")
                 | (~pl.col("is_regular_session"))
-                | (pl.col("interval") != "5m")
+                | (pl.col("interval") == "")
                 | (pl.col("provider") == "")
                 | (pl.col("symbol") == "")
                 | (pl.col("currency") == "")

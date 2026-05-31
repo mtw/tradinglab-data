@@ -356,7 +356,9 @@ def main(argv: list[str] | None = None) -> int:
             strict=strict,
         )
         write_symbol_master_frame(built, output_path)
-        missing_required = len(validate_symbol_master(output_path, strict=False))
+        missing_required = sum(
+            1 for error in validate_symbol_master(output_path, strict=True) if error.startswith("missing_required_columns=")
+        )
         print(
             f"[BUILD_SYMBOL_MASTER] symbols={built.height} base_currency={str(args.base_currency).upper()} "
             f"missing_required={missing_required} output={output_path} strict={strict}"

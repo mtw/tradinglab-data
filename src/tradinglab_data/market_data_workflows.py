@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,8 @@ YAHOO_SECTOR_TO_GICS = {
     "Utilities": "Utilities",
 }
 
+logger = logging.getLogger(__name__)
+
 
 def _now_naive_utc() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -60,6 +63,12 @@ def _normalize_symbol(symbol: object) -> str:
     if isinstance(symbol, float) and symbol != symbol:
         return ""
     return str(symbol or "").strip().upper()
+
+
+def _normalized_currency_series(df: pl.DataFrame) -> pl.Series | None:
+    if "currency" not in df.columns:
+        return None
+    return df.get_column("currency").cast(pl.String, strict=False).fill_null("").str.strip_chars().str.to_uppercase()
 
 
 def _load_symbols_from_config(cfg: ConfigLike, symbols_override: list[str] | None = None) -> list[str]:
@@ -134,6 +143,19 @@ def build_market_cap_frame(
         pl.col("currency").cast(pl.String).str.to_uppercase() if "currency" in daily_prices.columns else pl.lit("USD").alias("currency"),
     ).drop_nulls(["date", "close"]).sort("date")
     if "currency" in prices.columns:
+        dropped_currencies = sorted(
+            {
+                currency
+                for currency in prices.get_column("currency").fill_null("USD").to_list()
+                if currency and currency != "USD"
+            }
+        )
+        if dropped_currencies:
+            logger.warning(
+                "dropping non-USD daily prices for market-cap sync %s: %s",
+                clean_symbol,
+                ",".join(dropped_currencies),
+            )
         prices = prices.filter(pl.col("currency").fill_null("USD") == "USD")
     if prices.is_empty():
         return pl.DataFrame(schema=MARKET_CAP_PARQUET_SCHEMA)
@@ -192,7 +214,18 @@ def sync_market_caps_yahoo(
         shares = _fetch_shares_full(symbol, start=None, end=end)
         frame = build_market_cap_frame(symbol, daily_prices, shares, provider="yahoo")
         if frame.is_empty():
-            skipped[symbol] = "no_usd_price_or_shares"
+            currency_series = _normalized_currency_series(daily_prices)
+            currency_values = currency_series.to_list() if currency_series is not None else []
+            non_usd_currencies = sorted({currency for currency in currency_values if currency and currency != "USD"})
+            if non_usd_currencies and "USD" not in set(currency_values):
+                skipped[symbol] = "non_usd_listing_currency:" + ",".join(non_usd_currencies)
+                logger.warning(
+                    "skipping market-cap sync for non-USD listing %s: %s",
+                    symbol,
+                    ",".join(non_usd_currencies),
+                )
+            else:
+                skipped[symbol] = "no_usd_price_or_shares"
             continue
         validate_market_cap_frame(frame)
         frame.write_parquet(market_cap_parquet_path(root, symbol))

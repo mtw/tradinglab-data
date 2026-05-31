@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 import tradinglab_data.market_data_workflows as workflows
 
@@ -79,6 +80,36 @@ def test_build_market_cap_frame_normalizes_mixed_datetime_units():
     )
 
     assert frame.get_column("market_cap_usd_millions").to_list() == [11.0, 24.0]
+
+
+def test_sync_market_caps_yahoo_reports_non_usd_listing_currency(tmp_path: Path, monkeypatch, caplog: pytest.LogCaptureFixture):
+    daily_root = tmp_path / "daily"
+    cap_root = tmp_path / "market_caps"
+    daily_root.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(
+        {
+            "date": ["2026-01-02", "2026-01-30"],
+            "open": [10.0, 11.0],
+            "high": [10.5, 11.5],
+            "low": [9.5, 10.5],
+            "close": [10.0, 11.0],
+            "adj_close": [10.0, 11.0],
+            "volume": [100.0, 110.0],
+            "currency": ["EUR", "EUR"],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(daily_root / "AAA.parquet")
+    monkeypatch.setattr(
+        workflows,
+        "_fetch_shares_full",
+        lambda symbol, start=None, end=None: pl.DataFrame({"date": [datetime(2026, 1, 1)], "shares_outstanding": [1_000_000.0]}),
+    )
+    caplog.set_level("WARNING")
+
+    result = workflows.sync_market_caps_yahoo(["AAA"], daily_root=daily_root, market_cap_root=cap_root)
+
+    assert result["symbols_written"] == 0
+    assert result["skipped"]["AAA"] == "non_usd_listing_currency:EUR"
+    assert "skipping market-cap sync for non-USD listing AAA: EUR" in caplog.text
 
 
 def test_sync_sector_assignments_yahoo_writes_current_gics_sectors(tmp_path: Path, monkeypatch):
