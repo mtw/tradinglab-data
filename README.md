@@ -17,7 +17,7 @@ This repository owns:
 
 This repository does not own signal generation, screening decisions, research workflows, predictive modeling, experiment registries, or downstream plotting/report UX.
 
-Latest PyPI release: `0.4.1`
+Latest PyPI release: `0.4.2`
 
 Current development version: `0.4.2`
 
