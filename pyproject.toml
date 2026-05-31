@@ -62,7 +62,7 @@ build-backend = "hatchling.build"
 features = ["test", "dev"]
 
 [tool.hatch.envs.default.scripts]
-test = "pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85 -m 'not network' tests"
+test = "pytest -q -m 'not network' tests --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85"
 lint = "ruff check src tests scripts"
 typecheck = "mypy src"
 build-check = "python -m build && python -m twine check dist/*"

@@ -48,7 +48,7 @@ For downstream packages and agentic consumers, treat `docs/API_CONTRACT.md` as t
 Package tests:
 
 ```bash
-PYTHONPATH=src python -m pytest -q --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85 -m "not network" tests
+PYTHONPATH=src python -m pytest -q -m "not network" tests --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85
 ```
 
 Use `@pytest.mark.network` for live upstream smoke tests so CI can exclude them by default.
