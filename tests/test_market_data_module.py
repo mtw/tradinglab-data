@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import polars as pl
@@ -9,6 +9,23 @@ import pytest
 
 from tradinglab_data.exceptions import DataNotFoundError, UniverseNotFoundError
 from tradinglab_data.market_data import (
+    _apply_point_in_time_filter,
+    _as_datetime,
+    _daily_calendar,
+    _daily_market_cap_frame,
+    _date_bounds,
+    _drop_all_null_value_columns,
+    _ensure_value_columns,
+    _first_column,
+    _is_nullish,
+    _matrix_from_long,
+    _non_null_numeric_values,
+    _normalize_symbol,
+    _ordered_unique,
+    _read_csv,
+    _read_daily_adjusted_close,
+    _read_index_return_frame,
+    _read_market_cap_frame,
     get_adjusted_prices,
     get_index_returns,
     get_market_caps,
@@ -85,6 +102,89 @@ def test_get_universe_symbols_filters_point_in_time_default_and_named_universe(t
     with pytest.raises(UniverseNotFoundError):
         get_universe_symbols(universe_id="missing")
     assert not issubclass(UniverseNotFoundError, ValueError)
+
+
+def test_market_data_internal_helpers_cover_nullish_dates_and_ordering(tmp_path: Path):
+    assert _is_nullish(None) is True
+    assert _is_nullish(float("nan")) is True
+    assert _is_nullish("x") is False
+    assert _as_datetime(None, name="x") is None
+    assert _as_datetime("2026-01-02", name="x") == datetime(2026, 1, 2)
+    assert _date_bounds(date(2026, 1, 1), datetime(2026, 1, 2)) == (datetime(2026, 1, 1), datetime(2026, 1, 2))
+    with pytest.raises(ValueError, match="start and end are required"):
+        _date_bounds(None, "2026-01-02")  # type: ignore[arg-type]
+    assert _first_column(["Date", "Close"], ["date", "open"]) == "Date"
+    assert _ordered_unique(["AAA", "", "AAA", "BBB"]) == ["AAA", "BBB"]
+    assert _normalize_symbol(float("nan")) == ""
+
+    csv_path = tmp_path / "frame.csv"
+    csv_path.write_text("a,b\n1,2\n", encoding="utf-8")
+    assert _read_csv(csv_path).columns == ["a", "b"]
+
+
+def test_market_data_internal_helpers_cover_empty_and_filter_branches():
+    assert _matrix_from_long(pl.DataFrame(schema={"date": pl.Datetime, "symbol": pl.String, "value": pl.Float64}), value_column="value").is_empty()
+    with pytest.raises(DataNotFoundError, match="missing"):
+        _ensure_value_columns(pl.DataFrame({"date": [datetime(2026, 1, 1)]}), message="missing")
+
+    frame = pl.DataFrame({"date": [datetime(2026, 1, 1)], "AAA": [None], "BBB": [1.0]})
+    dropped = _drop_all_null_value_columns(frame, label="symbol")
+    assert dropped.columns == ["date", "BBB"]
+    assert _non_null_numeric_values(pl.DataFrame({"date": [datetime(2026, 1, 1)]})).is_empty()
+
+    pit = pl.DataFrame({"symbol": ["AAA"], "effective_start": ["2026-01-01"], "effective_end": ["2026-12-31"]})
+    filtered = _apply_point_in_time_filter(pit, datetime(2026, 6, 1), warn_current_only=False)
+    assert filtered.height == 1
+
+
+def test_read_csv_wraps_parser_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    csv_path = tmp_path / "frame.csv"
+    csv_path.write_text("a\n1\n", encoding="utf-8")
+    monkeypatch.setattr("tradinglab_data.market_data.pl.read_csv", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("bad csv")))
+    with pytest.raises(DataNotFoundError, match="failed to read"):
+        _read_csv(csv_path)
+
+
+def test_market_data_reader_helpers_cover_window_and_calendar_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    paths = _write_config(tmp_path, monkeypatch)
+    caplog.set_level(logging.WARNING)
+    _write_daily(paths["daily"], "AAA", ["2026-01-02", "2026-01-06", "2026-01-10"], [1.0, 1.1, 1.2])
+    _write_daily(paths["daily"], "SPARSE", ["2026-01-02", "2026-01-06", "2026-01-10"], [1.0, None, None])
+    pl.DataFrame({"date": ["2025-01-01"], "adj_close": [1.0]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["daily"] / "OUT.parquet")
+    pl.DataFrame({"date": ["2026-01-02"]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["daily"] / "INCOMPLETE.parquet")
+    (paths["daily"] / "BROKEN.parquet").write_text("not parquet", encoding="utf-8")
+
+    incomplete = _read_daily_adjusted_close(paths["daily"], "INCOMPLETE", datetime(2026, 1, 1), datetime(2026, 1, 3))
+    outside = _read_daily_adjusted_close(paths["daily"], "OUT", datetime(2026, 1, 1), datetime(2026, 1, 3))
+    assert incomplete.is_empty()
+    assert outside.is_empty()
+
+    caps_out = pl.DataFrame({"date": ["2025-01-01"], "market_cap_usd_millions": [1.0]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False))
+    caps_daily = _daily_market_cap_frame("AAA", caps_out, pl.DataFrame(schema={"date": pl.Datetime}))
+    assert caps_daily.is_empty()
+
+    calendar = _daily_calendar(["MISSING", "BROKEN"], datetime(2026, 1, 1), datetime(2026, 1, 3))
+    assert calendar.is_empty()
+
+    sparse_returns = get_total_returns(["AAA", "SPARSE"], "2026-01-02", "2026-01-10", max_ffill=0)
+    assert sparse_returns.columns == ["date", "AAA"]
+    assert "dropping symbol with insufficient adjusted-price coverage: SPARSE" in caplog.text
+
+
+def test_market_cap_and_index_reader_helpers_cover_remaining_drop_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    paths = _write_config(tmp_path, monkeypatch)
+    caplog.set_level(logging.WARNING)
+    pl.DataFrame({"date": ["2025-01-01"], "market_cap_usd_millions": [1.0]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["market_caps"] / "AAA.parquet")
+    assert _read_market_cap_frame(paths["market_caps"], "AAA", datetime(2026, 1, 1), datetime(2026, 1, 3)).is_empty()
+    assert _read_index_return_frame(paths["index_returns"], "SPX", datetime(2026, 1, 1), datetime(2026, 1, 3)).is_empty()
+
+    pl.DataFrame({"date": ["2025-01-01"], "return": [0.01]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(
+        paths["index_returns"] / "NDX.parquet"
+    )
+    assert _read_index_return_frame(paths["index_returns"], "NDX", datetime(2026, 1, 1), datetime(2026, 1, 3)).is_empty()
+    assert "dropping symbol with no market-cap data in requested window: AAA" in caplog.text
+    assert "dropping index with no return artifact: SPX" in caplog.text
+    assert "dropping index with no data in requested window: NDX" in caplog.text
 
 
 def test_get_universe_symbols_requires_point_in_time_columns_for_as_of(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
