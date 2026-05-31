@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 import tradinglab_data.workflows as workflows
 
@@ -238,6 +239,62 @@ def test_backfill_extended_hours_from_config_dispatches(dummy_cfg_factory, monke
             "log_path": Path("/tmp/meta/update_log.csv"),
         }
     ]
+
+
+def test_load_active_symbols_from_cfg_warns_and_rejects_missing_selection(
+    monkeypatch,
+    dummy_cfg_factory,
+    capsys,
+):
+    monkeypatch.setattr(
+        workflows,
+        "load_universe_frame",
+        lambda *args, **kwargs: pl.DataFrame({"symbol": ["AAA"], "source": ["universe"]}),
+    )
+    monkeypatch.setattr(workflows, "load_ticker_overrides", lambda path: {})
+    cfg = dummy_cfg_factory({"paths": {"universe_csv": "/tmp/meta/universe.csv", "universe_dir": "/tmp/meta/universes"}})
+
+    with pytest.raises(SystemExit, match="No requested symbols found in active universe."):
+        workflows._load_active_symbols_from_cfg(cfg, symbols_override=["MISSING"])
+
+    assert "will be skipped: MISSING" in capsys.readouterr().out
+
+
+def test_load_intraday_research_symbols_requires_existing_universe_file(dummy_cfg_factory):
+    cfg = dummy_cfg_factory({"paths": {"universe_csv": "/tmp/meta/universe.csv", "universe_dir": "/tmp/meta/universes"}})
+    intraday_cfg = workflows._read_intraday_research_config(
+        dummy_cfg_factory({"paths": {"universe_csv": "/tmp/meta/universe.csv"}, "intraday": {"enabled": True}})
+    )
+
+    with pytest.raises(FileNotFoundError, match="Intraday pilot universe not found"):
+        workflows._load_intraday_research_symbols_from_cfg(cfg, intraday_cfg, universe="missing")
+
+
+def test_load_intraday_live_symbols_filters_and_rejects_empty_override(
+    monkeypatch,
+    dummy_cfg_factory,
+    tmp_path: Path,
+    capsys,
+):
+    universe_dir = tmp_path / "universes"
+    universe_dir.mkdir(parents=True, exist_ok=True)
+    (universe_dir / "intraday_live_core.csv").write_text(
+        "symbol,source,instrument_type\nETF1,exchange,etf\nAAA,universe,stock\nBBB,universe,bond\n",
+        encoding="utf-8",
+    )
+    cfg = dummy_cfg_factory({"paths": {"universe_csv": tmp_path / "u.csv", "universe_dir": universe_dir}})
+    intraday_cfg = workflows._read_intraday_live_config(
+        dummy_cfg_factory({"paths": {"universe_csv": tmp_path / "u.csv"}, "intraday_live": {"enabled": True}})
+    )
+    monkeypatch.setattr(workflows, "load_ticker_overrides", lambda path: {})
+
+    selected = workflows._load_intraday_live_symbols_from_cfg(cfg, intraday_cfg, universe="intraday_live_core")
+    assert selected == ["AAA"]
+
+    with pytest.raises(SystemExit, match="No requested symbols found in selected intraday live universe."):
+        workflows._load_intraday_live_symbols_from_cfg(cfg, intraday_cfg, universe="intraday_live_core", symbols_override=["MISSING"])
+
+    assert "will be skipped: MISSING" in capsys.readouterr().out
 
 
 def test_read_intraday_research_config_defaults(dummy_cfg_factory):
@@ -479,6 +536,41 @@ def test_intraday_sync_from_config_fetches_once_and_writes_both_stores(dummy_cfg
     assert research_calls[0]["universe_name"] == "intraday_live_core"
     assert callable(live_calls[0]["fetch_intraday_fn"])
     assert callable(research_calls[0]["fetch_intraday_fn"])
+
+
+def test_validate_intraday_dual_store_compatibility_rejects_mismatches(dummy_cfg_factory):
+    live_cfg = workflows._read_intraday_live_config(
+        dummy_cfg_factory({"paths": {"universe_csv": "/tmp/u.csv"}, "intraday_live": {"enabled": True, "interval": "5m"}})
+    )
+    research_cfg = workflows._read_intraday_research_config(
+        dummy_cfg_factory({"paths": {"universe_csv": "/tmp/u.csv"}, "intraday": {"enabled": True, "interval": "1m"}})
+    )
+
+    with pytest.raises(ValueError, match="interval"):
+        workflows._validate_intraday_dual_store_compatibility(live_cfg=live_cfg, research_cfg=research_cfg)
+
+
+def test_intraday_sync_from_config_requires_both_workflows_enabled(dummy_cfg_factory):
+    cfg_live_disabled = dummy_cfg_factory(
+        {"paths": {"universe_csv": "/tmp/u.csv"}, "intraday": {"enabled": True}, "intraday_live": {"enabled": False}}
+    )
+    cfg_research_disabled = dummy_cfg_factory(
+        {"paths": {"universe_csv": "/tmp/u.csv"}, "intraday": {"enabled": False}, "intraday_live": {"enabled": True}}
+    )
+
+    with pytest.raises(SystemExit, match="Intraday live workflow is disabled"):
+        workflows.intraday_sync_from_config(cfg_live_disabled)
+    with pytest.raises(SystemExit, match="Intraday research workflow is disabled"):
+        workflows.intraday_sync_from_config(cfg_research_disabled)
+
+
+def test_prefetched_and_cached_fetchers_return_expected_values():
+    fetcher = workflows._prefetched_intraday_fetcher({"AAA": pl.DataFrame({"value": [1]})})
+    currency_fetcher = workflows._cached_currency_fetcher({"AAA": "USD"})
+
+    assert list(fetcher(["AAA", "BBB"]).keys()) == ["AAA"]
+    assert currency_fetcher("AAA") == "USD"
+    assert currency_fetcher("BBB") == "UNKNOWN"
 
 
 def test_strict_symbol_update_preserves_existing_older_rows(

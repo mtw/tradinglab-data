@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 from tradinglab_data.crypto.providers.binance_ccxt import _normalize_ohlcv_rows
 from tradinglab_data.crypto.registry import load_crypto_universes, resolve_crypto_universe
@@ -17,11 +18,18 @@ from tradinglab_data.crypto.validation import (
 )
 from tradinglab_data.crypto.verify import CryptoVerifyConfig, run_crypto_verify_checks
 from tradinglab_data.crypto.workflows import (
+    _as_float,
+    _as_int,
     _coingecko_item_to_metadata,
+    _fetch_symbol_history,
+    _frames_equal,
+    _interval_delta,
+    _provider_for,
     _read_crypto_config,
     crypto_backfill_from_config,
     crypto_diff_universe_from_config,
     crypto_inspect_from_config,
+    crypto_list_symbols_from_config,
     crypto_prune_from_config,
     crypto_refresh_universe_from_config,
     crypto_show_universe_from_config,
@@ -191,6 +199,80 @@ def test_crypto_backfill_and_validate_roundtrip(monkeypatch, dummy_cfg_factory, 
     assert validate_result["ok"] is True
 
 
+def test_provider_for_supports_all_known_exchanges(monkeypatch, dummy_cfg_factory, tmp_path: Path):
+    import tradinglab_data.crypto.workflows as crypto_workflows
+
+    seen: list[tuple[str, str, tuple[str, ...]]] = []
+
+    class _DummyProvider:
+        def __init__(self, *, exchange_name: str, market_type: str, quote_assets: tuple[str, ...]):
+            seen.append((exchange_name, market_type, quote_assets))
+
+    monkeypatch.setattr(crypto_workflows, "BinanceCCXTProvider", _DummyProvider)
+    monkeypatch.setattr(crypto_workflows, "KrakenCCXTProvider", _DummyProvider)
+    monkeypatch.setattr(crypto_workflows, "CoinbaseCCXTProvider", _DummyProvider)
+
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {"quote_assets": ["USDT"], "market_type": "spot"},
+        }
+    )
+
+    for exchange in ("binance", "kraken", "coinbase"):
+        _provider_for(_read_crypto_config(cfg, exchange=exchange))
+
+    assert seen == [
+        ("binance", "spot", ("USDT",)),
+        ("kraken", "spot", ("USDT",)),
+        ("coinbase", "spot", ("USDT",)),
+    ]
+
+
+def test_provider_for_rejects_unsupported_exchange(dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {"exchange": "unsupported"},
+        }
+    )
+
+    with pytest.raises(ValueError, match="Unsupported crypto exchange"):
+        _provider_for(_read_crypto_config(cfg))
+
+
+def test_crypto_list_symbols_from_config_uses_provider(monkeypatch, dummy_cfg_factory, tmp_path: Path):
+    import tradinglab_data.crypto.workflows as crypto_workflows
+
+    class FakeProvider:
+        def list_symbols(self) -> list[str]:
+            return ["BTC_USDT", "ETH_USDT"]
+
+    monkeypatch.setattr(crypto_workflows, "_provider_for", lambda crypto_cfg: FakeProvider())
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            }
+        }
+    )
+
+    assert crypto_list_symbols_from_config(cfg) == ["BTC_USDT", "ETH_USDT"]
+
+
 def test_crypto_incremental_update_marks_unchanged_when_no_new_closed_rows(monkeypatch, dummy_cfg_factory, tmp_path: Path):
     class FakeProvider:
         def list_symbols(self) -> list[str]:
@@ -218,6 +300,49 @@ def test_crypto_incremental_update_marks_unchanged_when_no_new_closed_rows(monke
 
     assert result["files_written"] == 0
     assert result["unchanged_symbols"] == ["BTC_USDT"]
+
+
+def test_fetch_symbol_history_batches_and_advances_cursor():
+    class FakeProvider:
+        def __init__(self) -> None:
+            self.starts: list[datetime | None] = []
+
+        def fetch_ohlcv(self, symbol: str, interval: str, *, start=None, end=None, limit=None) -> pl.DataFrame:
+            self.starts.append(start)
+            if len(self.starts) == 1:
+                return _crypto_frame(
+                    timestamps=[
+                        "2026-04-18T00:00:00",
+                        "2026-04-18T01:00:00",
+                    ]
+                )
+            if len(self.starts) == 2:
+                return _crypto_frame(timestamps=["2026-04-18T02:00:00"])
+            return pl.DataFrame(schema=_crypto_frame().schema)
+
+    provider = FakeProvider()
+    start = datetime(2026, 4, 17, 0, 0, tzinfo=timezone.utc)
+
+    frame = _fetch_symbol_history(provider, "BTC_USDT", "1h", start=start, total_limit=3, batch_limit=2)
+
+    assert frame.height == 3
+    assert provider.starts[0] == start
+    assert provider.starts[1] == datetime(2026, 4, 18, 2, 0, tzinfo=timezone.utc)
+
+
+def test_fetch_symbol_history_returns_empty_frame_when_provider_has_no_data():
+    class FakeProvider:
+        def fetch_ohlcv(self, symbol: str, interval: str, *, start=None, end=None, limit=None) -> pl.DataFrame:
+            return pl.DataFrame(schema=_crypto_frame().schema)
+
+    frame = _fetch_symbol_history(FakeProvider(), "BTC_USDT", "1h", start=None, total_limit=10, batch_limit=5)
+
+    assert frame.is_empty()
+
+
+def test_interval_delta_rejects_unsupported_interval():
+    with pytest.raises(ValueError, match="Unsupported crypto interval"):
+        _interval_delta("5m")
 
 
 def test_crypto_backfill_skips_non_tradable_symbol(monkeypatch, dummy_cfg_factory, tmp_path: Path):
@@ -265,6 +390,28 @@ def test_crypto_validate_reports_missing_file(dummy_cfg_factory, tmp_path: Path)
     result = crypto_validate_from_config(cfg, interval="1h", symbols_override=["BTC_USDT"])
     assert result["ok"] is False
     assert result["dirty_files"]
+
+
+def test_crypto_validate_reports_invalid_parquet(dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {"default_universe": "crypto_majors", "quote_assets": ["USDT"]},
+        }
+    )
+    out_path = tmp_path / "crypto" / "binance" / "spot" / "1h"
+    out_path.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({"bad": [1]}).write_parquet(out_path / "BTC_USDT.parquet")
+
+    result = crypto_validate_from_config(cfg, interval="1h", symbols_override=["BTC_USDT"])
+
+    assert result["ok"] is False
+    assert any("invalid_crypto_parquet" in error for error in result["errors"])
 
 
 def test_coingecko_item_filter_rejects_stablecoin(dummy_cfg_factory, tmp_path: Path):
@@ -488,6 +635,68 @@ def test_crypto_show_diff_inspect_and_prune(dummy_cfg_factory, tmp_path: Path):
         assert "symbols_override is not a complete keep set" in str(exc)
 
 
+def test_crypto_inspect_handles_missing_and_existing_files(dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {"exchange": "binance", "market_type": "spot", "quote_assets": ["USDT"]},
+        }
+    )
+    root = tmp_path / "crypto" / "binance" / "spot" / "1h"
+    root.mkdir(parents=True, exist_ok=True)
+    _crypto_frame(symbol="BTC_USDT").write_parquet(root / "BTC_USDT.parquet")
+
+    inspect = crypto_inspect_from_config(cfg, interval="1h", symbols_override=["BTC_USDT", "ETH_USDT"])
+
+    assert inspect[0]["exists"] is True
+    assert inspect[0]["rows"] == 2
+    assert inspect[0]["start"] is not None
+    assert inspect[1]["exists"] is False
+    assert inspect[1]["rows"] == 0
+
+
+def test_crypto_prune_apply_removes_files_and_handles_missing_root(dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {"exchange": "binance", "market_type": "spot", "quote_assets": ["USDT"]},
+        }
+    )
+
+    assert crypto_prune_from_config(cfg, interval="1h", universe="crypto_majors") == []
+
+    root = tmp_path / "crypto" / "binance" / "spot" / "1h"
+    root.mkdir(parents=True, exist_ok=True)
+    _crypto_frame(symbol="BTC_USDT").write_parquet(root / "BTC_USDT.parquet")
+    _crypto_frame(symbol="DOGE_USDT").write_parquet(root / "DOGE_USDT.parquet")
+
+    pruned = crypto_prune_from_config(cfg, interval="1h", universe="crypto_majors", apply=True)
+
+    assert any(path.endswith("DOGE_USDT.parquet") for path in pruned)
+    assert not (root / "DOGE_USDT.parquet").exists()
+    assert (root / "BTC_USDT.parquet").exists()
+
+
+def test_frames_equal_detects_mismatch_and_handles_equals_failure(monkeypatch):
+    left = pl.DataFrame({"a": [1]})
+    right = pl.DataFrame({"a": [2]})
+    assert _frames_equal(left, right) is False
+    assert _frames_equal(left, pl.DataFrame({"b": [1]})) is False
+
+    monkeypatch.setattr(pl.DataFrame, "equals", lambda self, other: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert _frames_equal(left, left) is False
+
+
 def test_crypto_verify_detects_missing_invalid_and_stale(monkeypatch, dummy_cfg_factory, tmp_path: Path):
     import tradinglab_data.crypto.verify as crypto_verify
 
@@ -515,6 +724,72 @@ def test_crypto_verify_detects_missing_invalid_and_stale(monkeypatch, dummy_cfg_
     assert "BNB_USDT" in result["missing_symbols"]
     assert any(item["symbol"] == "SOL_USDT" and "invalid" in item["reasons"] for item in result["dirty_symbols"])
     assert any(item["symbol"] == "ETH_USDT" and "stale" in item["reasons"] for item in result["dirty_symbols"])
+
+
+def test_crypto_refresh_universe_rejects_unsupported_provider(dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "crypto_registry_json": tmp_path / "meta" / "crypto" / "registry.json",
+                "crypto_universe_dir": tmp_path / "meta" / "crypto" / "universes",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            }
+        }
+    )
+
+    with pytest.raises(ValueError, match="Unsupported crypto universe refresh provider"):
+        crypto_refresh_universe_from_config(cfg, provider_name="other")
+
+
+def test_coingecko_item_to_metadata_filters_missing_and_thresholded_values(dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {"parquet_root": tmp_path / "daily", "crypto_root": tmp_path / "crypto", "runs_root": tmp_path / "runs", "universe_csv": tmp_path / "meta" / "universe.csv"},
+            "crypto": {
+                "quote_assets": ["USDT"],
+                "excluded_symbols": ["SCAM"],
+                "universe_refresh_min_market_cap": 5.0,
+                "universe_refresh_min_volume": 5.0,
+            },
+        }
+    )
+    crypto_cfg = _read_crypto_config(cfg)
+
+    assert _coingecko_item_to_metadata({}, crypto_cfg=crypto_cfg, universe_name="u") is None
+    assert (
+        _coingecko_item_to_metadata(
+            {"id": "coin", "symbol": "scam", "name": "Scam", "market_cap": 10.0, "total_volume": 10.0},
+            crypto_cfg=crypto_cfg,
+            universe_name="u",
+        )
+        is None
+    )
+    assert (
+        _coingecko_item_to_metadata(
+            {"id": "coin", "symbol": "btc", "name": "Bitcoin", "market_cap": 1.0, "total_volume": 10.0},
+            crypto_cfg=crypto_cfg,
+            universe_name="u",
+        )
+        is None
+    )
+    assert (
+        _coingecko_item_to_metadata(
+            {"id": "coin", "symbol": "btc", "name": "Bitcoin", "market_cap": 10.0, "total_volume": 1.0},
+            crypto_cfg=crypto_cfg,
+            universe_name="u",
+        )
+        is None
+    )
+
+
+def test_numeric_helpers_return_none_for_non_numeric_values():
+    assert _as_float("1") is None
+    assert _as_float(1) == 1.0
+    assert _as_int(1.2) is None
+    assert _as_int(3) == 3
 
 
 def test_crypto_verify_repair_backfills_dirty_symbols(monkeypatch, dummy_cfg_factory, tmp_path: Path):

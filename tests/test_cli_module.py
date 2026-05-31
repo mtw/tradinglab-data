@@ -483,6 +483,28 @@ def test_cli_inspect_symbol_master_filters_and_renders_markdown(tmp_path: Path, 
     assert "AAPL" not in out
 
 
+def test_cli_inspect_symbol_master_renders_json_and_csv(tmp_path: Path, capsys):
+    meta = tmp_path / "meta"
+    path = meta / "symbol_master.csv"
+    meta.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "symbol,exchange,country,asset_currency,base_listing_currency,tax_country,asset_class,fx_pair_to_base,lot_size,price_multiplier\n"
+        "AAPL,NASDAQ,US,USD,USD,US,stock,USDEUR,1,1\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  symbol_master_csv: {path}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+
+    json_out = tmp_path / "symbol_master.json"
+    rc_json = cli.main(["--config", str(config_path), "inspect-symbol-master", "--format", "json", "--out", str(json_out)])
+    rc_csv = cli.main(["--config", str(config_path), "inspect-symbol-master", "--format", "csv"])
+
+    assert rc_json == 0
+    assert '"symbol":"AAPL"' in json_out.read_text(encoding="utf-8")
+    assert rc_csv == 0
+    assert "symbol,exchange,country" in capsys.readouterr().out
+
+
 def test_cli_market_data_sync_validate_and_inspect(monkeypatch, tmp_path: Path, capsys):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(f"paths:\n  store_root: {tmp_path / 'store'}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
@@ -518,3 +540,97 @@ def test_cli_market_data_sync_validate_and_inspect(monkeypatch, tmp_path: Path, 
     assert "market_cap id=AAA exists=True rows=2" in out
     assert [call["symbols_override"] for call in calls] == [["AAPL", "MSFT", "NVDA"]] * 3
     assert [call["index_ids"] for call in calls] == [["SPX", "NDX", "RTY"]] * 3
+
+
+def test_cli_market_data_validate_raises_aggregated_errors(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  store_root: {tmp_path / 'store'}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "validate_market_data_from_config",
+        lambda *args, **kwargs: {
+            "ok": False,
+            "market_caps": {"errors": ["market cap failed"]},
+            "sectors": {"errors": []},
+            "index_returns": {"errors": ["index failed"]},
+        },
+    )
+
+    with pytest.raises(SystemExit, match="market cap failed\nindex failed"):
+        cli.main(["--config", str(config_path), "market-data", "validate"])
+
+
+def test_cli_crypto_commands_dispatch(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  store_root: {tmp_path / 'store'}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    monkeypatch.setattr(cli, "crypto_list_symbols_from_config", lambda *args, **kwargs: ["BTC_USDT", "ETH_USDT"])
+    monkeypatch.setattr(
+        cli,
+        "crypto_backfill_from_config",
+        lambda *args, **kwargs: calls.append(("backfill", kwargs))
+        or {
+            "interval": kwargs["interval"],
+            "symbols": kwargs.get("symbols_override") or ["BTC_USDT"],
+            "files_written": 1,
+            "root": "/tmp/crypto",
+            "universe": kwargs.get("universe") or "crypto_majors",
+        },
+    )
+    monkeypatch.setattr(cli, "crypto_validate_from_config", lambda *args, **kwargs: {"ok": True, "errors": []})
+    monkeypatch.setattr(
+        cli,
+        "crypto_refresh_universe_from_config",
+        lambda *args, **kwargs: {
+            "provider": "coingecko",
+            "universe": "crypto_dynamic",
+            "symbols_selected": ["BTC_USDT"],
+            "registry_path": "/tmp/registry.json",
+            "universe_path": "/tmp/universe.json",
+        },
+    )
+    monkeypatch.setattr(cli, "crypto_show_universe_from_config", lambda *args, **kwargs: ["BTC_USDT"])
+    monkeypatch.setattr(
+        cli,
+        "crypto_diff_universe_from_config",
+        lambda *args, **kwargs: {
+            "left_universe": "left",
+            "right_universe": "right",
+            "left_only": ["BTC_USDT"],
+            "right_only": ["ETH_USDT"],
+            "shared": ["SOL_USDT"],
+        },
+    )
+    monkeypatch.setattr(
+        cli,
+        "crypto_inspect_from_config",
+        lambda *args, **kwargs: [{"symbol": "BTC_USDT", "exists": True, "rows": 2, "start": "2026-01-01", "end": "2026-01-02", "path": "/tmp/BTC_USDT.parquet"}],
+    )
+    monkeypatch.setattr(cli, "crypto_prune_from_config", lambda *args, **kwargs: ["/tmp/old.parquet"])
+
+    assert cli.main(["--config", str(config_path), "crypto", "list-symbols"]) == 0
+    assert cli.main(["--config", str(config_path), "crypto", "backfill", "--interval", "1h", "--symbols", "BTC_USDT"]) == 0
+    assert cli.main(["--config", str(config_path), "crypto", "update", "--interval", "1h", "--symbols", "BTC_USDT"]) == 0
+    assert cli.main(["--config", str(config_path), "crypto", "validate", "--interval", "1h", "--symbols", "BTC_USDT"]) == 0
+    assert cli.main(["--config", str(config_path), "crypto", "refresh-universe", "--universe", "crypto_dynamic"]) == 0
+    assert cli.main(["--config", str(config_path), "crypto", "show-universe"]) == 0
+    assert cli.main(["--config", str(config_path), "crypto", "diff-universe", "--left-universe", "left", "--right-universe", "right"]) == 0
+    assert cli.main(["--config", str(config_path), "crypto", "inspect", "--interval", "1h"]) == 0
+    assert cli.main(["--config", str(config_path), "crypto", "prune", "--interval", "1h", "--apply"]) == 0
+
+    out = capsys.readouterr().out
+    assert "BTC_USDT" in out
+    assert "[CRYPTO_REFRESH_UNIVERSE] provider=coingecko universe=crypto_dynamic symbols=1" in out
+    assert "[CRYPTO_DIFF_UNIVERSE] left=left right=right" in out
+    assert "[CRYPTO_PRUNE] apply=True files=1" in out
+    assert calls[1][1]["incremental"] is True
+
+
+def test_cli_crypto_validate_raises_on_errors(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  store_root: {tmp_path / 'store'}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "crypto_validate_from_config", lambda *args, **kwargs: {"ok": False, "errors": ["bad crypto"]})
+
+    with pytest.raises(SystemExit, match="bad crypto"):
+        cli.main(["--config", str(config_path), "crypto", "validate", "--interval", "1h"])

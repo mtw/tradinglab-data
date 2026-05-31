@@ -174,6 +174,24 @@ def test_get_adjusted_prices_rejects_invalid_date_inputs(tmp_path: Path, monkeyp
         get_adjusted_prices(["AAA"], "2026-01-05", "2026-01-05")
 
 
+def test_get_adjusted_prices_drops_unreadable_and_incomplete_daily_parquet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    paths = _write_config(tmp_path, monkeypatch)
+    caplog.set_level(logging.WARNING)
+    _write_daily(paths["daily"], "GOOD", ["2026-01-02", "2026-01-05"], [1.0, 1.1])
+    pl.DataFrame({"date": ["2026-01-02"]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(
+        paths["daily"] / "BADSCHEMA.parquet"
+    )
+    (paths["daily"] / "BROKEN.parquet").write_text("not parquet", encoding="utf-8")
+
+    prices = get_adjusted_prices(["GOOD", "BADSCHEMA", "BROKEN"], "2026-01-02", "2026-01-05")
+
+    assert prices.columns == ["date", "GOOD"]
+    assert "dropping symbol with unreadable daily parquet BADSCHEMA" in caplog.text
+    assert "dropping symbol with unreadable daily parquet" in caplog.text
+
+
 def test_total_returns_reject_invalid_adjusted_price_jumps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     paths = _write_config(tmp_path, monkeypatch)
     _write_daily(paths["daily"], "BAD", ["2026-01-02", "2026-01-05"], [1.0, 20.0])
@@ -264,6 +282,46 @@ def test_get_market_caps_rejects_nonpositive_values(tmp_path: Path, monkeypatch:
         get_market_caps(["AAA"], "2026-01-01", "2026-02-15")
 
 
+def test_get_market_caps_reads_market_cap_column_and_drops_bad_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    paths = _write_config(tmp_path, monkeypatch)
+    caplog.set_level(logging.WARNING)
+    _write_daily(paths["daily"], "AAA", ["2026-01-02", "2026-01-05"], [10.0, 10.5])
+    pl.DataFrame(
+        {
+            "timestamp": ["2026-01-31"],
+            "market_cap": [2_500_000_000.0],
+        }
+    ).with_columns(pl.col("timestamp").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["market_caps"] / "AAA.parquet")
+    pl.DataFrame({"bad": [1]}).write_parquet(paths["market_caps"] / "BAD.parquet")
+    (paths["market_caps"] / "BROKEN.parquet").write_text("not parquet", encoding="utf-8")
+
+    caps = get_market_caps(["AAA", "BAD", "BROKEN"], "2026-01-01", "2026-02-15")
+
+    assert caps.filter(pl.col("date") == datetime(2026, 1, 31)).get_column("AAA").item() == 2500.0
+    assert "dropping symbol with no market-cap parquet: BAD" in caplog.text or "dropping symbol with incomplete market-cap schema: BAD" in caplog.text
+
+
+def test_get_market_caps_daily_drops_unreadable_calendar_symbols(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    paths = _write_config(tmp_path, monkeypatch)
+    caplog.set_level(logging.WARNING)
+    _write_daily(paths["daily"], "AAA", ["2026-01-02", "2026-01-05"], [10.0, 10.5])
+    (paths["daily"] / "BROKEN.parquet").write_text("not parquet", encoding="utf-8")
+    pl.DataFrame(
+        {
+            "date": ["2026-01-02"],
+            "market_cap_usd_millions": [1000.0],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["market_caps"] / "AAA.parquet")
+
+    caps = get_market_caps(["BROKEN", "AAA"], "2026-01-01", "2026-01-31", frequency="daily")
+
+    assert "AAA" in caps.columns
+
+
 def test_get_sector_assignments_respects_order_vocab_and_current_only_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     paths = _write_config(tmp_path, monkeypatch)
     pl.DataFrame(
@@ -330,6 +388,14 @@ def test_get_sector_assignments_rejects_missing_columns_and_missing_file(tmp_pat
 
     pl.DataFrame({"symbol": ["AAA"]}).write_csv(paths["meta"] / "sector_assignments.csv")
     with pytest.raises(DataNotFoundError, match="no sector column"):
+        get_sector_assignments(["AAA"])
+
+
+def test_get_sector_assignments_rejects_missing_symbol_column(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    pl.DataFrame({"sector": ["Information Technology"]}).write_csv(paths["meta"] / "sector_assignments.csv")
+
+    with pytest.raises(DataNotFoundError, match="no symbol column"):
         get_sector_assignments(["AAA"])
 
 
@@ -403,3 +469,23 @@ def test_get_index_returns_drops_artifacts_with_no_return_columns(tmp_path: Path
         get_index_returns(["SPX"], "2026-01-02", "2026-01-05")
 
     assert "dropping index with no return or total-return level column: SPX" in caplog.text
+
+
+def test_get_index_returns_drops_unreadable_and_empty_window_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    paths = _write_config(tmp_path, monkeypatch)
+    caplog.set_level(logging.WARNING)
+    (paths["index_returns"] / "SPX.parquet").write_text("not parquet", encoding="utf-8")
+    pl.DataFrame(
+        {
+            "date": ["2025-01-02"],
+            "return": [0.01],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["index_returns"] / "NDX.parquet")
+
+    with pytest.raises(DataNotFoundError, match="index_ids could be loaded"):
+        get_index_returns(["SPX", "NDX"], "2026-01-02", "2026-01-05")
+
+    assert "dropping index with unreadable return artifact" in caplog.text
+    assert "dropping index with no data in requested window: NDX" in caplog.text
