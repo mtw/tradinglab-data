@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import polars as pl
 import pytest
 
@@ -104,6 +106,18 @@ def test_validate_frame_schema_reports_dtype_and_extra_columns_without_raising()
     assert errors == ["dtype=['date:String!=Datetime']", "extra=['extra']"]
     with pytest.raises(ValueError, match="missing="):
         validate_frame_schema(pl.DataFrame({"other": [1]}), {"date": pl.Datetime})
+    assert validate_frame_schema(
+        pl.DataFrame({"date": [datetime(2026, 1, 1)]}),
+        {"date": pl.Datetime},
+        allow_extra_columns=False,
+        raise_on_error=False,
+    ) == []
+
+    class BrokenType:
+        def base_type(self):
+            raise TypeError("boom")
+
+    assert schema_mod._dtype_matches(BrokenType(), pl.Datetime) is False
 
 
 def test_validate_moves_frame_rejects_missing_columns():
@@ -356,6 +370,40 @@ def test_validate_fx_daily_frame_reports_missing_columns_without_raising():
     ]
     bad_dtype = pl.DataFrame({"date": ["2026-03-27"], "open": [1.0], "high": [1.0], "low": [1.0], "close": [1.0], "provider": ["x"], "pair": ["USDEUR"], "base_currency": ["USD"], "quote_currency": ["EUR"], "source_symbol": ["x"], "ingested_at": ["2026-03-27T00:00:00"]})
     assert any(item.startswith("dtype=") for item in validate_fx_daily_frame(bad_dtype, raise_on_error=False))
+    empty = pl.DataFrame(
+        schema={
+            "date": pl.Datetime,
+            "open": pl.Float64,
+            "high": pl.Float64,
+            "low": pl.Float64,
+            "close": pl.Float64,
+            "provider": pl.String,
+            "pair": pl.String,
+            "base_currency": pl.String,
+            "quote_currency": pl.String,
+            "source_symbol": pl.String,
+            "ingested_at": pl.Datetime,
+        }
+    )
+    assert validate_fx_daily_frame(empty, raise_on_error=False) == []
+    unsorted_dup = pl.DataFrame(
+        {
+            "date": ["2026-03-28", "2026-03-27", "2026-03-27"],
+            "open": [1.0, 1.0, 1.0],
+            "high": [1.0, 1.0, 1.0],
+            "low": [1.0, 1.0, 1.0],
+            "close": [1.0, 1.0, 1.0],
+            "provider": ["x", "x", "x"],
+            "pair": ["USDEUR", "USDEUR", "USDEUR"],
+            "base_currency": ["USD", "USD", "USD"],
+            "quote_currency": ["EUR", "EUR", "EUR"],
+            "source_symbol": ["x", "x", "x"],
+            "ingested_at": ["2026-03-28T00:00:00", "2026-03-27T00:00:00", "2026-03-27T00:00:00"],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False), pl.col("ingested_at").str.strptime(pl.Datetime, strict=False))
+    errors = validate_fx_daily_frame(unsorted_dup, raise_on_error=False)
+    assert "dates_not_sorted" in errors
+    assert "duplicate_dates=1" in errors
 
 
 def test_validate_market_cap_frame_accepts_valid_frame():
@@ -531,6 +579,8 @@ def test_validate_index_return_frame_reports_multiple_problem_types_without_rais
     assert validate_index_return_frame(pl.DataFrame(schema={"date": pl.Datetime, "index_id": pl.String, "return": pl.Float64, "total_return_level": pl.Float64, "provider": pl.String, "source_symbol": pl.String, "ingested_at": pl.Datetime}), raise_on_error=False) == []
     dup = df.head(1).vstack(df.head(1))
     assert "duplicate_dates=1" in validate_index_return_frame(dup, raise_on_error=False)
+    bad_dtype = pl.DataFrame({"date": ["2026-01-01"], "index_id": ["SPX"], "return": [0.1], "total_return_level": [100.0], "provider": ["fixture"], "source_symbol": ["SPXTR"], "ingested_at": [None]})
+    assert any(item.startswith("dtype=") for item in validate_index_return_frame(bad_dtype, raise_on_error=False))
 
 
 def test_validate_symbol_master_frame_accepts_valid_frame():
@@ -571,6 +621,10 @@ def test_validate_symbol_master_frame_non_strict_is_warn_only():
 
     assert validate_symbol_master_frame(df, strict=True) == ["empty_country_rows=1"]
     assert validate_symbol_master_frame(df, strict=False) == []
+    assert validate_symbol_master_frame(pl.DataFrame({"symbol": ["AAPL"]}), strict=True) == [
+        "missing_required_columns=exchange,country,asset_currency,base_listing_currency,tax_country,asset_class,fx_pair_to_base,lot_size,price_multiplier"
+    ]
+    assert validate_symbol_master_frame(pl.DataFrame({"symbol": ["AAPL"]}), strict=False) == []
 
 
 def test_validate_symbol_master_frame_reports_multiple_field_errors():
@@ -599,6 +653,7 @@ def test_validate_symbol_master_frame_reports_multiple_field_errors():
     assert "invalid_fx_pair_rows=2" in errors
     assert _normalize_text(None) == ""
     assert _normalize_text(True) == "1"
+    assert _normalize_text(False) == "0"
 
 
 def test_validate_intraday_research_and_live_frames_report_problem_lists_without_raising():

@@ -7,6 +7,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from tradinglab_data.config import Config
 from tradinglab_data.exceptions import DataNotFoundError, UniverseNotFoundError
 from tradinglab_data.market_data import (
     _apply_point_in_time_filter,
@@ -26,6 +27,7 @@ from tradinglab_data.market_data import (
     _read_daily_adjusted_close,
     _read_index_return_frame,
     _read_market_cap_frame,
+    _resolve_universe_path,
     get_adjusted_prices,
     get_index_returns,
     get_market_caps,
@@ -120,6 +122,10 @@ def test_market_data_internal_helpers_cover_nullish_dates_and_ordering(tmp_path:
     csv_path = tmp_path / "frame.csv"
     csv_path.write_text("a,b\n1,2\n", encoding="utf-8")
     assert _read_csv(csv_path).columns == ["a", "b"]
+    with pytest.raises(FileNotFoundError):
+        _read_csv(tmp_path / "missing.csv")
+    with pytest.raises(UniverseNotFoundError, match="default universe is not available"):
+        _resolve_universe_path(Config(raw={"paths": {"universe_csv": str(tmp_path / "default.csv"), "universe_dir": str(tmp_path)}}), "default")
 
 
 def test_market_data_internal_helpers_cover_empty_and_filter_branches():
@@ -135,6 +141,14 @@ def test_market_data_internal_helpers_cover_empty_and_filter_branches():
     pit = pl.DataFrame({"symbol": ["AAA"], "effective_start": ["2026-01-01"], "effective_end": ["2026-12-31"]})
     filtered = _apply_point_in_time_filter(pit, datetime(2026, 6, 1), warn_current_only=False)
     assert filtered.height == 1
+
+
+def test_get_universe_symbols_wraps_racy_file_not_found(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    (paths["universe_dir"] / "custom.csv").write_text("symbol\nAAA\n", encoding="utf-8")
+    monkeypatch.setattr("tradinglab_data.market_data._read_csv", lambda path: (_ for _ in ()).throw(FileNotFoundError("gone")))
+    with pytest.raises(UniverseNotFoundError, match="universe not found"):
+        get_universe_symbols(universe_id="custom")
 
 
 def test_read_csv_wraps_parser_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -153,11 +167,14 @@ def test_market_data_reader_helpers_cover_window_and_calendar_branches(tmp_path:
     pl.DataFrame({"date": ["2025-01-01"], "adj_close": [1.0]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["daily"] / "OUT.parquet")
     pl.DataFrame({"date": ["2026-01-02"]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["daily"] / "INCOMPLETE.parquet")
     (paths["daily"] / "BROKEN.parquet").write_text("not parquet", encoding="utf-8")
+    pl.DataFrame({"adj_close": [1.0]}).write_parquet(paths["daily"] / "SCHEMA.parquet")
 
     incomplete = _read_daily_adjusted_close(paths["daily"], "INCOMPLETE", datetime(2026, 1, 1), datetime(2026, 1, 3))
     outside = _read_daily_adjusted_close(paths["daily"], "OUT", datetime(2026, 1, 1), datetime(2026, 1, 3))
+    bad_schema = _read_daily_adjusted_close(paths["daily"], "SCHEMA", datetime(2026, 1, 1), datetime(2026, 1, 3))
     assert incomplete.is_empty()
     assert outside.is_empty()
+    assert bad_schema.is_empty()
 
     caps_out = pl.DataFrame({"date": ["2025-01-01"], "market_cap_usd_millions": [1.0]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False))
     caps_daily = _daily_market_cap_frame("AAA", caps_out, pl.DataFrame(schema={"date": pl.Datetime}))
@@ -171,6 +188,23 @@ def test_market_data_reader_helpers_cover_window_and_calendar_branches(tmp_path:
     assert "dropping symbol with insufficient adjusted-price coverage: SPARSE" in caplog.text
 
 
+def test_read_daily_adjusted_close_handles_missing_columns_after_read(tmp_path: Path):
+    root = tmp_path / "daily"
+    root.mkdir()
+    path = root / "AAA.parquet"
+    path.write_text("placeholder", encoding="utf-8")
+    original = pl.read_parquet
+
+    def fake_read_parquet(target, *args, **kwargs):
+        if Path(target) == path:
+            return pl.DataFrame({"date": [datetime(2026, 1, 1)]})
+        return original(target, *args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("tradinglab_data.market_data.pl.read_parquet", fake_read_parquet)
+        assert _read_daily_adjusted_close(root, "AAA", datetime(2026, 1, 1), datetime(2026, 1, 3)).is_empty()
+
+
 def test_market_cap_and_index_reader_helpers_cover_remaining_drop_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
     paths = _write_config(tmp_path, monkeypatch)
     caplog.set_level(logging.WARNING)
@@ -182,9 +216,12 @@ def test_market_cap_and_index_reader_helpers_cover_remaining_drop_paths(tmp_path
         paths["index_returns"] / "NDX.parquet"
     )
     assert _read_index_return_frame(paths["index_returns"], "NDX", datetime(2026, 1, 1), datetime(2026, 1, 3)).is_empty()
+    with pytest.raises(DataNotFoundError, match="no requested index_ids could be loaded"):
+        get_index_returns(["spx", "SPX", "", "UNKNOWN"], "2026-01-01", "2026-01-03")
     assert "dropping symbol with no market-cap data in requested window: AAA" in caplog.text
     assert "dropping index with no return artifact: SPX" in caplog.text
     assert "dropping index with no data in requested window: NDX" in caplog.text
+    assert "dropping unsupported index_id: UNKNOWN" in caplog.text
 
 
 def test_get_universe_symbols_requires_point_in_time_columns_for_as_of(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

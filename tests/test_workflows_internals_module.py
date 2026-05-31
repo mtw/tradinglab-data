@@ -68,6 +68,8 @@ def test_load_intraday_research_symbols_filters_types_and_overrides(tmp_path: Pa
 
     assert selected == ["AAPL"]
     assert "MISSING" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="No requested symbols found in selected intraday universe."):
+        workflows._load_intraday_research_symbols_from_cfg(cfg, intraday_cfg, universe="pilot", symbols_override=["MISSING"])
 
 
 def test_load_intraday_research_symbols_empty_default_universe_path(tmp_path: Path, dummy_cfg_factory, monkeypatch):
@@ -113,6 +115,32 @@ def test_load_intraday_live_symbols_file_not_found_and_empty_selection(tmp_path:
     (universe_dir / "live.csv").write_text("symbol,instrument_type,active\nAAA,crypto,1\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="No symbols resolved"):
         workflows._load_intraday_live_symbols_from_cfg(cfg, live_cfg, universe="live")
+
+
+def test_load_intraday_live_symbols_uses_default_universe_when_name_is_blank(tmp_path: Path, dummy_cfg_factory, monkeypatch, capsys):
+    universe = tmp_path / "universe.csv"
+    universe.write_text("symbol,source,instrument_type\nAAA,universe,stock\nBBB,exchange,etf\n", encoding="utf-8")
+    cfg = dummy_cfg_factory({"paths": {"universe_csv": universe, "universe_dir": tmp_path}})
+    monkeypatch.setattr(workflows, "ticker_overrides_path", lambda cfg: None)
+    live_cfg = workflows._IntradayLiveConfig(
+        enabled=True,
+        root=str(tmp_path / "live"),
+        interval="5m",
+        provider="yahoo",
+        exchange_timezone="America/New_York",
+        default_universe="",
+        retention_days=0,
+        chunk_size=1,
+        sleep_seconds=0,
+        max_retries=1,
+        backoff_max_seconds=1,
+        threads=False,
+        warning_state_path=tmp_path / "state.json",
+        log_repeat_cooldown_hours=1,
+    )
+
+    assert workflows._load_intraday_live_symbols_from_cfg(cfg, live_cfg, universe=None, symbols_override=["AAA", "MISSING"]) == ["AAA"]
+    assert "MISSING" in capsys.readouterr().out
 
 
 def test_migrate_symbol_alias_parquet_moves_daily_and_intraday(tmp_path: Path, monkeypatch, capsys):
@@ -260,6 +288,8 @@ def test_run_intraday_update_disabled_and_failure_paths(tmp_path: Path, monkeypa
     assert workflows._run_intraday_update(symbols=["AAA"], runs_root=tmp_path, parquet_root=tmp_path, intraday_cfg=enabled, log_path=tmp_path / "log.csv") is None
     assert log_calls[0][1] == "__extended_hours__"
     assert "extended-hours update failed" in capsys.readouterr().out
+    monkeypatch.setattr(workflows, "_execute_intraday_update", lambda **kwargs: ({"ok": 1}, "report"))
+    assert workflows._run_intraday_update(symbols=["AAA"], runs_root=tmp_path, parquet_root=tmp_path, intraday_cfg=enabled, log_path=tmp_path / "log.csv") == {"ok": 1}
 
 
 def test_intraday_validation_helpers_and_cached_fetchers():
@@ -455,6 +485,77 @@ def test_run_stooq_update_covers_empty_error_and_recent_merge_paths(monkeypatch,
     assert any(call[2] == "stooq_empty_data" for call in log_calls)
     assert any("stooq_error:boom" in call[2] for call in log_calls)
     assert any(call[2] == "stooq_yf_recent_empty_after_sanitize" for call in log_calls)
+    log_calls.clear()
+    monkeypatch.setattr(
+        workflows,
+        "fetch_yfinance_history_bulk",
+        lambda symbols, **kwargs: {
+            "KEEP": pl.DataFrame({"date": ["2026-01-03"], "open": [3.0], "high": [3.1], "low": [2.9], "close": [3.0], "adj_close": [3.0], "volume": [100.0], "currency": ["USD"]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)),
+            "ERRWRITE": pl.DataFrame({"date": ["2026-01-03"], "open": [3.0], "high": [3.1], "low": [2.9], "close": [3.0], "adj_close": [3.0], "volume": [100.0], "currency": ["USD"]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)),
+            "EMPTYRECENT": pl.DataFrame(),
+        },
+    )
+    pl.DataFrame(
+        {
+            "date": ["2026-01-01"],
+            "open": [1.0],
+            "high": [1.2],
+            "low": [0.8],
+            "close": [1.1],
+            "adj_close": [1.1],
+            "volume": [100.0],
+            "currency": ["USD"],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(parquet_root / "KEEP.parquet")
+    pl.DataFrame(
+        {
+            "date": ["2026-01-01"],
+            "open": [1.0],
+            "high": [1.2],
+            "low": [0.8],
+            "close": [1.1],
+            "adj_close": [1.1],
+            "volume": [100.0],
+            "currency": ["USD"],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(parquet_root / "ERRWRITE.parquet")
+    pl.DataFrame(
+        {
+            "date": ["2026-01-01"],
+            "open": [1.0],
+            "high": [1.2],
+            "low": [0.8],
+            "close": [1.1],
+            "adj_close": [1.1],
+            "volume": [100.0],
+            "currency": ["USD"],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(parquet_root / "EMPTYRECENT.parquet")
+    monkeypatch.setattr(
+        workflows,
+        "read_parquet_if_exists",
+        lambda path: pl.DataFrame(
+            {
+                "date": ["2026-01-01", "2026-01-02"],
+                "open": [1.0, 1.0],
+                "high": [1.2, 1.2],
+                "low": [0.8, 0.8],
+                "close": [1.1, 1.1],
+                "adj_close": [1.1, 1.1],
+                "volume": [100.0, 100.0],
+                "currency": ["USD", "USD"],
+            }
+        ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False))
+        if path.name == "KEEP.parquet"
+        else pl.read_parquet(path)
+    )
+    monkeypatch.setattr(workflows, "_prepare_history_frame", lambda df, cur: None if df.height > 1 else df)
+    workflows._run_stooq_update(cfg, ["KEEP", "EMPTYRECENT"])
+    monkeypatch.setattr(workflows, "_prepare_history_frame", lambda df, cur: df)
+    monkeypatch.setattr(workflows, "read_parquet_if_exists", lambda path: pl.read_parquet(path) if path.exists() else None)
+    monkeypatch.setattr(workflows, "align_for_concat", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("align boom")))
+    workflows._run_stooq_update(cfg, ["ERRWRITE"])
+    assert any("stooq_yf_recent_error:align boom" in call[2] for call in log_calls)
 
 
 def test_run_yfinance_update_and_incremental_helpers_cover_remaining_branches(monkeypatch, tmp_path: Path, capsys):
@@ -514,6 +615,15 @@ def test_run_yfinance_update_and_incremental_helpers_cover_remaining_branches(mo
     monkeypatch.setattr(workflows, "_upsert_symbol_parquet", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("strict boom")))
     workflows._fetch_and_write_strict_symbols(["S"], root=root, update_cfg=cfg, currency_cache={})
     assert any("strict boom" in call[2] for call in log_calls)
+    monkeypatch.setattr(workflows, "_fetch_and_write_new_symbols", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("new boom")))
+    monkeypatch.setattr(workflows, "_merge_incremental_symbols", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(workflows, "_fetch_and_write_strict_symbols", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("strict stage boom")))
+    with pytest.raises(RuntimeError, match="new boom"):
+        workflows._run_yfinance_update(cfg, ["A"])
+
+    monkeypatch.setattr(workflows, "_fetch_and_write_new_symbols", lambda *args, **kwargs: None)
+    with pytest.raises(RuntimeError, match="strict stage boom"):
+        workflows._run_yfinance_update(cfg, ["A"])
 
 
 def test_write_and_upsert_symbol_parquet_cover_empty_and_sort_branches(monkeypatch, tmp_path: Path):
@@ -552,5 +662,8 @@ def test_write_and_upsert_symbol_parquet_cover_empty_and_sort_branches(monkeypat
     assert workflows._upsert_symbol_parquet(tmp_path / "C.parquet", "C", None, currency="USD", cfg=cfg, empty_reason="empty") is False
     monkeypatch.setattr(workflows, "read_parquet_if_exists", lambda path: None)
     assert workflows._upsert_symbol_parquet(tmp_path / "D.parquet", "D", frame, currency="USD", cfg=cfg, empty_reason="empty", sort_before_write=True) is True
+    monkeypatch.setattr(workflows, "read_parquet_if_exists", lambda path: frame)
+    monkeypatch.setattr(workflows, "_prepare_history_frame", lambda df, cur: None if df is frame else frame)
+    assert workflows._upsert_symbol_parquet(tmp_path / "E.parquet", "E", frame, currency="USD", cfg=cfg, empty_reason="empty", sort_before_write=True) is False
     assert any(call[1] == "A" for call in log_calls)
     assert integrity_calls

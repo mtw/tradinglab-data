@@ -36,6 +36,7 @@ def test_canonicalize_yahoo_exchange_collapses_common_aliases():
     assert canonicalize_yahoo_exchange("NasdaqGM") == "NASDAQ"
     assert canonicalize_yahoo_exchange("NYSEArca") == "ARCA"
     assert canonicalize_yahoo_exchange("LSE") == "LSE"
+    assert canonicalize_yahoo_exchange("") == ""
 
 
 def test_normalize_name_for_compare_collapses_punctuation_and_case():
@@ -193,6 +194,69 @@ def test_make_browser_snapshot_fetcher_supports_fake_playwright(monkeypatch):
     assert snapshot.exchange_canonical == "NYSE"
     assert snapshot.currency == "USD"
     assert "http_status_404" in snapshot.parse_issue
+    assert closed == ["context", "browser", "pw"]
+
+
+def test_make_browser_snapshot_fetcher_skips_consent_when_not_on_consent_domain(monkeypatch):
+    closed: list[str] = []
+
+    class FakePage:
+        def __init__(self):
+            self.url = "https://finance.yahoo.com/quote/AAA/"
+
+        def set_default_timeout(self, timeout):
+            self.timeout = timeout
+
+        def goto(self, target_url, wait_until=None, timeout=None):
+            self.url = target_url
+            return type("Resp", (), {"status": 200})()
+
+        def wait_for_timeout(self, ms):
+            return None
+
+        def locator(self, selector):
+            return type("Loc", (), {"inner_text": lambda self, timeout=None: '# Test Name (AAA)\nNYSE - Delayed Quote USD'})()
+
+        def title(self):
+            return "Test Name (AAA) Stock Price - Yahoo Finance"
+
+        def get_by_role(self, role, name):
+            raise AssertionError("consent handler should not click buttons")
+
+    class FakeContext:
+        def new_page(self):
+            return FakePage()
+
+        def close(self):
+            closed.append("context")
+
+    class FakeBrowser:
+        def new_context(self, locale="en-US"):
+            return FakeContext()
+
+        def close(self):
+            closed.append("browser")
+
+    class FakeChromium:
+        def launch(self, headless=True):
+            return FakeBrowser()
+
+    class FakePW:
+        chromium = FakeChromium()
+
+        def stop(self):
+            closed.append("pw")
+
+    class FakeSyncPlaywright:
+        def start(self):
+            return FakePW()
+
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", types.SimpleNamespace(sync_playwright=lambda: FakeSyncPlaywright()))
+    fetch, close = make_browser_snapshot_fetcher()
+    snapshot = fetch("AAA")
+    close()
+
+    assert snapshot.exchange_canonical == "NYSE"
     assert closed == ["context", "browser", "pw"]
 
 
