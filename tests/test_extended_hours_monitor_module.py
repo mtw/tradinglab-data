@@ -330,6 +330,154 @@ def test_update_intraday_interval_preserves_old_rows_when_retention_disabled(tmp
     assert stored.get_column("date").min() == old_frame.get_column("date").min()
 
 
+def test_update_intraday_interval_skips_empty_and_unchanged_frames(tmp_path: Path):
+    now = datetime.now().replace(microsecond=0)
+    out_dir = tmp_path / "intraday" / "5m"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    old_path = out_dir / "AAA.parquet"
+    old = pl.DataFrame(
+        {
+            "date": [now - timedelta(minutes=5), now],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.5, 101.5],
+            "adj_close": [100.5, 101.5],
+            "volume": [100.0, 200.0],
+            "currency": ["USD", "USD"],
+        }
+    )
+    old.write_parquet(old_path)
+
+    empty = eh._update_intraday_interval(
+        ["EMPTY"],
+        "5m",
+        "10d",
+        out_dir,
+        retention_days=10,
+        prepost=True,
+        chunk_size=20,
+        sleep_seconds=0.0,
+        max_retries=1,
+        backoff_max_seconds=1.0,
+        threads=False,
+        log_path=None,
+        fetch_intraday_fn=lambda **kwargs: {"EMPTY": pl.DataFrame()},
+        read_frame_fn=lambda path: None,
+        fetch_currency_fn=lambda symbol: "USD",
+    )
+    assert empty == []
+
+    unchanged = eh._update_intraday_interval(
+        ["AAA"],
+        "5m",
+        "10d",
+        out_dir,
+        retention_days=10,
+        prepost=True,
+        chunk_size=20,
+        sleep_seconds=0.0,
+        max_retries=1,
+        backoff_max_seconds=1.0,
+        threads=False,
+        log_path=None,
+        fetch_intraday_fn=lambda **kwargs: {"AAA": old.drop("currency")},
+        read_frame_fn=lambda path: pl.read_parquet(path),
+        fetch_currency_fn=lambda symbol: "USD",
+    )
+    assert unchanged == ["AAA"]
+
+    trimmed = eh._update_intraday_interval(
+        ["OLD"],
+        "5m",
+        "10d",
+        out_dir,
+        retention_days=1,
+        prepost=True,
+        chunk_size=20,
+        sleep_seconds=0.0,
+        max_retries=1,
+        backoff_max_seconds=1.0,
+        threads=False,
+        log_path=None,
+        fetch_intraday_fn=lambda **kwargs: {"OLD": old.drop("currency").with_columns(pl.col("date") - timedelta(days=3000))},
+        read_frame_fn=lambda path: None,
+        fetch_currency_fn=lambda symbol: "USD",
+    )
+    assert trimmed == []
+
+
+def test_update_extended_hours_store_prefers_nonbroken_candidate_and_skips_when_none(tmp_path: Path, monkeypatch):
+    intraday_root = tmp_path / "intraday"
+    pref_dir = intraday_root / "5m"
+    fb_dir = intraday_root / "1m"
+    pref_dir.mkdir(parents=True, exist_ok=True)
+    fb_dir.mkdir(parents=True, exist_ok=True)
+    (pref_dir / "BROKEN.parquet").write_bytes(b"not parquet")
+    (fb_dir / "NONE.parquet").write_bytes(b"not parquet")
+
+    monkeypatch.setattr(eh, "fetch_extended_intraday", lambda **kwargs: {})
+    monkeypatch.setattr(eh, "fetch_symbol_currency", lambda symbol: "USD")
+    monkeypatch.setattr(eh, "load_daily_reference_closes", lambda symbols, daily_root: {})
+    monkeypatch.setattr(eh, "read_parquet_if_exists", lambda path: None)
+
+    out = eh.update_extended_hours_store(
+        symbols=["BROKEN", "NONE"],
+        intraday_root=intraday_root,
+        daily_root=tmp_path / "daily",
+        preferred_interval="5m",
+        fallback_interval="1m",
+        retention_days=10,
+        pct_move_threshold=2.0,
+    )
+
+    assert out["symbols"] == 2
+
+
+def test_update_extended_hours_store_handles_candidate_max_errors(tmp_path: Path, monkeypatch):
+    intraday_root = tmp_path / "intraday"
+    pref_dir = intraday_root / "5m"
+    pref_dir.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({"date": [datetime(2026, 1, 1)], "open": [1.0], "high": [2.0], "low": [0.5], "close": [1.5], "adj_close": [1.5], "volume": [100.0], "currency": ["USD"]}).write_parquet(pref_dir / "AAA.parquet")
+
+    class BadSelectFrame(pl.DataFrame):
+        def select(self, *args, **kwargs):  # type: ignore[override]
+            raise RuntimeError("bad max")
+
+    def fake_read(path: Path):
+        if path.name == "AAA.parquet":
+            return BadSelectFrame(
+                {
+                    "date": [datetime(2026, 1, 1)],
+                    "open": [1.0],
+                    "high": [2.0],
+                    "low": [0.5],
+                    "close": [1.5],
+                    "adj_close": [1.5],
+                    "volume": [100.0],
+                    "currency": ["USD"],
+                }
+            )
+        return None
+
+    monkeypatch.setattr(eh, "fetch_extended_intraday", lambda **kwargs: {})
+    monkeypatch.setattr(eh, "fetch_symbol_currency", lambda symbol: "USD")
+    monkeypatch.setattr(eh, "load_daily_reference_closes", lambda symbols, daily_root: {})
+    monkeypatch.setattr(eh, "read_parquet_if_exists", fake_read)
+
+    out = eh.update_extended_hours_store(
+        symbols=["AAA", "MISSING"],
+        intraday_root=intraday_root,
+        daily_root=tmp_path / "daily",
+        preferred_interval="5m",
+        fallback_interval="1m",
+        retention_days=10,
+        pct_move_threshold=2.0,
+    )
+
+    assert out["symbols"] == 2
+
+
 def test_update_extended_hours_store_rejects_unsupported_interval(tmp_path: Path):
     daily_root = tmp_path / "daily"
     daily_root.mkdir(parents=True, exist_ok=True)

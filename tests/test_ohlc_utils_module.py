@@ -44,6 +44,12 @@ def test_currency_helpers_resolve_from_frame_fetcher_and_cache():
     assert ohlc.resolve_currency("AAA", lambda symbol: "EUR", df_hint=frame, cache=cache) == "USD"
     assert ohlc.resolve_currency("AAA", lambda symbol: "EUR", cache=cache) == "USD"
     assert ohlc.resolve_currency("BBB", lambda symbol: None, cache=cache) == "UNKNOWN"
+    assert ohlc.currency_from_df(_frame(currency="")) is None
+    assert ohlc.currency_from_df(pl.DataFrame({"currency": [None]})) is None
+    assert ohlc.currency_from_df(_frame().drop("date").drop("open").drop("high").drop("low").drop("close").drop("adj_close").drop("volume")) is None
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("tradinglab_data._ohlc_utils.pl.DataFrame.select", lambda self, *args, **kwargs: (_ for _ in ()).throw(RuntimeError("bad")))
+        assert ohlc.currency_from_df(frame) is None
 
 
 def test_ensure_currency_fills_missing_and_postprocesses():
@@ -54,6 +60,8 @@ def test_ensure_currency_fills_missing_and_postprocesses():
     assert out.get_column("currency").to_list() == ["EUR", "EUR"]
     assert out.get_column("tag").to_list() == ["x", "x"]
     assert ohlc.ensure_currency(None, "USD") is None
+    existing = _frame(currency="usd")
+    assert ohlc.ensure_currency(existing, "EUR").get_column("currency").to_list() == ["usd", "usd"]
 
 
 def test_align_for_concat_adds_missing_columns_casts_and_orders():
@@ -72,6 +80,9 @@ def test_align_for_concat_adds_missing_columns_casts_and_orders():
     assert right_out.schema["volume"] == pl.Float64
     assert left_out.get_column("currency").to_list() == ["USD"]
     assert "extra" in right_out.columns
+    a, b = ohlc.align_for_concat(pl.DataFrame({"x": [1]}), pl.DataFrame({"y": [2]}), schema={}, preferred_columns=None)
+    assert a.columns == ["x", "y"]
+    assert b.columns == ["x", "y"]
 
 
 def test_needs_incremental_write_covers_empty_newer_changed_and_malformed():
@@ -85,6 +96,24 @@ def test_needs_incremental_write_covers_empty_newer_changed_and_malformed():
     assert ohlc.needs_incremental_write(old, newer)
     assert ohlc.needs_incremental_write(old.with_columns(pl.lit("USD").alias("currency")), changed)
     assert ohlc.needs_incremental_write(old.drop("date"), same)
+    assert ohlc.needs_incremental_write(old, _frame(["2025-12-31"])) is False
+    same_last = old.tail(1).with_columns(pl.lit(None).alias("currency"))
+    assert ohlc.needs_incremental_write(old.with_columns(pl.lit(None).alias("currency")), same_last) is False
+    assert ohlc.needs_incremental_write(pl.DataFrame({"date": [None], "open": [1.0]}), pl.DataFrame({"date": [datetime(2026, 1, 1)], "open": [1.0]})) is True
+    assert ohlc.needs_incremental_write(
+        pl.DataFrame({"date": [datetime(2026, 1, 1)]}),
+        pl.DataFrame({"date": [datetime(2026, 1, 1)]}),
+        compare_columns=[],
+    ) is False
+    assert ohlc.needs_incremental_write(
+        pl.DataFrame({"date": [datetime(2026, 1, 1)], "open": [1.0]}),
+        pl.DataFrame({"date": [datetime(2026, 1, 1)], "open": [1.0]}),
+        compare_values=lambda a, b: (_ for _ in ()).throw(RuntimeError("cmp")),
+    ) is True
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("tradinglab_data._ohlc_utils.pl.DataFrame.select", lambda self, *args, **kwargs: (_ for _ in ()).throw(RuntimeError("bad max")))
+        assert ohlc.needs_incremental_write(old, same) is True
+    assert ohlc.needs_incremental_write(pl.DataFrame({"date": [None]}), same) is True
 
 
 def test_sanitize_and_quality_counts_drop_bad_rows_and_count_issues():
@@ -109,6 +138,9 @@ def test_sanitize_and_quality_counts_drop_bad_rows_and_count_issues():
         "bad_ohlc": 1,
         "dup_dates": 1,
     }
+    assert ohlc.sanitize_ohlc_df(pl.DataFrame({"x": [1]})).to_dicts() == [{"x": 1}]
+    assert ohlc.sanitize_ohlc_df(pl.DataFrame()).is_empty()
+    assert ohlc.ohlc_quality_counts(pl.DataFrame()) == {"null_ohlc": 0, "bad_ohlc": 0, "dup_dates": 0}
 
 
 def test_assert_postwrite_integrity_logs_and_raises(tmp_path: Path):
@@ -139,6 +171,15 @@ def test_assert_postwrite_integrity_logs_and_raises(tmp_path: Path):
         "AAA",
         enabled=False,
         read_frame=lambda path: bad,
+        append_log=lambda *args: log_calls.append(args),
+        log_path=tmp_path / "update_log.csv",
+    )
+    good = _frame()
+    ohlc.assert_postwrite_integrity(
+        tmp_path / "AAA.parquet",
+        "AAA",
+        enabled=True,
+        read_frame=lambda path: good,
         append_log=lambda *args: log_calls.append(args),
         log_path=tmp_path / "update_log.csv",
     )

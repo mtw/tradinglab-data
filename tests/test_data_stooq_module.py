@@ -12,6 +12,9 @@ def test_stooq_symbol_from_yahoo_basic_mappings():
     assert stooq.stooq_symbol_from_yahoo("AAPL") == "aapl.us"
     assert stooq.stooq_symbol_from_yahoo("EBS.VI") == "ebs.at"
     assert stooq.stooq_symbol_from_yahoo("ADS.DE") == "ads.de"
+    assert stooq.stooq_symbol_from_yahoo("") == ""
+    assert stooq.stooq_symbol_from_yahoo("ABC.SW") == "abc.ch"
+    assert stooq.stooq_symbol_from_yahoo("ABC.XX") == "abc.xx"
 
 
 def test_infer_currency_from_symbol():
@@ -44,6 +47,13 @@ def test_parse_stooq_csv_text_empty_returns_canonical_empty_frame():
         "adj_close": pl.Float64,
         "volume": pl.Float64,
     }
+
+
+def test_parse_stooq_csv_text_handles_empty_parsed_frame_and_missing_required_columns(monkeypatch):
+    monkeypatch.setattr(stooq.pl, "read_csv", lambda *args, **kwargs: pl.DataFrame())
+    assert stooq._parse_stooq_csv_text("Date,Open\n") .is_empty()
+    monkeypatch.setattr(stooq.pl, "read_csv", lambda *args, **kwargs: pl.DataFrame({"Date": ["2020-01-01"], "Open": [1.0]}))
+    assert stooq._parse_stooq_csv_text("Date,Open\n2020-01-01,1\n").is_empty()
 
 
 def test_parse_stooq_csv_text_missing_volume_fills_zero():
@@ -85,6 +95,12 @@ def test_fetch_stooq_history_falls_back_to_next_candidate(monkeypatch):
     assert any("ebs.at" in url for url in requested_urls)
     assert any("ebs.vi" in url for url in requested_urls)
     assert df.get_column("close").to_list() == [105.0]
+
+
+def test_fetch_stooq_history_empty_symbol_and_all_failures(monkeypatch):
+    assert stooq.fetch_stooq_history(stooq.StooqDownloadSpec(symbol="")).is_empty()
+    monkeypatch.setattr(stooq, "urlopen", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("nope")))
+    assert stooq.fetch_stooq_history(stooq.StooqDownloadSpec(symbol="AAPL")).is_empty()
 
 
 @pytest.mark.network
