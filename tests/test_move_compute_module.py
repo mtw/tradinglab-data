@@ -7,6 +7,7 @@ import polars as pl
 import pytest
 
 import tradinglab_data._move_compute as moves
+import tradinglab_data.market_timezones as market_timezones
 
 
 def _intraday_frame(*, with_currency: bool = True, with_volume: bool = True) -> pl.DataFrame:
@@ -56,6 +57,26 @@ def test_load_daily_reference_closes_reads_tail_currency_and_skips_bad_files(tmp
     out = moves.load_daily_reference_closes(["AAA", "MISSING", "NO_CLOSE", "EMPTY"], root)
 
     assert out == {"AAA": {"close": 11.0, "currency": "EUR"}}
+
+
+def test_load_daily_reference_closes_skips_empty_tail_via_reader_patch(tmp_path: Path, monkeypatch):
+    root = tmp_path / "daily"
+    root.mkdir()
+
+    class FakeFrame:
+        columns = ["date", "close"]
+
+        def is_empty(self):
+            return False
+
+        def sort(self, column):
+            return self
+
+        def tail(self, size):
+            return pl.DataFrame({"date": [], "close": []})
+
+    monkeypatch.setattr(moves, "read_parquet_if_exists", lambda path: FakeFrame())
+    assert moves.load_daily_reference_closes(["AAA"], root) == {}
 
 
 def test_daily_close_frame_accepts_float_and_dict_values():
@@ -119,3 +140,9 @@ def test_detect_alerts_and_summarize_gap_report_filters_and_sorts():
     assert post.get_column("symbol").to_list() == ["AAA", "BBB"]
     assert moves.detect_alerts(pl.DataFrame(), threshold=1).is_empty()
     assert moves.summarize_gap_report(pl.DataFrame(), threshold=1).is_empty()
+
+
+def test_market_timezone_resolution_wrapper_uses_session_spec():
+    assert market_timezones.resolve_exchange_timezone_for_symbol("ALV.DE") == "Europe/Berlin"
+    spec = market_timezones.resolve_market_session_spec_for_symbol("UNKNOWN", default_timezone="UTC")
+    assert spec.timezone_name == "UTC"

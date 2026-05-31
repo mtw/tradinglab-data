@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
+import pytest
 
 import tradinglab_data as pkg
 import tradinglab_data.data_yf as data_yf
@@ -105,3 +106,11 @@ def test_compatibility_manifest_export_contains_artifact_version():
     manifest = pkg.compatibility_manifest()
     assert manifest["artifact_schema_version"] == pkg.ARTIFACT_SCHEMA_VERSION
     assert manifest["dataframe_policy"] == pkg.DATAFRAME_POLICY
+
+
+def test_lazy_module_export_dir_and_unknown_attr():
+    assert pkg.__getattr__("contracts").__name__ == "tradinglab_data.contracts"
+    assert pkg.contracts.__name__ == "tradinglab_data.contracts"
+    assert "contracts" in dir(pkg)
+    with pytest.raises(AttributeError):
+        getattr(pkg, "does_not_exist")

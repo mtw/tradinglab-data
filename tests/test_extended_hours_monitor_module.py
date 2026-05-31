@@ -45,6 +45,13 @@ def test_persist_alerts_csv(tmp_path: Path):
     assert "AAPL,2.5" in text
 
 
+def test_persist_alerts_parquet(tmp_path: Path):
+    alerts = pl.DataFrame({"symbol": ["AAPL"], "pct_move": [2.5]})
+    out = eh.persist_alerts(alerts, tmp_path / "alerts.parquet")
+    assert out.exists()
+    assert pl.read_parquet(out).to_dicts() == [{"symbol": "AAPL", "pct_move": 2.5}]
+
+
 def test_persist_extended_hours_report_html(tmp_path: Path):
     moves = pl.DataFrame(
         {
