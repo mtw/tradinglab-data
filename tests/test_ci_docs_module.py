@@ -12,7 +12,7 @@ def test_readme_and_ci_workflow_reference_same_core_commands():
     commands = [
         "python -m ruff check src tests",
         "python -m mypy src",
-        'PYTHONPATH=src python -m pytest -q -m "not network" tests --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85',
+        'PYTHONPATH=src python -m pytest -q tests --cov-fail-under=85',
         "PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown",
         "python -m build",
         "python -m twine check dist/*",
@@ -42,7 +42,8 @@ def test_pyproject_and_ci_define_hatch_quality_environment():
     assert "[tool.hatch.envs.default]" in pyproject
     assert 'features = ["test", "dev"]' in pyproject
     assert '[tool.hatch.envs.default.scripts]' in pyproject
-    assert 'test = "pytest -q -m \'not network\' tests --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85"' in pyproject
+    assert 'test = "pytest -q tests --cov-fail-under=85"' in pyproject
+    assert 'addopts = "-m \'not network\' --cov=src/tradinglab_data --cov-report=term-missing"' in pyproject
     assert 'lint = "ruff check src tests scripts"' in pyproject
     assert 'typecheck = "mypy src"' in pyproject
     assert "python -m pip install hatch" in workflow

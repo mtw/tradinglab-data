@@ -17,7 +17,7 @@ Consumers should import `tradinglab_data` from the installed package, not from i
 1. Bump version in `pyproject.toml`
 2. Run `python -m ruff check src tests`
 3. Run `python -m mypy src`
-4. Run `PYTHONPATH=src python -m pytest -q -m "not network" tests --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85`
+4. Run `PYTHONPATH=src python -m pytest -q tests --cov-fail-under=85`
 5. Run `PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown`
 6. Verify `tradinglab_data.DATAFRAME_POLICY == "polars-first"` remains true for public tabular Python APIs
 7. Build distributions with `python -m build`

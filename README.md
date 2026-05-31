@@ -317,7 +317,7 @@ Run the package checks before finishing code changes:
 ```bash
 python -m ruff check src tests
 python -m mypy src
-PYTHONPATH=src python -m pytest -q -m "not network" tests --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85
+PYTHONPATH=src python -m pytest -q tests --cov-fail-under=85
 PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown
 python -m build
 python -m twine check dist/*

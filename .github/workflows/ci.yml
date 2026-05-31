@@ -59,7 +59,7 @@ jobs:
         run: python -m mypy src
 
       - name: Run package tests
-        run: PYTHONPATH=src python -m pytest -q -m "not network" tests --cov=src/tradinglab_data --cov-report=term-missing --cov-fail-under=85
+        run: PYTHONPATH=src python -m pytest -q tests --cov-fail-under=85
 
       - name: Smoke-check schema CLI
         run: PYTHONPATH=src python -m tradinglab_data.cli schema --format markdown
