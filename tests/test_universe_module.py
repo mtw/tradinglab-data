@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import polars as pl
+import pytest
 
+import tradinglab_data.universe as universe_mod
 from tradinglab_data.universe import load_universe, load_universe_frame
 
 
@@ -75,3 +77,41 @@ def test_load_universe_frame_concats_shards_with_different_columns(tmp_path: Pat
     assert df.get_column("symbol").to_list() == ["AAA", "BBB"]
     assert "name" in df.columns
     assert "exchange" in df.columns
+
+
+def test_universe_overrides_and_csv_read_failures_warn_and_fallback(tmp_path: Path, monkeypatch, capsys):
+    malformed = tmp_path / "bad.csv"
+    malformed.write_text("symbol\nAAA\n", encoding="utf-8")
+    monkeypatch.setattr(universe_mod.pl, "read_csv", lambda path: (_ for _ in ()).throw(RuntimeError("bad csv")))
+    with pytest.raises(ValueError, match="symbol"):
+        load_universe_frame(malformed)
+    assert "failed to read universe CSV" in capsys.readouterr().out
+
+    shard_dir = tmp_path / "shards"
+    shard_dir.mkdir()
+    (shard_dir / "a.csv").write_text("symbol,active\nAAA,1\n", encoding="utf-8")
+    (shard_dir / "b.csv").write_text("symbol,active\nBBB,1\n", encoding="utf-8")
+
+    original = universe_mod.pl.read_csv
+
+    def fake_read_csv(path: str):
+        name = Path(path).name
+        if name == "a.csv":
+            raise OSError("skip")
+        if name == "b.csv":
+            raise RuntimeError("boom")
+        return original(path)
+
+    monkeypatch.setattr(universe_mod.pl, "read_csv", fake_read_csv)
+    with pytest.raises(ValueError, match="symbol"):
+        load_universe_frame(tmp_path / "missing.csv", universe_dir=shard_dir)
+    out = capsys.readouterr().out
+    assert "failed to read universe shard" in out
+
+    overrides = tmp_path / "overrides.csv"
+    overrides.write_text("raw,yahoo\nAAA,AAA.VI\n", encoding="utf-8")
+    monkeypatch.setattr(universe_mod.pl, "read_csv", lambda path: (_ for _ in ()).throw(RuntimeError("bad overrides")))
+    assert universe_mod.load_ticker_overrides(overrides) == {}
+    assert "failed to read ticker overrides" in capsys.readouterr().out
+    monkeypatch.setattr(universe_mod.pl, "read_csv", lambda path: (_ for _ in ()).throw(OSError("gone")))
+    assert universe_mod.load_ticker_overrides(overrides) == {}
