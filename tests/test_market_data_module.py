@@ -96,6 +96,29 @@ def test_get_universe_symbols_requires_point_in_time_columns_for_as_of(tmp_path:
         get_universe_symbols(as_of="2026-01-01")
 
 
+def test_get_universe_symbols_rejects_empty_universe_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _write_config(tmp_path, monkeypatch)
+
+    with pytest.raises(UniverseNotFoundError, match="non-empty"):
+        get_universe_symbols(universe_id="")
+
+
+def test_get_universe_symbols_rejects_missing_symbol_column(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    pl.DataFrame({"ticker": ["AAA"]}).write_csv(paths["meta"] / "universe_master.csv")
+
+    with pytest.raises(UniverseNotFoundError, match="no symbol column"):
+        get_universe_symbols()
+
+
+def test_get_universe_symbols_uses_default_shard_when_primary_csv_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    (paths["meta"] / "universe_master.csv").unlink(missing_ok=True)
+    pl.DataFrame({"symbol": ["AAA"], "active": [1]}).write_csv(paths["universe_dir"] / "default.csv")
+
+    assert get_universe_symbols() == ["AAA"]
+
+
 def test_get_universe_symbols_raises_when_default_universe_has_no_usable_symbols(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     paths = _write_config(tmp_path, monkeypatch)
     pl.DataFrame({"symbol": ["", "BAD SYMBOL", "$CASH"], "active": [1, 1, 1]}).write_csv(paths["meta"] / "universe_master.csv")
@@ -132,6 +155,25 @@ def test_total_returns_drop_missing_symbols_and_raise_when_none_load(tmp_path: P
     assert "dropping symbol with no daily parquet" in caplog.text
 
 
+def test_get_adjusted_prices_rejects_negative_max_ffill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    _write_daily(paths["daily"], "AAA", ["2026-01-02", "2026-01-05"], [1.0, 1.1])
+
+    with pytest.raises(ValueError, match="max_ffill must be non-negative"):
+        get_adjusted_prices(["AAA"], "2026-01-02", "2026-01-05", max_ffill=-1)
+
+
+def test_get_adjusted_prices_rejects_invalid_date_inputs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    _write_daily(paths["daily"], "AAA", ["2026-01-02", "2026-01-05"], [1.0, 1.1])
+
+    with pytest.raises(ValueError, match="start must be a valid date"):
+        get_adjusted_prices(["AAA"], "bad-date", "2026-01-05")
+
+    with pytest.raises(ValueError, match="start must be before end"):
+        get_adjusted_prices(["AAA"], "2026-01-05", "2026-01-05")
+
+
 def test_total_returns_reject_invalid_adjusted_price_jumps(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     paths = _write_config(tmp_path, monkeypatch)
     _write_daily(paths["daily"], "BAD", ["2026-01-02", "2026-01-05"], [1.0, 20.0])
@@ -147,6 +189,22 @@ def test_total_returns_allows_overriding_max_daily_return(tmp_path: Path, monkey
     returns = get_total_returns(["VOL"], "2026-01-02", "2026-01-05", max_daily_return=1.0)
 
     assert returns.filter(pl.col("date") == datetime(2026, 1, 5)).get_column("VOL").item() == pytest.approx(0.8)
+
+
+def test_total_returns_rejects_nonpositive_max_daily_return(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    _write_daily(paths["daily"], "AAA", ["2026-01-02", "2026-01-05"], [1.0, 1.1])
+
+    with pytest.raises(ValueError, match="max_daily_return must be positive"):
+        get_total_returns(["AAA"], "2026-01-02", "2026-01-05", max_daily_return=0)
+
+
+def test_get_adjusted_prices_rejects_nonpositive_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    _write_daily(paths["daily"], "BAD", ["2026-01-02", "2026-01-05"], [1.0, -1.0])
+
+    with pytest.raises(ValueError, match="strictly positive"):
+        get_adjusted_prices(["BAD"], "2026-01-02", "2026-01-05")
 
 
 def test_get_market_caps_monthly_daily_and_invalid_frequency(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -177,6 +235,33 @@ def test_get_market_caps_monthly_daily_and_invalid_frequency(tmp_path: Path, mon
     assert daily.get_column("AAA").item(21) is None
     with pytest.raises(ValueError):
         get_market_caps(["AAA"], "2026-01-01", "2026-02-15", frequency="weekly")
+
+
+def test_get_market_caps_raises_when_no_requested_symbols_can_be_loaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _write_config(tmp_path, monkeypatch)
+
+    with pytest.raises(DataNotFoundError, match="market-cap artifacts"):
+        get_market_caps(["MISSING"], "2026-01-01", "2026-02-15")
+
+
+def test_get_market_caps_rejects_nonpositive_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    pl.DataFrame(
+        {
+            "date": ["2026-01-31"],
+            "symbol": ["AAA"],
+            "market_cap_usd_millions": [-1.0],
+            "provider": ["fixture"],
+            "source_symbol": ["AAA"],
+            "ingested_at": ["2026-02-01"],
+        }
+    ).with_columns(
+        pl.col("date").str.strptime(pl.Datetime, strict=False),
+        pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
+    ).write_parquet(paths["market_caps"] / "AAA.parquet")
+
+    with pytest.raises(ValueError, match="strictly positive"):
+        get_market_caps(["AAA"], "2026-01-01", "2026-02-15")
 
 
 def test_get_sector_assignments_respects_order_vocab_and_current_only_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -229,6 +314,33 @@ def test_get_sector_assignments_filters_point_in_time_history(tmp_path: Path, mo
     assert get_sector_assignments(["AAA"], as_of="2026-06-01").get_column("sector").item() == "Communication Services"
 
 
+def test_get_sector_assignments_rejects_invalid_sector_vocab(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    pl.DataFrame({"symbol": ["AAA"], "sector": ["Not A Sector"], "source": ["fixture"]}).write_csv(paths["meta"] / "sector_assignments.csv")
+
+    with pytest.raises(ValueError, match="fixed GICS sector vocabulary"):
+        get_sector_assignments(["AAA"])
+
+
+def test_get_sector_assignments_rejects_missing_columns_and_missing_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+
+    with pytest.raises(DataNotFoundError, match="artifact not found"):
+        get_sector_assignments(["AAA"])
+
+    pl.DataFrame({"symbol": ["AAA"]}).write_csv(paths["meta"] / "sector_assignments.csv")
+    with pytest.raises(DataNotFoundError, match="no sector column"):
+        get_sector_assignments(["AAA"])
+
+
+def test_get_sector_assignments_raises_when_no_requested_symbols_match(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    pl.DataFrame({"symbol": ["AAA"], "sector": ["Information Technology"], "source": ["fixture"]}).write_csv(paths["meta"] / "sector_assignments.csv")
+
+    with pytest.raises(DataNotFoundError, match="no requested symbols have sector assignments"):
+        get_sector_assignments(["MISSING"])
+
+
 def test_get_index_returns_loads_supported_and_drops_unsupported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
     paths = _write_config(tmp_path, monkeypatch)
     pl.DataFrame(
@@ -252,3 +364,42 @@ def test_get_index_returns_loads_supported_and_drops_unsupported(tmp_path: Path,
     assert returns.filter(pl.col("date") == datetime(2026, 1, 5)).get_column("SPX").item() == pytest.approx(0.01)
     assert returns.get_column("SPX").drop_nulls().is_between(-0.5, 0.5).all()
     assert "dropping unsupported index_id: UNKNOWN" in caplog.text
+
+
+def test_get_index_returns_warns_on_price_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    pl.DataFrame(
+        {
+            "date": ["2026-01-02", "2026-01-05"],
+            "close": [100.0, 102.0],
+        }
+    ).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(paths["index_returns"] / "SPX.parquet")
+
+    with pytest.warns(UserWarning, match="price-return levels"):
+        returns = get_index_returns(["SPX"], "2026-01-02", "2026-01-05")
+
+    assert returns.columns == ["date", "SPX"]
+
+
+def test_get_index_returns_drops_artifacts_with_missing_date_or_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    paths = _write_config(tmp_path, monkeypatch)
+    caplog.set_level(logging.WARNING)
+    pl.DataFrame({"close": [100.0]}).write_parquet(paths["index_returns"] / "SPX.parquet")
+
+    with pytest.raises(DataNotFoundError, match="index_ids could be loaded"):
+        get_index_returns(["SPX"], "2026-01-02", "2026-01-05")
+
+    assert "dropping index with no date column: SPX" in caplog.text
+
+
+def test_get_index_returns_drops_artifacts_with_no_return_columns(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    paths = _write_config(tmp_path, monkeypatch)
+    caplog.set_level(logging.WARNING)
+    pl.DataFrame({"date": ["2026-01-02"]}).with_columns(pl.col("date").str.strptime(pl.Datetime, strict=False)).write_parquet(
+        paths["index_returns"] / "SPX.parquet"
+    )
+
+    with pytest.raises(DataNotFoundError, match="index_ids could be loaded"):
+        get_index_returns(["SPX"], "2026-01-02", "2026-01-05")
+
+    assert "dropping index with no return or total-return level column: SPX" in caplog.text
