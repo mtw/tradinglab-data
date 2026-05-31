@@ -43,6 +43,7 @@ Outputs:
 
 - daily parquet under `paths.parquet_root`
 - intraday parquet under `extended_hours.intraday_root`
+  This legacy extended-hours cache keeps the historical thin OHLC-only schema and is compatibility-oriented. New downstream consumers should prefer `intraday_research` or `intraday_live`.
 - maintenance log under `<paths.update_log_csv>`
 - extended-hours alerts/report under `<paths.runs_root>/YYYY-MM-DD/monitor/`
 

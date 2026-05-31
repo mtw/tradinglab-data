@@ -176,6 +176,7 @@ Machine-readable sources:
 
 - Polars-first: public tabular Python APIs return polars.DataFrame objects, schemas are expressed with Polars dtypes, and pandas-shaped provider outputs are normalized at ingestion boundaries.
 - One parquet file per symbol. Daily store: <paths.parquet_root>/<SYMBOL>.parquet. Intraday store: <extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet.
+- Legacy intraday monitoring cache: <extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet. This thin OHLC-only schema is retained for compatibility; downstream consumers should prefer intraday_research or intraday_live.
 - Intraday research store: <intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet.
 - Intraday live store: <intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet.
 - Crypto store: <paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet.
@@ -185,6 +186,7 @@ Machine-readable sources:
 - Index total-return store: <paths.index_returns_root>/<INDEX_ID>.parquet.
 - Authoritative symbol metadata lives under <paths.meta_root>/symbol_master.csv, with exchange defaults and symbol overrides as companion CSV artifacts.
 - OHLC columns are raw vendor OHLC. adj_close is adjusted close when supplied by the upstream provider. currency is the listing currency when known.
+- The legacy intraday parquet contract is an extended-hours monitoring cache with the historical OHLC-only schema. It is retained for compatibility and should not be treated as the preferred downstream analytical contract.
 - symbol_master.csv is the authoritative accounting metadata surface. Daily OHLC currency remains diagnostic provider data and is not authoritative accounting metadata. metadata_quality=non_authoritative_country and metadata_quality=non_authoritative_tax_country mark fallback fields derived from exchange_defaults.csv rather than provider-authoritative source data.
 - Intraday research parquet persists regular-session raw OHLCV bars with explicit UTC timestamp, session_date, provider, and symbol metadata.
 - Intraday live parquet persists session-aware raw OHLCV bars for pre, regular, and post sessions with explicit closed-bar and session metadata.

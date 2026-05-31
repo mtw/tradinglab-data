@@ -171,9 +171,16 @@ MOVE_ALERT_FRAME_SCHEMA: dict[str, SchemaDtype] = {
 }
 
 
+def _finalize_validation_errors(message: str, errors: list[str], *, raise_on_error: bool) -> list[str]:
+    if errors and raise_on_error:
+        raise ValueError(f"{message}: " + "; ".join(errors))
+    return errors
+
+
 SCHEMA_NOTES = {
     "dataframe_policy": "Polars-first: public tabular Python APIs return polars.DataFrame objects, schemas are expressed with Polars dtypes, and pandas-shaped provider outputs are normalized at ingestion boundaries.",
     "partitioning": "One parquet file per symbol. Daily store: <paths.parquet_root>/<SYMBOL>.parquet. Intraday store: <extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet.",
+    "intraday_partitioning": "Legacy intraday monitoring cache: <extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet. This thin OHLC-only schema is retained for compatibility; downstream consumers should prefer intraday_research or intraday_live.",
     "crypto_partitioning": "Crypto store: <paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet.",
     "intraday_research_partitioning": "Intraday research store: <intraday.research_root>/<INTERVAL>/<SYMBOL>.parquet.",
     "intraday_live_partitioning": "Intraday live store: <intraday_live.live_root>/<INTERVAL>/<SYMBOL>.parquet.",
@@ -184,6 +191,7 @@ SCHEMA_NOTES = {
     "symbol_master_partitioning": "Authoritative symbol metadata lives under <paths.meta_root>/symbol_master.csv, with exchange defaults and symbol overrides as companion CSV artifacts.",
     "semantics": "OHLC columns are raw vendor OHLC. adj_close is adjusted close when supplied by the upstream provider. currency is the listing currency when known.",
     "symbol_master_semantics": "symbol_master.csv is the authoritative accounting metadata surface. Daily OHLC currency remains diagnostic provider data and is not authoritative accounting metadata. metadata_quality=non_authoritative_country and metadata_quality=non_authoritative_tax_country mark fallback fields derived from exchange_defaults.csv rather than provider-authoritative source data.",
+    "intraday_semantics": "The legacy intraday parquet contract is an extended-hours monitoring cache with the historical OHLC-only schema. It is retained for compatibility and should not be treated as the preferred downstream analytical contract.",
     "intraday_research_semantics": "Intraday research parquet persists regular-session raw OHLCV bars with explicit UTC timestamp, session_date, provider, and symbol metadata.",
     "intraday_live_semantics": "Intraday live parquet persists session-aware raw OHLCV bars for pre, regular, and post sessions with explicit closed-bar and session metadata.",
     "crypto_semantics": "Crypto parquet persists closed exchange-native OHLCV bars with explicit exchange, market type, interval, and canonical symbol metadata.",
@@ -428,6 +436,7 @@ def render_schema_markdown() -> str:
         + "\n## Notes\n\n"
         + f"- {SCHEMA_NOTES['dataframe_policy']}\n"
         + f"- {SCHEMA_NOTES['partitioning']}\n"
+        + f"- {SCHEMA_NOTES['intraday_partitioning']}\n"
         + f"- {SCHEMA_NOTES['intraday_research_partitioning']}\n"
         + f"- {SCHEMA_NOTES['intraday_live_partitioning']}\n"
         + f"- {SCHEMA_NOTES['crypto_partitioning']}\n"
@@ -437,6 +446,7 @@ def render_schema_markdown() -> str:
         + f"- {SCHEMA_NOTES['index_return_partitioning']}\n"
         + f"- {SCHEMA_NOTES['symbol_master_partitioning']}\n"
         + f"- {SCHEMA_NOTES['semantics']}\n"
+        + f"- {SCHEMA_NOTES['intraday_semantics']}\n"
         + f"- {SCHEMA_NOTES['symbol_master_semantics']}\n"
         + f"- {SCHEMA_NOTES['intraday_research_semantics']}\n"
         + f"- {SCHEMA_NOTES['intraday_live_semantics']}\n"
@@ -488,7 +498,8 @@ def validate_frame_schema(
     expected_schema: dict[str, SchemaDtype],
     *,
     allow_extra_columns: bool = True,
-) -> None:
+    raise_on_error: bool = True,
+) -> list[str]:
     missing = [column for column in expected_schema if column not in df.columns]
     extras = [column for column in df.columns if column not in expected_schema]
     mismatched = []
@@ -498,15 +509,14 @@ def validate_frame_schema(
             continue
         if not _dtype_matches(actual, dtype):
             mismatched.append(f"{column}:{actual!s}!={dtype!s}")
-    if missing or mismatched or (extras and not allow_extra_columns):
-        problems = []
-        if missing:
-            problems.append(f"missing={missing}")
-        if mismatched:
-            problems.append(f"dtype={mismatched}")
-        if extras and not allow_extra_columns:
-            problems.append(f"extra={extras}")
-        raise ValueError("Frame does not match contract: " + "; ".join(problems))
+    problems = []
+    if missing:
+        problems.append(f"missing={missing}")
+    if mismatched:
+        problems.append(f"dtype={mismatched}")
+    if extras and not allow_extra_columns:
+        problems.append(f"extra={extras}")
+    return _finalize_validation_errors("Frame does not match contract", problems, raise_on_error=raise_on_error)
 
 
 def _normalize_text(value: object) -> str:
@@ -526,14 +536,16 @@ def _pair_is_valid(pair: str) -> bool:
     return len(pair) == 6 and pair.isalpha() and pair == pair.upper()
 
 
-def validate_symbol_master_frame(df: pl.DataFrame, *, strict: bool = True) -> list[str]:
+def validate_symbol_master_frame(df: pl.DataFrame, *, strict: bool = True, raise_on_error: bool = False) -> list[str]:
     errors: list[str] = []
     missing = [column for column in SYMBOL_MASTER_COLUMNS if column not in df.columns]
     if missing:
         errors.append("missing_required_columns=" + ",".join(missing))
-        if strict:
-            return errors
-        return []
+        return _finalize_validation_errors(
+            "Symbol master frame does not match contract",
+            errors if strict else [],
+            raise_on_error=raise_on_error,
+        )
     active_mask = pl.lit(True)
     if "active" in df.columns:
         active_mask = (
@@ -587,22 +599,19 @@ def validate_symbol_master_frame(df: pl.DataFrame, *, strict: bool = True) -> li
             bad_pairs += 1
     if bad_pairs > 0:
         errors.append(f"invalid_fx_pair_rows={bad_pairs}")
-    if strict:
-        return errors
-    return []
+    final_errors = errors if strict else []
+    return _finalize_validation_errors("Symbol master frame does not match contract", final_errors, raise_on_error=raise_on_error)
 
 
-def validate_fx_daily_frame(df: pl.DataFrame, *, pair: str | None = None) -> list[str]:
+def validate_fx_daily_frame(df: pl.DataFrame, *, pair: str | None = None, raise_on_error: bool = False) -> list[str]:
     errors: list[str] = []
     missing = [column for column in FX_DAILY_COLUMNS if column not in df.columns]
     if missing:
         errors.append("missing_required_columns=" + ",".join(missing))
-        return errors
-    try:
-        validate_frame_schema(df, FX_DAILY_PARQUET_SCHEMA)
-    except ValueError as exc:
-        errors.append(str(exc))
-        return errors
+        return _finalize_validation_errors("FX daily frame does not match contract", errors, raise_on_error=raise_on_error)
+    schema_errors = validate_frame_schema(df, FX_DAILY_PARQUET_SCHEMA, raise_on_error=False)
+    if schema_errors:
+        return _finalize_validation_errors("FX daily frame does not match contract", schema_errors, raise_on_error=raise_on_error)
     expected_pair = _normalize_upper(pair) if pair else ""
     if df.is_empty():
         return errors
@@ -627,13 +636,20 @@ def validate_fx_daily_frame(df: pl.DataFrame, *, pair: str | None = None) -> lis
             bad_rows += 1
     if bad_rows > 0:
         errors.append(f"invalid_rows={bad_rows}")
-    return errors
+    return _finalize_validation_errors("FX daily frame does not match contract", errors, raise_on_error=raise_on_error)
 
 
-def validate_market_cap_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, MARKET_CAP_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_market_cap_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    schema_errors = validate_frame_schema(
+        df,
+        MARKET_CAP_PARQUET_SCHEMA,
+        allow_extra_columns=allow_extra_columns,
+        raise_on_error=False,
+    )
+    if schema_errors:
+        return _finalize_validation_errors("Market-cap frame does not match contract", schema_errors, raise_on_error=raise_on_error)
     if df.is_empty():
-        return
+        return []
     problems: list[str] = []
     if not bool(df.get_column("date").is_sorted()):
         problems.append("dates_not_sorted")
@@ -657,14 +673,20 @@ def validate_market_cap_frame(df: pl.DataFrame, *, allow_extra_columns: bool = T
     )
     if bad_rows > 0:
         problems.append(f"invalid_rows={bad_rows}")
-    if problems:
-        raise ValueError("Market-cap frame does not match contract: " + "; ".join(problems))
+    return _finalize_validation_errors("Market-cap frame does not match contract", problems, raise_on_error=raise_on_error)
 
 
-def validate_sector_assignment_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, SECTOR_ASSIGNMENT_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_sector_assignment_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    schema_errors = validate_frame_schema(
+        df,
+        SECTOR_ASSIGNMENT_SCHEMA,
+        allow_extra_columns=allow_extra_columns,
+        raise_on_error=False,
+    )
+    if schema_errors:
+        return _finalize_validation_errors("Sector assignment frame does not match contract", schema_errors, raise_on_error=raise_on_error)
     if df.is_empty():
-        return
+        return []
     valid_sectors = [
         "Information Technology",
         "Financials",
@@ -686,14 +708,21 @@ def validate_sector_assignment_frame(df: pl.DataFrame, *, allow_extra_columns: b
             ).sum()
         ).item()
     )
-    if bad_rows > 0:
-        raise ValueError(f"Sector assignment frame does not match contract: invalid_rows={bad_rows}")
+    errors = [f"invalid_rows={bad_rows}"] if bad_rows > 0 else []
+    return _finalize_validation_errors("Sector assignment frame does not match contract", errors, raise_on_error=raise_on_error)
 
 
-def validate_index_return_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, INDEX_RETURN_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_index_return_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    schema_errors = validate_frame_schema(
+        df,
+        INDEX_RETURN_PARQUET_SCHEMA,
+        allow_extra_columns=allow_extra_columns,
+        raise_on_error=False,
+    )
+    if schema_errors:
+        return _finalize_validation_errors("Index-return frame does not match contract", schema_errors, raise_on_error=raise_on_error)
     if df.is_empty():
-        return
+        return []
     problems: list[str] = []
     if not bool(df.get_column("date").is_sorted()):
         problems.append("dates_not_sorted")
@@ -719,23 +748,29 @@ def validate_index_return_frame(df: pl.DataFrame, *, allow_extra_columns: bool =
     null_returns_after_first = int(df.slice(1).select(pl.col("return").is_null().sum()).item())
     if null_returns_after_first > 0:
         problems.append(f"null_returns_after_first={null_returns_after_first}")
-    if problems:
-        raise ValueError("Index-return frame does not match contract: " + "; ".join(problems))
+    return _finalize_validation_errors("Index-return frame does not match contract", problems, raise_on_error=raise_on_error)
 
 
-def validate_daily_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, DAILY_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_daily_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    return validate_frame_schema(df, DAILY_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns, raise_on_error=raise_on_error)
 
 
-def validate_intraday_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, INTRADAY_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_intraday_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    return validate_frame_schema(df, INTRADAY_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns, raise_on_error=raise_on_error)
 
 
-def validate_intraday_research_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, INTRADAY_RESEARCH_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_intraday_research_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    schema_errors = validate_frame_schema(
+        df,
+        INTRADAY_RESEARCH_PARQUET_SCHEMA,
+        allow_extra_columns=allow_extra_columns,
+        raise_on_error=False,
+    )
+    if schema_errors:
+        return _finalize_validation_errors("Intraday research frame does not match contract", schema_errors, raise_on_error=raise_on_error)
     problems: list[str] = []
     if df.is_empty():
-        return
+        return []
     if not bool(df.get_column("timestamp").is_sorted()):
         problems.append("timestamps_not_sorted")
     duplicate_timestamps = int(df.height - df.select(pl.col("timestamp").n_unique()).item())
@@ -786,14 +821,20 @@ def validate_intraday_research_frame(df: pl.DataFrame, *, allow_extra_columns: b
     )
     if off_session > 0:
         problems.append(f"invalid_metadata_rows={off_session}")
-    if problems:
-        raise ValueError("Intraday research frame does not match contract: " + "; ".join(problems))
+    return _finalize_validation_errors("Intraday research frame does not match contract", problems, raise_on_error=raise_on_error)
 
 
-def validate_intraday_live_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, INTRADAY_LIVE_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_intraday_live_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    schema_errors = validate_frame_schema(
+        df,
+        INTRADAY_LIVE_PARQUET_SCHEMA,
+        allow_extra_columns=allow_extra_columns,
+        raise_on_error=False,
+    )
+    if schema_errors:
+        return _finalize_validation_errors("Intraday live frame does not match contract", schema_errors, raise_on_error=raise_on_error)
     if df.is_empty():
-        return
+        return []
     problems: list[str] = []
     if not bool(df.get_column("timestamp").is_sorted()):
         problems.append("timestamps_not_sorted")
@@ -835,20 +876,19 @@ def validate_intraday_live_frame(df: pl.DataFrame, *, allow_extra_columns: bool 
             inconsistent.append(column)
     if inconsistent:
         problems.append("metadata_inconsistent=" + ",".join(inconsistent))
-    if problems:
-        raise ValueError("Intraday live frame does not match contract: " + "; ".join(problems))
+    return _finalize_validation_errors("Intraday live frame does not match contract", problems, raise_on_error=raise_on_error)
 
 
-def validate_crypto_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, CRYPTO_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_crypto_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    return validate_frame_schema(df, CRYPTO_PARQUET_SCHEMA, allow_extra_columns=allow_extra_columns, raise_on_error=raise_on_error)
 
 
-def validate_moves_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, MOVE_ALERT_FRAME_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_moves_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    return validate_frame_schema(df, MOVE_ALERT_FRAME_SCHEMA, allow_extra_columns=allow_extra_columns, raise_on_error=raise_on_error)
 
 
-def validate_alerts_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True) -> None:
-    validate_frame_schema(df, MOVE_ALERT_FRAME_SCHEMA, allow_extra_columns=allow_extra_columns)
+def validate_alerts_frame(df: pl.DataFrame, *, allow_extra_columns: bool = True, raise_on_error: bool = True) -> list[str]:
+    return validate_frame_schema(df, MOVE_ALERT_FRAME_SCHEMA, allow_extra_columns=allow_extra_columns, raise_on_error=raise_on_error)
 
 
 assert tuple(DAILY_PARQUET_SCHEMA) == OHLC_COLUMNS

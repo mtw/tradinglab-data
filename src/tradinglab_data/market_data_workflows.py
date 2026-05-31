@@ -262,6 +262,7 @@ def sync_sector_assignments_yahoo(
     rows: list[dict[str, object]] = []
     skipped: dict[str, str] = {}
     now = _now_naive_utc()
+    observation_date = now.date()
     for raw_symbol in symbol_list:
         symbol = _normalize_symbol(raw_symbol)
         if not symbol:
@@ -277,7 +278,7 @@ def sync_sector_assignments_yahoo(
             {
                 "symbol": symbol,
                 "sector": sector,
-                "effective_start": None,
+                "effective_start": observation_date,
                 "effective_end": None,
                 "source": "yahoo_current",
                 "ingested_at": now,

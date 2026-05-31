@@ -215,7 +215,9 @@ def get_universe_symbols(as_of: str | date | datetime | None = None, universe_id
     If ``as_of`` is provided, the universe artifact must have point-in-time
     columns such as ``effective_start``/``effective_end`` or
     ``listed_date``/``delisted_date``. Current-only artifacts are accepted only
-    when ``as_of`` is ``None``.
+    when ``as_of`` is ``None``. Use
+    ``get_sector_assignments(..., require_history=True)`` when sector lookups
+    should follow the same strict point-in-time rule.
     """
     cfg = _load_config()
     as_of_ts = _as_datetime(as_of, name="as_of")
@@ -325,8 +327,11 @@ def get_total_returns(
     start: str | date | datetime,
     end: str | date | datetime,
     max_ffill: int = 5,
+    max_daily_return: float = 0.5,
 ) -> pl.DataFrame:
     """Return a Polars wide frame of simple daily total returns derived from adjusted close."""
+    if max_daily_return <= 0:
+        raise ValueError("max_daily_return must be positive")
     start_ts, end_ts = _date_bounds(start, end)
     prices = _adjusted_price_matrix(symbols, start_ts, end_ts, max_ffill=max_ffill, drop_sparse=True)
     value_columns = [column for column in prices.columns if column != "date"]
@@ -334,8 +339,8 @@ def get_total_returns(
     returns = _drop_all_null_value_columns(returns, label="symbol")
     returns = _ensure_value_columns(returns, message="no requested symbols have usable total returns")
     valid = _non_null_numeric_values(returns)
-    if not valid.is_empty() and bool(((valid <= -1) | (valid > 10)).any()):
-        raise ValueError("total returns outside (-1, 10] indicate invalid adjusted-price data")
+    if not valid.is_empty() and bool(((valid <= -1) | (valid > max_daily_return)).any()):
+        raise ValueError(f"total returns outside (-1, {max_daily_return}] indicate invalid adjusted-price data")
     return returns
 
 
@@ -452,13 +457,20 @@ def get_market_caps(
     return out
 
 
-def get_sector_assignments(symbols: list[str], as_of: str | date | datetime | None = None) -> pl.DataFrame:
+def get_sector_assignments(
+    symbols: list[str],
+    as_of: str | date | datetime | None = None,
+    *,
+    require_history: bool = False,
+) -> pl.DataFrame:
     """
     Return a Polars frame with ``symbol`` and ``sector`` columns.
 
     Current-only sector artifacts are supported. If ``as_of`` is provided and
     the artifact has no point-in-time columns, a ``UserWarning`` is issued and
-    current classifications are returned.
+    current classifications are returned unless ``require_history=True``, in
+    which case ``DataNotFoundError`` is raised to match
+    ``get_universe_symbols(as_of=...)``.
     """
     cfg = _load_config()
     path = sector_assignments_path(cfg)
@@ -471,7 +483,12 @@ def get_sector_assignments(symbols: list[str], as_of: str | date | datetime | No
     if sector_col is None:
         raise DataNotFoundError("sector assignment artifact has no sector column")
     as_of_ts = _as_datetime(as_of, name="as_of")
-    df = _apply_point_in_time_filter(df, as_of_ts, warn_current_only=True)
+    df = _apply_point_in_time_filter(
+        df,
+        as_of_ts,
+        warn_current_only=not require_history,
+        require_history=require_history,
+    )
     df = df.with_columns(
         pl.col("symbol").map_elements(_normalize_symbol, return_dtype=pl.String),
         pl.col(sector_col).cast(pl.String).alias("sector"),

@@ -1389,17 +1389,17 @@ Python API/CLI compatibility follows the package version rather than a second AP
 - `schema_manifest() -> dict[str, object]`
 - `render_schema_json() -> str`
 - `render_schema_markdown() -> str`
-- `validate_frame_schema(df, expected_schema, allow_extra_columns=True) -> None`
-- `validate_daily_frame(df, allow_extra_columns=True) -> None`
-- `validate_crypto_frame(df, allow_extra_columns=True) -> None`
-- `validate_intraday_frame(df, allow_extra_columns=True) -> None`
-- `validate_intraday_research_frame(df, allow_extra_columns=True) -> None`
-- `validate_intraday_live_frame(df, allow_extra_columns=True) -> None`
-- `validate_market_cap_frame(df, allow_extra_columns=True) -> None`
-- `validate_sector_assignment_frame(df, allow_extra_columns=True) -> None`
-- `validate_index_return_frame(df, allow_extra_columns=True) -> None`
-- `validate_moves_frame(df, allow_extra_columns=True) -> None`
-- `validate_alerts_frame(df, allow_extra_columns=True) -> None`
+- `validate_frame_schema(df, expected_schema, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_daily_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_crypto_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_intraday_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_intraday_research_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_intraday_live_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_market_cap_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_sector_assignment_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_index_return_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_moves_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
+- `validate_alerts_frame(df, allow_extra_columns=True, raise_on_error=True) -> list[str]`
 
 ### `tradinglab_data.market_data`
 
@@ -1416,9 +1416,9 @@ Public functions:
 
 - `get_universe_symbols(as_of=None, universe_id="default") -> list[str]`
 - `get_adjusted_prices(symbols, start, end, max_ffill=5) -> polars.DataFrame`
-- `get_total_returns(symbols, start, end, max_ffill=5) -> polars.DataFrame`
+- `get_total_returns(symbols, start, end, max_ffill=5, max_daily_return=0.5) -> polars.DataFrame`
 - `get_market_caps(symbols, start, end, frequency="monthly") -> polars.DataFrame`
-- `get_sector_assignments(symbols, as_of=None) -> polars.DataFrame`
+- `get_sector_assignments(symbols, as_of=None, require_history=False) -> polars.DataFrame`
 - `get_index_returns(index_ids, start, end) -> polars.DataFrame`
 
 Behavioral contract:
@@ -1429,9 +1429,11 @@ Behavioral contract:
 - missing symbols and unsupported index identifiers are dropped with logged warnings
 - `DataNotFoundError` is raised when no requested data can be loaded
 - `get_universe_symbols(as_of=...)` raises `DataNotFoundError` unless the universe artifact has point-in-time history columns
-- `UniverseNotFoundError` is raised for unknown universe identifiers
+- `UniverseNotFoundError` is raised for unknown universe identifiers and subclasses `Exception`, not `ValueError`
 - sector assignments must use the fixed 11-sector GICS vocabulary
-- current-only sector artifacts emit `UserWarning` when `as_of` is provided
+- `get_sector_assignments(..., require_history=True)` applies the same strict point-in-time rule as `get_universe_symbols(as_of=...)`
+- current-only sector artifacts emit `UserWarning` when `as_of` is provided and `require_history=False`
+- `get_total_returns` rejects values outside `(-1, max_daily_return]`, defaulting to `0.5`
 - index returns must be total returns; price-return fallback emits `UserWarning`
 
 ### `tradinglab_data.exceptions`
@@ -1458,7 +1460,7 @@ Public functions:
 Provider defaults:
 
 - market caps use Yahoo shares outstanding history plus local daily USD close prices
-- sector assignments use current Yahoo quote metadata and are therefore current-only unless replaced by a curated point-in-time CSV
+- sector assignments use current Yahoo quote metadata and are emitted as dated snapshots with `effective_start=<ingest-date>` and `effective_end=null`; deeper history still requires a curated point-in-time CSV
 - index total-return provider symbols are `SPX -> ^SP500TR`, `RTY -> ^RUTTR`, and `NDX -> ^XNDX`
 
 ### `tradinglab_data.intraday_research`

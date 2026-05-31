@@ -205,7 +205,7 @@ def _audit_file(
     path: Path,
     *,
     section: str,
-    validator: Callable[[pl.DataFrame], None],
+    validator: Callable[[pl.DataFrame], object],
     time_column: str,
     value_column: str = "currency",
 ) -> _FileAudit:
@@ -325,7 +325,7 @@ def _summarize_section(
     *,
     section: str,
     root: Path,
-    validator: Callable[[pl.DataFrame], None],
+    validator: Callable[[pl.DataFrame], object],
     time_column: str,
     value_column: str = "currency",
 ) -> tuple[StoreIntegritySection, list[StoreIntegrityFileIssue]]:

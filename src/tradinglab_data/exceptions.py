@@ -5,5 +5,5 @@ class DataNotFoundError(Exception):
     """Raised when no data can be loaded for the given parameters."""
 
 
-class UniverseNotFoundError(ValueError):
+class UniverseNotFoundError(Exception):
     """Raised when a universe identifier is not recognised."""

@@ -84,6 +84,7 @@ def test_get_universe_symbols_filters_point_in_time_default_and_named_universe(t
     assert get_universe_symbols(universe_id="custom") == ["ZZZ"]
     with pytest.raises(UniverseNotFoundError):
         get_universe_symbols(universe_id="missing")
+    assert not issubclass(UniverseNotFoundError, ValueError)
 
 
 def test_get_universe_symbols_requires_point_in_time_columns_for_as_of(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -119,7 +120,7 @@ def test_prices_and_returns_are_adjusted_aligned_and_consistent(tmp_path: Path, 
     expected_returns = prices.with_columns(pl.col("AAA", "BBB").pct_change())
     assert returns.select(["AAA", "BBB"]).slice(1).to_dict(as_series=False) == expected_returns.select(["AAA", "BBB"]).slice(1).to_dict(as_series=False)
     valid_returns = returns.select(pl.concat_list(pl.col("AAA", "BBB")).alias("r")).explode("r").drop_nulls()
-    assert valid_returns.select(pl.col("r").is_between(-1, 10, closed="right").all()).item() is True
+    assert valid_returns.select(pl.col("r").is_between(-1, 0.5, closed="right").all()).item() is True
 
 
 def test_total_returns_drop_missing_symbols_and_raise_when_none_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
@@ -137,6 +138,15 @@ def test_total_returns_reject_invalid_adjusted_price_jumps(tmp_path: Path, monke
 
     with pytest.raises(ValueError, match="outside"):
         get_total_returns(["BAD"], "2026-01-02", "2026-01-05")
+
+
+def test_total_returns_allows_overriding_max_daily_return(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    _write_daily(paths["daily"], "VOL", ["2026-01-02", "2026-01-05"], [1.0, 1.8])
+
+    returns = get_total_returns(["VOL"], "2026-01-02", "2026-01-05", max_daily_return=1.0)
+
+    assert returns.filter(pl.col("date") == datetime(2026, 1, 5)).get_column("VOL").item() == pytest.approx(0.8)
 
 
 def test_get_market_caps_monthly_daily_and_invalid_frequency(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -186,6 +196,20 @@ def test_get_sector_assignments_respects_order_vocab_and_current_only_warning(tm
         "symbol": ["BBB", "AAA", "MISSING"],
         "sector": ["Financials", "Information Technology", None],
     }
+
+
+def test_get_sector_assignments_can_require_history_for_current_only_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    paths = _write_config(tmp_path, monkeypatch)
+    pl.DataFrame(
+        {
+            "symbol": ["AAA"],
+            "sector": ["Information Technology"],
+            "source": ["fixture"],
+        }
+    ).write_csv(paths["meta"] / "sector_assignments.csv")
+
+    with pytest.raises(DataNotFoundError, match="point-in-time history"):
+        get_sector_assignments(["AAA"], as_of="2026-01-01", require_history=True)
 
 
 def test_get_sector_assignments_filters_point_in_time_history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

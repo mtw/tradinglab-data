@@ -122,6 +122,7 @@ def test_sync_sector_assignments_yahoo_writes_current_gics_sectors(tmp_path: Pat
     assert result["skipped"]["BAD"].startswith("unsupported_sector")
     frame = pl.read_csv(output)
     assert frame.get_column("sector").to_list() == ["Financials"]
+    assert frame.get_column("effective_start").to_list() == [frame.get_column("ingested_at").item().split("T", 1)[0]]
 
 
 def test_fetch_sector_normalizes_yahoo_sector_to_gics(monkeypatch):

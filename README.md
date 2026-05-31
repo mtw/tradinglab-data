@@ -96,7 +96,7 @@ TLD_CONFIG_PATH=configs/config.local.yaml ./scripts/run_daily_update_verify.sh
 | Family | Store Layout | Notes |
 |---|---|---|
 | Daily stock/ETF | `<paths.parquet_root>/<SYMBOL>.parquet` | regular-session daily OHLCV with listing currency |
-| Extended-hours intraday cache | `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet` | monitoring cache, currently `5m` and `1m` |
+| Extended-hours intraday cache | `<extended_hours.intraday_root>/<INTERVAL>/<SYMBOL>.parquet` | legacy monitoring cache, currently `5m` and `1m`; new downstream consumers should prefer `intraday_research` or `intraday_live` |
 | Intraday research | `<intraday.research_root>/5m/<SYMBOL>.parquet` | regular-session-only US stock/ETF `5m` bars |
 | Intraday live | `<intraday_live.live_root>/5m/<SYMBOL>.parquet` | session-aware US stock/ETF `5m` bars labeled `pre`, `regular`, `post`, or `unknown` |
 | Crypto | `<paths.crypto_root>/<EXCHANGE>/<MARKET_TYPE>/<INTERVAL>/<SYMBOL>.parquet` | exchange-native closed OHLCV bars |

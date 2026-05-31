@@ -79,7 +79,7 @@ def test_validate_daily_frame_accepts_canonical_schema():
         },
         schema_overrides={"date": pl.Datetime},
     )
-    validate_daily_frame(df)
+    assert validate_daily_frame(df) == []
 
 
 def test_validate_moves_frame_rejects_missing_columns():
@@ -110,7 +110,7 @@ def test_validate_crypto_frame_accepts_canonical_schema():
         },
         schema_overrides={"timestamp": pl.Datetime, "ingested_at": pl.Datetime},
     )
-    validate_crypto_frame(df)
+    assert validate_crypto_frame(df) == []
 
 
 def test_validate_daily_frame_rejects_wrong_dtype():
@@ -153,7 +153,7 @@ def test_validate_intraday_research_frame_accepts_canonical_schema():
         pl.col("session_date").str.strptime(pl.Date, strict=False),
         pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
     )
-    validate_intraday_research_frame(df)
+    assert validate_intraday_research_frame(df) == []
 
 
 def test_validate_intraday_research_frame_accepts_non_5m_interval():
@@ -179,7 +179,7 @@ def test_validate_intraday_research_frame_accepts_non_5m_interval():
         pl.col("session_date").str.strptime(pl.Date, strict=False),
         pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
     )
-    validate_intraday_research_frame(df)
+    assert validate_intraday_research_frame(df) == []
 
 
 def test_validate_intraday_research_frame_rejects_bad_metadata():
@@ -230,7 +230,7 @@ def test_validate_intraday_live_frame_accepts_canonical_schema():
         pl.col("session_date").str.strptime(pl.Date, strict=False),
         pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
     )
-    validate_intraday_live_frame(df)
+    assert validate_intraday_live_frame(df) == []
 
 
 def test_validate_alerts_frame_rejects_wrong_dtype():
@@ -340,7 +340,7 @@ def test_validate_market_cap_frame_accepts_valid_frame():
         pl.col("date").str.strptime(pl.Datetime, strict=False),
         pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
     )
-    validate_market_cap_frame(df)
+    assert validate_market_cap_frame(df) == []
 
 
 def test_validate_market_cap_frame_rejects_mixed_symbols():
@@ -376,7 +376,7 @@ def test_validate_sector_assignment_frame_accepts_valid_frame():
         pl.col("effective_end").str.strptime(pl.Date, strict=False),
         pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
     )
-    validate_sector_assignment_frame(df)
+    assert validate_sector_assignment_frame(df) == []
 
 
 def test_validate_index_return_frame_accepts_valid_frame():
@@ -395,7 +395,7 @@ def test_validate_index_return_frame_accepts_valid_frame():
         pl.col("return").cast(pl.Float64),
         pl.col("ingested_at").str.strptime(pl.Datetime, strict=False),
     )
-    validate_index_return_frame(df)
+    assert validate_index_return_frame(df) == []
 
 
 def test_validate_index_return_frame_rejects_null_returns_after_first_row():
@@ -475,3 +475,11 @@ def test_validate_symbol_master_frame_non_strict_is_warn_only():
 
     assert validate_symbol_master_frame(df, strict=True) == ["empty_country_rows=1"]
     assert validate_symbol_master_frame(df, strict=False) == []
+
+
+def test_non_raising_validator_mode_returns_errors_list():
+    market_cap_errors = validate_market_cap_frame(pl.DataFrame({"symbol": ["AAPL"]}), raise_on_error=False)
+    live_errors = validate_intraday_live_frame(pl.DataFrame({"symbol": ["AAPL"]}), raise_on_error=False)
+
+    assert market_cap_errors
+    assert live_errors
