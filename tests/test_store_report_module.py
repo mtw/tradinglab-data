@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import polars as pl
 
+import tradinglab_data.store_report as store_mod
 from tradinglab_data.config import Config
 from tradinglab_data.store_report import generate_parquet_store_report, render_store_integrity_report_markdown
 
@@ -313,3 +315,166 @@ def test_generate_parquet_store_report_flags_crypto_gap_zero_volume_and_metadata
     assert "large_continuity_gap" in btc["dirty_reasons"]
     assert "zero_volume_rows" in btc["dirty_reasons"]
     assert "metadata_inconsistency" in btc["dirty_reasons"]
+
+
+def test_store_report_helper_functions_cover_edge_cases(tmp_path: Path, monkeypatch):
+    aware = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    assert store_mod._format_datetime(None) is None
+    assert store_mod._format_datetime(aware).endswith("+00:00")
+    assert store_mod._format_datetime("x") == "x"
+    assert store_mod._scan_parquet_files(tmp_path / "missing") == []
+    assert store_mod._file_symbol(tmp_path / "AAA.parquet") == "AAA"
+    assert store_mod._currency_stats(pl.DataFrame({"x": [1]})) == ([], 1, 0)
+    assert store_mod._sorted_times(pl.DataFrame(), time_column="date") is True
+    assert store_mod._history_bounds(pl.DataFrame(), time_column="date") == (None, None)
+    assert store_mod._ohlc_quality_counts(pl.DataFrame(), time_column="date") == {"null_ohlc": 0, "bad_ohlc": 0, "dup_times": 0}
+    assert store_mod._ohlc_quality_counts(pl.DataFrame({"date": [datetime(2026, 1, 1)]}), time_column="date") == {"null_ohlc": 1, "bad_ohlc": 1, "dup_times": 1}
+    assert store_mod._expected_step("crypto:binance:spot:15m") == timedelta(minutes=15)
+    assert store_mod._expected_step("crypto:binance:spot:1h") == timedelta(hours=1)
+    assert store_mod._expected_step("crypto:binance:spot:1d") == timedelta(days=1)
+    assert store_mod._expected_step("crypto:binance:spot:5m") is None
+    assert store_mod._expected_step("daily") is None
+    assert store_mod._max_gap_multiple(pl.DataFrame(), time_column="timestamp", expected_step=None) == 1.0
+    assert store_mod._metadata_inconsistent_columns(pl.DataFrame({"provider": ["x", "y"]}), columns=["provider"]) == ["provider"]
+
+    monkeypatch.setattr(pl.Series, "is_sorted", lambda self: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert store_mod._sorted_times(pl.DataFrame({"date": [datetime(2026, 1, 1)]}), time_column="date") is False
+
+
+def test_store_report_helper_exception_branches(tmp_path: Path, monkeypatch):
+    frame = pl.DataFrame({"date": [datetime(2026, 1, 1), datetime(2026, 1, 2)], "provider": [None, None]})
+    monkeypatch.setattr(pl.DataFrame, "select", lambda self, *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert store_mod._history_bounds(frame, time_column="date") == (None, None)
+    assert store_mod._metadata_inconsistent_columns(frame, columns=["provider"]) == []
+
+    ordered = pl.DataFrame({"timestamp": [datetime(2026, 1, 1), datetime(2026, 1, 1, 2)]})
+    monkeypatch.setattr(pl.DataFrame, "sort", lambda self, *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert store_mod._max_gap_multiple(ordered, time_column="timestamp", expected_step=timedelta(hours=1)) == 1.0
+
+    class ZeroStep:
+        def total_seconds(self):
+            return 0
+
+    assert store_mod._max_gap_multiple(ordered, time_column="timestamp", expected_step=ZeroStep()) == 1.0
+    assert store_mod._max_gap_multiple(pl.DataFrame({"timestamp": ["a", "b"]}), time_column="timestamp", expected_step=timedelta(hours=1)) == 1.0
+
+    monkeypatch.setattr(pl.DataFrame, "filter", lambda self, *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert store_mod._metadata_inconsistent_columns(frame, columns=["provider"]) == []
+
+
+def test_store_report_audit_and_summary_cover_read_schema_and_empty_history(tmp_path: Path):
+    bad = tmp_path / "BROKEN.parquet"
+    bad.write_text("not parquet", encoding="utf-8")
+    audit = store_mod._audit_file(bad, section="daily", validator=lambda df: None, time_column="date")
+    assert audit.read_error is not None
+    assert "read_error" in audit.dirty_reasons
+
+    empty = tmp_path / "EMPTY.parquet"
+    pl.DataFrame({"date": pl.Series([], dtype=pl.Datetime), "open": pl.Series([], dtype=pl.Float64), "high": pl.Series([], dtype=pl.Float64), "low": pl.Series([], dtype=pl.Float64), "close": pl.Series([], dtype=pl.Float64), "adj_close": pl.Series([], dtype=pl.Float64), "volume": pl.Series([], dtype=pl.Float64), "currency": pl.Series([], dtype=pl.String)}).write_parquet(empty)
+    empty_audit = store_mod._audit_file(empty, section="daily", validator=lambda df: (_ for _ in ()).throw(ValueError("bad schema")), time_column="date")
+    assert "empty_file" in empty_audit.dirty_reasons
+    assert "schema_mismatch" in empty_audit.dirty_reasons
+
+    summary, dirty = store_mod._summarize_section(section="daily", root=tmp_path, validator=lambda df: None, time_column="date")
+    assert summary["files_total"] >= 2
+    assert summary["files_dirty"] >= 1
+    assert dirty
+
+    top = store_mod._top_histories([empty_audit], limit=1)
+    assert top[0]["symbol"] == "EMPTY"
+
+
+def test_store_report_audit_flags_null_and_bad_ohlc_rows(tmp_path: Path):
+    bad = tmp_path / "BAD.parquet"
+    pl.DataFrame(
+        {
+            "date": [datetime(2026, 1, 1), datetime(2026, 1, 2)],
+            "open": [1.0, None],
+            "high": [2.0, -1.0],
+            "low": [0.5, 0.1],
+            "close": [1.5, 0.2],
+            "adj_close": [1.5, 0.2],
+            "volume": [1.0, 2.0],
+            "currency": ["USD", "USD"],
+        }
+    ).write_parquet(bad)
+
+    audit = store_mod._audit_file(bad, section="daily", validator=lambda df: None, time_column="date")
+    assert "null_ohlc_rows" in audit.dirty_reasons
+    assert "bad_ohlc_rows" in audit.dirty_reasons
+
+
+def test_render_store_integrity_report_markdown_no_dirty_files_and_json_toggle(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    cfg = Config.load(config_path)
+    _write_daily_parquet(tmp_path / "daily" / "AAA.parquet", dates=["2026-03-25"], currency=["USD"])
+
+    report = generate_parquet_store_report(cfg, write_json=False, write_markdown=True)
+    text = render_store_integrity_report_markdown(report)
+
+    assert report["json_path"] == ""
+    assert "Errors: none" in text or "Errors:" in text
+
+
+def test_render_store_integrity_report_markdown_errors_none_branch():
+    report = {
+        "generated_at": "2026-01-01T00:00:00+00:00",
+        "config_path": "/tmp/config.yaml",
+        "daily_root": "/tmp/daily",
+        "intraday_root": "/tmp/intraday",
+        "crypto_root": "/tmp/crypto",
+        "json_path": "",
+        "markdown_path": "",
+        "sections": [
+            {
+                "section": "daily",
+                "root": "/tmp/daily",
+                "files_total": 0,
+                "files_readable": 0,
+                "files_dirty": 0,
+                "rows_total": 0,
+                "rows_min": 0,
+                "rows_median": 0.0,
+                "rows_max": 0,
+                "earliest_date": None,
+                "latest_date": None,
+                "currencies_seen": [],
+                "missing_currency_rows": 0,
+                "unknown_currency_rows": 0,
+                "duplicate_rows": 0,
+                "null_ohlc_rows": 0,
+                "bad_ohlc_rows": 0,
+                "zero_volume_rows": 0,
+                "stale_files": 0,
+                "dirty_reason_counts": {},
+                "top_histories": [],
+            }
+        ],
+        "dirty_files": [],
+        "parquet_sanity": {"status": "ok", "file_count": 0, "zero_byte": 0, "sample_read_checked": 0, "errors": []},
+    }
+
+    text = render_store_integrity_report_markdown(report)
+    assert "- Errors: none" in text
+
+
+def test_store_report_gap_helper_covers_zero_step_and_non_datetime_pairs():
+    frame = pl.DataFrame({"timestamp": [datetime(2026, 1, 1), datetime(2026, 1, 1, 2)]})
+
+    class ZeroStep:
+        def total_seconds(self):
+            return 0
+
+    assert store_mod._max_gap_multiple(frame, time_column="timestamp", expected_step=ZeroStep()) == 1.0
+    assert store_mod._max_gap_multiple(pl.DataFrame({"timestamp": ["a", "b"]}), time_column="timestamp", expected_step=timedelta(hours=1)) == 1.0
+
+
+def test_generate_parquet_store_report_includes_root_intraday_section(tmp_path: Path):
+    config_path = _write_config(tmp_path)
+    cfg = Config.load(config_path)
+    _write_daily_parquet(tmp_path / "daily" / "AAA.parquet", dates=["2026-03-25"], currency=["USD"])
+    _write_intraday_parquet(tmp_path / "intraday" / "AAA.parquet")
+
+    report = generate_parquet_store_report(cfg, write_json=False, write_markdown=False)
+
+    assert "intraday" in {section["section"] for section in report["sections"]}

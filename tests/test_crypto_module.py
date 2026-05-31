@@ -8,7 +8,19 @@ import polars as pl
 import pytest
 
 from tradinglab_data.crypto.providers.binance_ccxt import _normalize_ohlcv_rows
-from tradinglab_data.crypto.registry import load_crypto_universes, resolve_crypto_universe
+from tradinglab_data.crypto.registry import (
+    _dynamic_registry_entries,
+    _dynamic_universes,
+    _load_json,
+    _registry_entry_key,
+    load_crypto_registry,
+    load_crypto_universes,
+    merge_dynamic_registry,
+    resolve_crypto_universe,
+    write_dynamic_registry,
+    write_dynamic_universe,
+)
+from tradinglab_data.crypto.storage import atomic_write_parquet, read_crypto_parquet
 from tradinglab_data.crypto.symbols import normalize_crypto_symbol, split_crypto_symbol, to_source_symbol
 from tradinglab_data.crypto.validation import (
     filter_closed_bars,
@@ -121,12 +133,50 @@ def test_filter_closed_bars_drops_open_bar():
     assert filtered.get_column("timestamp").to_list() == [datetime(2026, 4, 20, 8, 0)]
 
 
+def test_filter_closed_bars_and_normalize_schema_empty_paths():
+    empty = pl.DataFrame(schema=_crypto_frame().schema)
+    assert filter_closed_bars(empty, interval="1h").is_empty()
+    assert normalize_crypto_frame_schema(pl.DataFrame()).is_empty()
+
+
 def test_merge_and_validate_crypto_frames():
     old = _crypto_frame(timestamps=["2026-04-18T00:00:00", "2026-04-18T01:00:00"])
     new = _crypto_frame(timestamps=["2026-04-18T01:00:00", "2026-04-18T02:00:00"])
     merged = merge_crypto_frames(old, new)
     validate_crypto_ohlcv_frame(merged, interval="1h")
     assert merged.height == 3
+
+
+def test_validate_crypto_ohlcv_frame_reports_edge_errors():
+    with pytest.raises(ValueError, match="timestamp contains nulls"):
+        validate_crypto_ohlcv_frame(_crypto_frame().with_columns(pl.lit(None).cast(pl.Datetime).alias("timestamp")), interval="1h")
+    with pytest.raises(ValueError, match="timestamp values must be unique"):
+        validate_crypto_ohlcv_frame(_crypto_frame(timestamps=["2026-04-18T00:00:00", "2026-04-18T00:00:00"]), interval="1h")
+    with pytest.raises(ValueError, match="rows must be sorted"):
+        validate_crypto_ohlcv_frame(_crypto_frame(timestamps=["2026-04-18T01:00:00", "2026-04-18T00:00:00"]), interval="1h")
+    with pytest.raises(ValueError, match="canonical crypto history may only contain closed bars"):
+        validate_crypto_ohlcv_frame(_crypto_frame().with_columns(pl.lit(False).alias("is_closed")), interval="1h")
+    with pytest.raises(ValueError, match="ohlcv constraints failed"):
+        validate_crypto_ohlcv_frame(_crypto_frame().with_columns(pl.lit(-1.0).alias("volume")), interval="1h")
+    with pytest.raises(ValueError, match="provider contains nulls"):
+        validate_crypto_ohlcv_frame(_crypto_frame().with_columns(pl.lit(None).cast(pl.String).alias("provider")), interval="1h")
+    with pytest.raises(ValueError, match="interval continuity failed"):
+        validate_crypto_ohlcv_frame(_crypto_frame(timestamps=["2026-04-18T00:00:00", "2026-04-18T03:00:00"]), interval="1h")
+
+
+def test_merge_crypto_frames_and_storage_helpers_cover_empty_and_cleanup(tmp_path: Path, monkeypatch):
+    incoming = _crypto_frame()
+    merged = merge_crypto_frames(None, incoming)
+    assert merged.height == incoming.height
+
+    path = tmp_path / "x" / "BTC_USDT.parquet"
+    atomic_write_parquet(path, incoming)
+    assert read_crypto_parquet(path).height == 2
+    assert read_crypto_parquet(tmp_path / "missing.parquet") is None
+
+    monkeypatch.setattr("tradinglab_data.crypto.storage.os.replace", lambda src, dst: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(RuntimeError, match="boom"):
+        atomic_write_parquet(tmp_path / "x" / "BROKEN.parquet", incoming)
 
 
 def test_merge_crypto_frames_normalizes_datetime_units():
@@ -340,6 +390,22 @@ def test_fetch_symbol_history_returns_empty_frame_when_provider_has_no_data():
     assert frame.is_empty()
 
 
+def test_fetch_symbol_history_breaks_on_short_batch_and_missing_cursor():
+    class ShortProvider:
+        def fetch_ohlcv(self, symbol: str, interval: str, *, start=None, end=None, limit=None) -> pl.DataFrame:
+            return _crypto_frame(timestamps=["2026-04-18T00:00:00"])
+
+    frame = _fetch_symbol_history(ShortProvider(), "BTC_USDT", "1h", start=None, total_limit=10, batch_limit=5)
+    assert frame.height == 1
+
+    class MissingCursorProvider:
+        def fetch_ohlcv(self, symbol: str, interval: str, *, start=None, end=None, limit=None) -> pl.DataFrame:
+            return _crypto_frame().with_columns(pl.lit(None).cast(pl.Datetime).alias("timestamp"))
+
+    frame = _fetch_symbol_history(MissingCursorProvider(), "BTC_USDT", "1h", start=None, total_limit=10, batch_limit=2)
+    assert frame.height == 1
+
+
 def test_interval_delta_rejects_unsupported_interval():
     with pytest.raises(ValueError, match="Unsupported crypto interval"):
         _interval_delta("5m")
@@ -430,6 +496,62 @@ def test_coingecko_item_filter_rejects_stablecoin(dummy_cfg_factory, tmp_path: P
     )
 
     assert entry is None
+
+
+def test_registry_helpers_cover_json_dynamic_and_write_paths(dummy_cfg_factory, tmp_path: Path, monkeypatch):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "crypto_registry_json": tmp_path / "meta" / "crypto" / "registry.json",
+                "crypto_universe_dir": tmp_path / "meta" / "crypto" / "universes",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            }
+        }
+    )
+    assert _load_json(tmp_path / "missing.json") is None
+    assert _dynamic_registry_entries(None) == []
+    assert _dynamic_universes(None) == {}
+    assert _registry_entry_key({"symbol_canonical": "bad symbol"}) is None
+    with pytest.raises(ValueError, match="Unknown crypto universe"):
+        resolve_crypto_universe("missing", cfg=cfg)
+
+    registry_entries = [
+        {"symbol_canonical": "BTC_USDT", "source_symbol": "BTC/USDT", "exchange": "binance", "market_type": "spot", "base_asset": "BTC", "quote_asset": "USDT", "is_active": True, "universe_tags": ["crypto"]},
+        {"symbol_canonical": "ETH_EUR", "source_symbol": "ETH/EUR", "exchange": "coinbase", "market_type": "spot", "quote_asset": "EUR"},
+        "junk",
+    ]
+    cfg.get("paths", "crypto_registry_json").parent.mkdir(parents=True, exist_ok=True)
+    cfg.get("paths", "crypto_registry_json").write_text(json.dumps(registry_entries), encoding="utf-8")
+    cfg.get("paths", "crypto_universe_dir").mkdir(parents=True, exist_ok=True)
+    (cfg.get("paths", "crypto_universe_dir") / "dyn.json").write_text(json.dumps({"symbols": ["btc/usdt", " "]}, indent=2), encoding="utf-8")
+    (cfg.get("paths", "crypto_universe_dir") / "bad.json").write_text(json.dumps(["bad"]), encoding="utf-8")
+    (cfg.get("paths", "crypto_universe_dir") / "bad2.json").write_text(json.dumps({"symbols": "bad"}), encoding="utf-8")
+
+    assert [entry["symbol_canonical"] for entry in _dynamic_registry_entries(cfg)] == ["BTC_USDT", "ETH_EUR"]
+    assert _dynamic_universes(cfg) == {"dyn": ("BTC_USDT",)}
+    assert any(entry["symbol_canonical"] == "BTC_USDT" for entry in load_crypto_registry(cfg=cfg))
+    assert load_crypto_registry(cfg=cfg, quote_assets=("EUR",)) == []
+
+    import tradinglab_data.crypto.registry as registry_mod
+    original_normalize = registry_mod.normalize_crypto_symbol
+    monkeypatch.setattr(registry_mod, "normalize_crypto_symbol", lambda symbol: "" if symbol == "EMPTY_EMPTY" else original_normalize(symbol))
+    cfg.get("paths", "crypto_registry_json").write_text(json.dumps([{"symbol_canonical": "EMPTY_EMPTY"}]), encoding="utf-8")
+    assert _dynamic_registry_entries(cfg) == []
+
+    written_registry = write_dynamic_registry(cfg, [{"symbol_canonical": "ETH_USDT"}])
+    written_universe = write_dynamic_universe(cfg, "dyn2", ["ETH_USDT"], {"provider": "x"})
+    assert written_registry.exists()
+    assert written_universe.exists()
+
+    cfg.get("paths", "crypto_registry_json").write_text(json.dumps(["preserved", {"symbol_canonical": "bad symbol"}]), encoding="utf-8")
+    merge_dynamic_registry(cfg, [{"symbol_canonical": "ETH_USDT", "exchange": "binance", "market_type": "spot"}])
+    merged_text = cfg.get("paths", "crypto_registry_json").read_text(encoding="utf-8")
+    assert "ETH_USDT" in merged_text
+    assert "preserved" in merged_text
+    assert "bad symbol" in merged_text
 
 
 def test_crypto_refresh_universe_writes_dynamic_registry(monkeypatch, dummy_cfg_factory, tmp_path: Path):
@@ -555,6 +677,49 @@ def test_crypto_refresh_universe_preserves_unrelated_dynamic_registry_entries(mo
     assert [entry["symbol_canonical"] for entry in resolved_other] == ["DOGE_USDT"]
     persisted_symbols = {entry["symbol_canonical"] for entry in json.loads(registry_path.read_text(encoding="utf-8"))}
     assert persisted_symbols == {"BTC_USDT", "ETH_USDT", "DOGE_USDT"}
+
+
+def test_coingecko_selection_stops_on_empty_pages_duplicates_and_limit(monkeypatch, dummy_cfg_factory, tmp_path: Path):
+    import tradinglab_data.crypto.workflows as crypto_workflows
+
+    class FakeExchangeProvider:
+        def list_symbols(self) -> list[str]:
+            return ["BTC_USDT", "ETH_USDT"]
+
+    pages = {
+        1: [
+            {"id": "dogecoin", "symbol": "doge", "name": "Dogecoin", "market_cap_rank": 1, "market_cap": 10.0, "total_volume": 10.0},
+            {"id": "bitcoin", "symbol": "btc", "name": "Bitcoin", "market_cap_rank": 2, "market_cap": 9.0, "total_volume": 9.0},
+            {"id": "bitcoin-dup", "symbol": "btc", "name": "Bitcoin Dup", "market_cap_rank": 3, "market_cap": 8.0, "total_volume": 8.0},
+            {"id": "ethereum", "symbol": "eth", "name": "Ethereum", "market_cap_rank": 4, "market_cap": 7.0, "total_volume": 7.0},
+        ],
+        2: [],
+    }
+
+    monkeypatch.setattr(crypto_workflows, "_provider_for", lambda crypto_cfg: FakeExchangeProvider())
+    monkeypatch.setattr(crypto_workflows.CoinGeckoProvider, "fetch_markets", lambda self, **kwargs: pages[kwargs["page"]])
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "crypto_registry_json": tmp_path / "meta" / "crypto" / "registry.json",
+                "crypto_universe_dir": tmp_path / "meta" / "crypto" / "universes",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {
+                "exchange": "binance",
+                "market_type": "spot",
+                "quote_assets": ["USDT"],
+                "universe_refresh_limit": 1,
+                "universe_refresh_pages": 2,
+            },
+        }
+    )
+
+    result = crypto_refresh_universe_from_config(cfg, universe="crypto_dynamic")
+    assert result["symbols_selected"] == ["BTC_USDT"]
 
 
 def test_crypto_refresh_universe_skips_invalid_coingecko_symbol(monkeypatch, dummy_cfg_factory, tmp_path: Path):
@@ -726,6 +891,55 @@ def test_crypto_verify_detects_missing_invalid_and_stale(monkeypatch, dummy_cfg_
     assert any(item["symbol"] == "ETH_USDT" and "stale" in item["reasons"] for item in result["dirty_symbols"])
 
 
+def test_crypto_verify_zero_byte_empty_and_stale_helpers(monkeypatch, dummy_cfg_factory, tmp_path: Path):
+    import tradinglab_data.crypto.verify as crypto_verify
+    original_is_stale = crypto_verify._is_stale
+
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {"exchange": "binance", "market_type": "spot", "default_universe": "crypto_majors", "quote_assets": ["USDT"]},
+        }
+    )
+    root = tmp_path / "crypto" / "binance" / "spot" / "1h"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "BTC_USDT.parquet").write_bytes(b"")
+    pl.DataFrame(
+        {
+            "timestamp": pl.Series([], dtype=pl.Datetime),
+            "open": pl.Series([], dtype=pl.Float64),
+            "high": pl.Series([], dtype=pl.Float64),
+            "low": pl.Series([], dtype=pl.Float64),
+            "close": pl.Series([], dtype=pl.Float64),
+            "volume": pl.Series([], dtype=pl.Float64),
+            "provider": pl.Series([], dtype=pl.String),
+            "exchange": pl.Series([], dtype=pl.String),
+            "market_type": pl.Series([], dtype=pl.String),
+            "symbol": pl.Series([], dtype=pl.String),
+            "base_asset": pl.Series([], dtype=pl.String),
+            "quote_asset": pl.Series([], dtype=pl.String),
+            "interval": pl.Series([], dtype=pl.String),
+            "is_closed": pl.Series([], dtype=pl.Boolean),
+            "ingested_at": pl.Series([], dtype=pl.Datetime),
+            "source_symbol": pl.Series([], dtype=pl.String),
+        }
+    ).write_parquet(root / "ETH_USDT.parquet")
+    monkeypatch.setattr(crypto_verify, "_is_stale", lambda value, interval, stale_multiple: False)
+
+    result = run_crypto_verify_checks(cfg, CryptoVerifyConfig(interval="1h", universe="crypto_majors", max_missing_ratio=1.0))
+
+    assert any(item["symbol"] == "BTC_USDT" and "zero_byte" in item["reasons"] for item in result["dirty_symbols"])
+    assert any(item["symbol"] == "ETH_USDT" and "empty_file" in item["reasons"] for item in result["dirty_symbols"])
+    assert "zero_byte_files:1>0" in result["errors"]
+    assert original_is_stale("bad", interval="1h", stale_multiple=2) is True
+    assert original_is_stale(datetime(2000, 1, 1), interval="1h", stale_multiple=2) is True
+
+
 def test_crypto_refresh_universe_rejects_unsupported_provider(dummy_cfg_factory, tmp_path: Path):
     cfg = dummy_cfg_factory(
         {
@@ -785,11 +999,38 @@ def test_coingecko_item_to_metadata_filters_missing_and_thresholded_values(dummy
     )
 
 
+def test_coingecko_item_to_metadata_filters_exclusions_and_wrapped_assets(dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {"parquet_root": tmp_path / "daily", "crypto_root": tmp_path / "crypto", "runs_root": tmp_path / "runs", "universe_csv": tmp_path / "meta" / "universe.csv"},
+            "crypto": {"quote_assets": ["USDT"], "excluded_ids": ["coin"], "exclude_wrapped_assets": True},
+        }
+    )
+    crypto_cfg = _read_crypto_config(cfg)
+    assert _coingecko_item_to_metadata({"id": "coin", "symbol": "btc", "name": "Bitcoin"}, crypto_cfg=crypto_cfg, universe_name="u") is None
+    assert _coingecko_item_to_metadata({"id": "wrapped-bitcoin", "symbol": "wbtc", "name": "Wrapped Bitcoin"}, crypto_cfg=crypto_cfg, universe_name="u") is None
+    entry = _coingecko_item_to_metadata({"id": "bitcoin", "symbol": "btc", "name": "Bitcoin", "market_cap_rank": 1, "market_cap": 10.0, "total_volume": 10.0}, crypto_cfg=crypto_cfg, universe_name="u")
+    assert entry["market_cap_rank"] == 1
+
+
 def test_numeric_helpers_return_none_for_non_numeric_values():
     assert _as_float("1") is None
     assert _as_float(1) == 1.0
     assert _as_int(1.2) is None
     assert _as_int(3) == 3
+
+
+def test_workflow_misc_helpers_cover_types_and_universe_show(dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {"parquet_root": tmp_path / "daily", "crypto_root": tmp_path / "crypto", "runs_root": tmp_path / "runs", "universe_csv": tmp_path / "meta" / "universe.csv"},
+            "crypto": {"exchange": "binance", "market_type": "spot", "quote_assets": ["USDT"]},
+        }
+    )
+    assert crypto_show_universe_from_config(cfg, symbols_override=["btc/usdt"]) == ["BTC_USDT"]
+    assert _as_float(1.2) == 1.2
+    assert _as_int("1") is None
+    assert _frames_equal(_crypto_frame(), _crypto_frame()) is True
 
 
 def test_crypto_verify_repair_backfills_dirty_symbols(monkeypatch, dummy_cfg_factory, tmp_path: Path):
@@ -825,3 +1066,104 @@ def test_crypto_verify_repair_backfills_dirty_symbols(monkeypatch, dummy_cfg_fac
     assert "BTC_USDT" in result["repaired_symbols"]
     assert "ETH_USDT" in result["repaired_symbols"]
     assert all(symbol in {"BTC_USDT", "ETH_USDT", "SOL_USDT", "XRP_USDT", "BNB_USDT"} for symbol in result["missing_symbols"])
+
+
+def test_crypto_verify_repair_recounts_existing_zero_byte_files(monkeypatch, dummy_cfg_factory, tmp_path: Path):
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {"exchange": "binance", "market_type": "spot", "default_universe": "crypto_majors", "quote_assets": ["USDT"]},
+        }
+    )
+    root = tmp_path / "crypto" / "binance" / "spot" / "1h"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "BTC_USDT.parquet").write_bytes(b"")
+    monkeypatch.setattr("tradinglab_data.crypto.verify.crypto_backfill_from_config", lambda *args, **kwargs: None)
+
+    result = run_crypto_verify_checks(
+        cfg,
+        CryptoVerifyConfig(interval="1h", universe="crypto_majors", repair=True, max_missing_ratio=1.0),
+    )
+
+    assert result["zero_byte_files"] == 1
+    assert result["files_present"] >= 1
+    assert any(item["symbol"] == "BTC_USDT" and item["exists"] is True for item in result["dirty_symbols"])
+
+
+def test_crypto_backfill_incremental_uses_existing_timestamp_and_unchanged_path(monkeypatch, dummy_cfg_factory, tmp_path: Path):
+    import tradinglab_data.crypto.workflows as crypto_workflows
+
+    starts: list[datetime | None] = []
+
+    class FakeProvider:
+        def list_symbols(self) -> list[str]:
+            return ["BTC_USDT"]
+
+    monkeypatch.setattr(crypto_workflows, "_provider_for", lambda crypto_cfg: FakeProvider())
+    monkeypatch.setattr(
+        crypto_workflows,
+        "_fetch_symbol_history",
+        lambda provider, symbol, interval, start=None, total_limit=None, batch_limit=None: starts.append(start) or pl.DataFrame(schema=_crypto_frame().schema),
+    )
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {"exchange": "binance", "market_type": "spot", "default_universe": "crypto_majors", "quote_assets": ["USDT"]},
+        }
+    )
+    root = tmp_path / "crypto" / "binance" / "spot" / "1h"
+    root.mkdir(parents=True, exist_ok=True)
+    _crypto_frame(symbol="BTC_USDT", timestamps=["2026-04-20T17:00:00", "2026-04-20T18:00:00"]).write_parquet(root / "BTC_USDT.parquet")
+
+    result = crypto_backfill_from_config(cfg, interval="1h", symbols_override=["BTC_USDT"], incremental=True)
+
+    assert result["files_written"] == 0
+    assert starts == [datetime(2026, 4, 20, 17, 0, tzinfo=timezone.utc)]
+
+
+def test_crypto_refresh_universe_breaks_on_empty_page_and_skips_duplicates(monkeypatch, dummy_cfg_factory, tmp_path: Path):
+    import tradinglab_data.crypto.workflows as crypto_workflows
+
+    class FakeExchangeProvider:
+        def list_symbols(self) -> list[str]:
+            return ["BTC_USDT", "ETH_USDT"]
+
+    pages = {
+        1: [{"id": "bitcoin", "symbol": "btc", "name": "Bitcoin", "market_cap_rank": 1, "market_cap": 10.0, "total_volume": 10.0}],
+        2: [{"id": "bitcoin-dup", "symbol": "btc", "name": "Bitcoin Dup", "market_cap_rank": 2, "market_cap": 9.0, "total_volume": 9.0}],
+        3: [],
+    }
+    monkeypatch.setattr(crypto_workflows, "_provider_for", lambda crypto_cfg: FakeExchangeProvider())
+    monkeypatch.setattr(crypto_workflows.CoinGeckoProvider, "fetch_markets", lambda self, **kwargs: pages[kwargs["page"]])
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "parquet_root": tmp_path / "daily",
+                "crypto_root": tmp_path / "crypto",
+                "crypto_registry_json": tmp_path / "meta" / "crypto" / "registry.json",
+                "crypto_universe_dir": tmp_path / "meta" / "crypto" / "universes",
+                "runs_root": tmp_path / "runs",
+                "universe_csv": tmp_path / "meta" / "universe.csv",
+            },
+            "crypto": {
+                "exchange": "binance",
+                "market_type": "spot",
+                "quote_assets": ["USDT"],
+                "universe_refresh_limit": 10,
+                "universe_refresh_pages": 3,
+            },
+        }
+    )
+
+    result = crypto_refresh_universe_from_config(cfg, universe="crypto_dynamic")
+    assert result["symbols_selected"] == ["BTC_USDT"]

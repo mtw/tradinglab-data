@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import tradinglab_data.crypto.providers.ccxt_exchange as ccxt_mod
 from tradinglab_data.crypto.providers.ccxt_exchange import CCXTExchangeProvider, normalize_canonical_symbol
 from tradinglab_data.crypto.providers.coingecko_provider import CoinGeckoProvider
 
@@ -44,6 +45,37 @@ def test_ccxt_provider_symbol_helpers_and_market_filtering():
     assert provider.list_symbols() == ["BTC_USDT"]
 
 
+def test_ccxt_provider_import_and_empty_row_helpers(monkeypatch):
+    real_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "ccxt":
+            raise ImportError("missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    with pytest.raises(RuntimeError, match="ccxt is required"):
+        ccxt_mod._import_ccxt()
+
+    assert ccxt_mod._normalize_ohlcv_rows(
+        [],
+        symbol="BTC_USDT",
+        exchange="binance",
+        market_type="spot",
+        interval="1h",
+        provider="ccxt",
+        base_asset="BTC",
+        quote_asset="USDT",
+        source_symbol="BTC/USDT",
+    ).is_empty()
+
+    class FakeCCXTModule:
+        pass
+
+    monkeypatch.setattr("builtins.__import__", lambda name, *args, **kwargs: FakeCCXTModule() if name == "ccxt" else real_import(name, *args, **kwargs))
+    assert isinstance(ccxt_mod._import_ccxt(), FakeCCXTModule)
+
+
 def test_ccxt_provider_fetch_ohlcv_filters_end_and_validates_interval():
     provider = CCXTExchangeProvider("binance", _client=FakeCCXTClient())
 
@@ -60,6 +92,11 @@ def test_ccxt_provider_fetch_ohlcv_filters_end_and_validates_interval():
 
     assert frame.height == 1
     assert frame.get_column("source_symbol").to_list() == ["BTC/USDT"]
+
+
+def test_ccxt_provider_to_utc_naive_accepts_naive_datetime():
+    value = datetime(2024, 4, 20, 0, 0)
+    assert ccxt_mod._to_utc_naive(value) == value
 
 
 def test_ccxt_provider_converts_aware_start_to_utc():
@@ -84,6 +121,23 @@ def test_ccxt_provider_create_rejects_unknown_exchange(monkeypatch):
 
     with pytest.raises(ValueError, match="Unsupported ccxt exchange"):
         provider._client_or_create()
+
+
+def test_ccxt_provider_client_creation_uses_imported_ctor(monkeypatch):
+    created: list[dict[str, object]] = []
+
+    class FakeCCXTModule:
+        @staticmethod
+        def kraken(options):
+            created.append(options)
+            return {"client": "ok"}
+
+    monkeypatch.setattr("tradinglab_data.crypto.providers.ccxt_exchange._import_ccxt", lambda: FakeCCXTModule())
+    provider = CCXTExchangeProvider("kraken", market_type="margin")
+
+    assert provider._client_or_create() == {"client": "ok"}
+    assert provider._client == {"client": "ok"}
+    assert created == [{"enableRateLimit": True, "options": {"defaultType": "margin"}}]
 
 
 def test_coingecko_provider_fetch_markets_filters_non_dict_items(monkeypatch):

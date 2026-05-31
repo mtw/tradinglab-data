@@ -1,13 +1,40 @@
 from __future__ import annotations
 
+import argparse
 import runpy
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import polars as pl
 import pytest
 
 import tradinglab_data.cli as cli
+
+
+def test_cli_helper_functions_cover_display_split_and_markdown():
+    assert cli._display_value(None) == "-"
+    assert cli._display_value(b"abc") == "abc"
+    assert cli._split_cli_values(None) is None
+    assert cli._split_cli_values(["a,b", " c "], uppercase=True) == ["A", "B", "C"]
+
+    text = cli._render_symbol_master_markdown(
+        pl.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "exchange": ["NASDAQ"],
+                "country": ["US"],
+                "asset_currency": ["USD"],
+                "fx_pair_to_base": ["USDEUR"],
+                "metadata_source": ["universe"],
+                "metadata_quality": ["complete"],
+            }
+        ),
+        exchange="nasdaq",
+        fx_pair="usdeur",
+        issues="defaulted",
+    )
+    assert "scope: `exchange=NASDAQ, fx_pair=USDEUR, issues=defaulted`" in text
 
 
 def test_cli_schema_does_not_require_config(capsys):
@@ -453,6 +480,40 @@ def test_cli_fx_update_uses_pairs_from_symbol_master_when_pairs_omitted(monkeypa
     assert "[FX_UPDATE] pair=USDEUR" in out
 
 
+def test_cli_fx_backfill_and_inspect(monkeypatch, tmp_path: Path, capsys):
+    fx_root = tmp_path / "fx"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  fx_daily_root: {fx_root}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli,
+        "sync_fx_pair_yahoo",
+        lambda pair, root, **kwargs: {
+            "pair": pair.upper(),
+            "rows_written": 2,
+            "path": str(Path(root) / f"{pair.upper()}.parquet"),
+            "source_symbol": f"{pair.upper()}=X",
+            "used_inverse": False,
+        },
+    )
+    monkeypatch.setattr(
+        cli,
+        "load_fx_pair",
+        lambda root, pair, strict=False: pl.DataFrame(
+            {
+                "date": [datetime(2026, 3, 27), datetime(2026, 3, 28)],
+                "close": [0.92, 0.93],
+            }
+        ),
+    )
+
+    assert cli.main(["--config", str(config_path), "fx-backfill", "--pairs", "USDEUR", "--provider", "yahoo"]) == 0
+    assert cli.main(["--config", str(config_path), "fx-inspect", "--pairs", "USDEUR", "--tail", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "[FX_SYNC] pair=USDEUR rows_written=2" in out
+    assert "USDEUR rows=2 start=2026-03-27" in out
+
+
 def test_cli_inspect_symbol_master_filters_and_renders_markdown(tmp_path: Path, capsys):
     meta = tmp_path / "meta"
     path = meta / "symbol_master.csv"
@@ -503,6 +564,32 @@ def test_cli_inspect_symbol_master_renders_json_and_csv(tmp_path: Path, capsys):
     assert '"symbol":"AAPL"' in json_out.read_text(encoding="utf-8")
     assert rc_csv == 0
     assert "symbol,exchange,country" in capsys.readouterr().out
+
+
+def test_cli_inspect_symbol_master_limit_markdown_out_json_stdout_and_csv_out(tmp_path: Path, capsys):
+    meta = tmp_path / "meta"
+    path = meta / "symbol_master.csv"
+    meta.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "symbol,exchange,country,asset_currency,base_listing_currency,tax_country,asset_class,fx_pair_to_base,lot_size,price_multiplier,metadata_source,metadata_quality\n"
+        "B,NASDAQ,US,USD,USD,US,stock,USDEUR,1,1,universe,complete\n"
+        "A,NYSE,US,USD,USD,US,stock,USDEUR,1,1,universe,complete\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  symbol_master_csv: {path}\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+
+    markdown_out = tmp_path / "inspect.md"
+    csv_out = tmp_path / "inspect.csv"
+
+    assert cli.main(["--config", str(config_path), "inspect-symbol-master", "--limit", "1", "--out", str(markdown_out)]) == 0
+    assert cli.main(["--config", str(config_path), "inspect-symbol-master", "--format", "json"]) == 0
+    assert cli.main(["--config", str(config_path), "inspect-symbol-master", "--format", "csv", "--out", str(csv_out)]) == 0
+
+    assert markdown_out.read_text(encoding="utf-8").count("| B |") == 1
+    assert "| A |" not in markdown_out.read_text(encoding="utf-8")
+    assert '"symbol":"A"' in capsys.readouterr().out
+    assert "symbol,exchange,country" in csv_out.read_text(encoding="utf-8")
 
 
 def test_cli_market_data_sync_validate_and_inspect(monkeypatch, tmp_path: Path, capsys):
@@ -558,6 +645,91 @@ def test_cli_market_data_validate_raises_aggregated_errors(monkeypatch, tmp_path
 
     with pytest.raises(SystemExit, match="market cap failed\nindex failed"):
         cli.main(["--config", str(config_path), "market-data", "validate"])
+
+
+def test_cli_intraday_validate_and_inspect(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "intraday_research_validate_from_config", lambda *args, **kwargs: {"ok": True, "interval": "5m", "files_checked": 2, "root": "/tmp/research", "universe": "u"})
+    monkeypatch.setattr(
+        cli,
+        "intraday_research_inspect_from_config",
+        lambda *args, **kwargs: [{"symbol": "AAA", "exists": True, "rows": 2, "valid": True, "start": "2026-01-01", "end": "2026-01-02", "path": "/tmp/AAA.parquet"}],
+    )
+
+    assert cli.main(["--config", str(config_path), "intraday", "validate"]) == 0
+    assert cli.main(["--config", str(config_path), "intraday", "inspect"]) == 0
+    out = capsys.readouterr().out
+    assert "[INTRADAY_VALIDATE] interval=5m files_checked=2" in out
+    assert "AAA exists=True rows=2 valid=True" in out
+
+
+def test_cli_intraday_backfill_and_validation_failure(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "intraday_research_update_from_config",
+        lambda *args, **kwargs: {"interval": "5m", "files_written": 1, "symbols": ["AAA"], "root": "/tmp/research", "universe": "u"},
+    )
+    monkeypatch.setattr(cli, "intraday_research_validate_from_config", lambda *args, **kwargs: {"ok": False, "errors": ["bad research"]})
+
+    assert cli.main(["--config", str(config_path), "intraday", "backfill"]) == 0
+    with pytest.raises(SystemExit, match="bad research"):
+        cli.main(["--config", str(config_path), "intraday", "validate"])
+
+
+def test_cli_intraday_live_backfill_validate_and_inspect(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "intraday_live_update_from_config",
+        lambda *args, **kwargs: {"interval": "5m", "files_written": 1, "symbols": ["AAA"], "root": "/tmp/live", "universe": "u"},
+    )
+    monkeypatch.setattr(cli, "intraday_live_validate_from_config", lambda *args, **kwargs: {"ok": True, "interval": "5m", "files_checked": 2, "root": "/tmp/live", "universe": "u"})
+    monkeypatch.setattr(
+        cli,
+        "intraday_live_inspect_from_config",
+        lambda *args, **kwargs: [{"symbol": "AAA", "exists": True, "rows": 2, "valid": True, "start": "2026-01-01", "end": "2026-01-02", "path": "/tmp/AAA.parquet"}],
+    )
+
+    assert cli.main(["--config", str(config_path), "intraday-live", "backfill"]) == 0
+    assert cli.main(["--config", str(config_path), "intraday-live", "validate"]) == 0
+    assert cli.main(["--config", str(config_path), "intraday-live", "inspect"]) == 0
+    out = capsys.readouterr().out
+    assert "[INTRADAY_LIVE_BACKFILL] interval=5m files_written=1" in out
+    assert "[INTRADAY_LIVE_VALIDATE] interval=5m files_checked=2" in out
+    assert "AAA exists=True rows=2 valid=True" in out
+
+
+def test_cli_intraday_live_validate_failure(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "intraday_live_validate_from_config", lambda *args, **kwargs: {"ok": False, "errors": []})
+
+    with pytest.raises(SystemExit, match="intraday live validation failed"):
+        cli.main(["--config", str(config_path), "intraday-live", "validate"])
+
+
+def test_cli_intraday_sync_backfill(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        cli,
+        "intraday_sync_from_config",
+        lambda *args, **kwargs: {
+            "interval": "5m",
+            "universe": "u",
+            "symbols": ["AAA"],
+            "fetched_symbols": 1,
+            "live": {"files_written": 1, "root": "/tmp/live"},
+            "research": {"files_written": 1, "root": "/tmp/research"},
+        },
+    )
+
+    assert cli.main(["--config", str(config_path), "intraday-sync", "backfill"]) == 0
+    assert "[INTRADAY_SYNC_BACKFILL] interval=5m live_files_written=1 research_files_written=1" in capsys.readouterr().out
 
 
 def test_cli_crypto_commands_dispatch(monkeypatch, tmp_path: Path, capsys):
@@ -634,3 +806,131 @@ def test_cli_crypto_validate_raises_on_errors(monkeypatch, tmp_path: Path):
 
     with pytest.raises(SystemExit, match="bad crypto"):
         cli.main(["--config", str(config_path), "crypto", "validate", "--interval", "1h"])
+
+
+def test_cli_report_universe_consistency_json_and_csv(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    frame = pl.DataFrame({"symbol": ["AAA"], "status": ["ok"]})
+    monkeypatch.setattr(cli, "generate_universe_consistency_report", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(cli, "render_universe_consistency_json", lambda frame: '{"ok": true}')
+
+    assert cli.main(["--config", str(config_path), "report-universe-consistency", "--dataset", "daily", "--format", "json"]) == 0
+    assert cli.main(["--config", str(config_path), "report-universe-consistency", "--dataset", "daily", "--format", "csv"]) == 0
+    out = capsys.readouterr().out
+    assert '{"ok": true}' in out
+    assert "symbol,status" in out
+    monkeypatch.setattr(cli, "render_universe_consistency_markdown", lambda *args, **kwargs: "# Markdown\n")
+    assert cli.main(["--config", str(config_path), "report-universe-consistency", "--dataset", "daily"]) == 0
+    assert "# Markdown" in capsys.readouterr().out
+
+
+def test_cli_report_universe_consistency_markdown_json_and_csv_write_outputs(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    frame = pl.DataFrame({"symbol": ["AAA"], "status": ["ok"]})
+    monkeypatch.setattr(cli, "generate_universe_consistency_report", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(cli, "render_universe_consistency_markdown", lambda *args, **kwargs: "# Report\n")
+    monkeypatch.setattr(cli, "render_universe_consistency_json", lambda frame: '{"ok": true}')
+
+    md_out = tmp_path / "report.md"
+    json_out = tmp_path / "report.json"
+    csv_out = tmp_path / "report.csv"
+
+    assert cli.main(["--config", str(config_path), "report-universe-consistency", "--dataset", "daily", "--out", str(md_out)]) == 0
+    assert cli.main(["--config", str(config_path), "report-universe-consistency", "--dataset", "daily", "--format", "json", "--out", str(json_out)]) == 0
+    assert cli.main(["--config", str(config_path), "report-universe-consistency", "--dataset", "daily", "--format", "csv", "--out", str(csv_out)]) == 0
+
+    assert md_out.read_text(encoding="utf-8") == "# Report\n"
+    assert json_out.read_text(encoding="utf-8") == '{"ok": true}'
+    assert "symbol,status" in csv_out.read_text(encoding="utf-8")
+    assert capsys.readouterr().out == ""
+
+
+def test_cli_report_parquet_store_markdown_only_and_update_monitor(monkeypatch, tmp_path: Path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(f"paths:\n  runs_root: {tmp_path / 'runs'}\n", encoding="utf-8")
+    monkeypatch.setattr(cli, "generate_parquet_store_report", lambda *args, **kwargs: {"json_path": "", "markdown_path": "/tmp/report.md"})
+    update_calls: list[tuple[str, object]] = []
+    monkeypatch.setattr(cli, "update_from_config", lambda cfg, symbols_override=None: update_calls.append(("update", symbols_override)))
+    monkeypatch.setattr(cli, "monitor_extended_hours_from_config", lambda cfg, symbols_override=None, top_n=25, session_filter="all": update_calls.append(("monitor", (symbols_override, top_n, session_filter))))
+
+    assert cli.main(["--config", str(config_path), "report-parquet-store", "--format", "markdown"]) == 0
+    assert cli.main(["--config", str(config_path), "update", "--symbols", "AAA", "BBB"]) == 0
+    assert cli.main(["--config", str(config_path), "monitor-extended-hours", "--symbols", "AAA", "--top-n", "3", "--session", "pre"]) == 0
+    out = capsys.readouterr().out
+    assert "[PARQUET_STORE_REPORT] json= markdown=/tmp/report.md" in out
+    assert update_calls == [("update", ["AAA", "BBB"]), ("monitor", (["AAA"], 3, "pre"))]
+
+
+def test_cli_fx_validate_failure_build_universe_and_unknown_command(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+                [
+                    "paths:",
+                    f"  runs_root: {tmp_path / 'runs'}",
+                    f"  store_root: {tmp_path / 'store'}",
+                    f"  universe_dir: {tmp_path / 'universes'}",
+                    f"  ticker_overrides_yaml: {tmp_path / 'ticker_overrides.yaml'}",
+                ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli, "validate_fx_pair", lambda root, pair: ["broken", "missing"])
+    with pytest.raises(SystemExit, match="USDEUR: broken\nUSDEUR: missing"):
+        cli.main(["--config", str(config_path), "fx-validate", "--pairs", "USDEUR"])
+
+    build_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(cli, "build_universe", lambda **kwargs: build_calls.append(kwargs))
+    assert cli.main(
+        [
+            "--config",
+            str(config_path),
+            "build-universe",
+            "--indices",
+            "sp500",
+            "nasdaq100",
+            "--out",
+            str(tmp_path / "out.csv"),
+            "--inactive-too",
+        ]
+    ) == 0
+    assert build_calls == [
+        {
+            "indices": ["sp500", "nasdaq100"],
+            "out_path": str(tmp_path / "out.csv"),
+            "active_only": False,
+            "overrides_dir": str(tmp_path / "universes"),
+            "ticker_overrides_path": tmp_path / "store" / "meta" / "ticker_overrides.csv",
+        }
+    ]
+
+    class DummyParser:
+        def add_argument(self, *args, **kwargs):
+            return None
+
+        def add_subparsers(self, *args, **kwargs):
+            class DummySubparsers:
+                def add_parser(self, *args, **kwargs):
+                    class DummySubparser:
+                        def add_argument(self, *args, **kwargs):
+                            return None
+
+                        def add_subparsers(self, *args, **kwargs):
+                            return DummySubparsers()
+
+                        def set_defaults(self, **kwargs):
+                            return None
+
+                    return DummySubparser()
+
+            return DummySubparsers()
+
+        def parse_args(self, argv):
+            return argparse.Namespace(cmd="unknown", config=str(config_path))
+
+    monkeypatch.setattr(cli.argparse, "ArgumentParser", lambda *args, **kwargs: DummyParser())
+    assert cli.main([]) == 2
