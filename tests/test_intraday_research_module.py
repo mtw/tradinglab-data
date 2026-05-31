@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import polars as pl
@@ -171,6 +172,14 @@ def test_intraday_research_empty_invalid_and_trim_paths():
 
     old = normalize_intraday_research_frame(_raw_intraday_frame(["2020-01-01T13:30:00"]), symbol="AAA", currency="USD")
     assert trim_intraday_research_window(old, retention_days=1).is_empty()
+
+
+def test_normalize_intraday_research_frame_returns_empty_when_coerced_frame_is_empty(monkeypatch):
+    import tradinglab_data.intraday_research as mod
+
+    monkeypatch.setattr(mod, "coerce_standard_schema", lambda df: pl.DataFrame(schema={"date": pl.Datetime}))
+
+    assert mod.normalize_intraday_research_frame(pl.DataFrame({"date": [datetime(2026, 3, 27, 13, 30)]}), symbol="AAA", currency="USD").is_empty()
 
 
 def test_update_intraday_research_store_empty_skipped_and_unchanged(tmp_path: Path):

@@ -128,3 +128,20 @@ def test_build_universe_marks_atx_wikipedia_name_only_rows_for_mapping(tmp_path:
 
     assert df.get_column("symbol").to_list() == [""]
     assert df.get_column("needs_mapping").to_list() == [1]
+
+
+def test_build_universe_keeps_inactive_rows_when_active_only_disabled(tmp_path: Path, monkeypatch):
+    monkeypatch.setitem(
+        ub._INDEX_FETCHERS,
+        "sp500",
+        lambda: [
+            {"symbol": "AAA", "name": "Active", "exchange": "NYSE", "country": "US", "source": "x", "active": 1, "isin": None},
+            {"symbol": "BBB", "name": "Inactive", "exchange": "NYSE", "country": "US", "source": "x", "active": 0, "isin": None},
+        ],
+    )
+    monkeypatch.setattr(ub, "normalize_to_yahoo", lambda symbol, exchange, country, **kwargs: symbol)
+
+    df = ub.build_universe(indices=["sp500"], out_path=tmp_path / "universe.csv", active_only=False)
+
+    assert df.height == 2
+    assert df.get_column("symbol").to_list() == ["AAA", "BBB"]

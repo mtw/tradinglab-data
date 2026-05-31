@@ -30,6 +30,19 @@ def test_safe_read_html_handles_import_value_and_generic_errors(monkeypatch, cap
     assert "failed to read HTML" in capsys.readouterr().out
 
 
+def test_safe_read_html_forwards_match_argument(monkeypatch):
+    called: list[tuple[str, str | None]] = []
+
+    class FakePandas:
+        def read_html(self, url, match=None):
+            called.append((url, match))
+            return ["ok"]
+
+    monkeypatch.setitem(__import__("sys").modules, "pandas", FakePandas())
+    assert ub._safe_read_html("https://example.invalid", match="Ticker") == ["ok"]
+    assert called == [("https://example.invalid", "Ticker")]
+
+
 def test_wikipedia_index_rows_extracts_symbols_and_skips_blank(monkeypatch):
     monkeypatch.setattr(
         ub,
@@ -60,6 +73,23 @@ def test_wikipedia_index_rows_extracts_symbols_and_skips_blank(monkeypatch):
             "isin": None,
         }
     ]
+
+
+def test_wikipedia_and_index_fetchers_return_empty_when_tables_missing(monkeypatch):
+    monkeypatch.setattr(ub, "_safe_read_html", lambda *args, **kwargs: None)
+    assert ub._wikipedia_index_rows(
+        url="https://example.invalid",
+        match="Ticker",
+        symbol_columns=("ticker",),
+        name_columns=("company",),
+        exchange="Xetra",
+        country="Germany",
+        source="dax_wikipedia",
+    ) == []
+    assert ub._sp500_rows() == []
+    assert ub._djia_rows() == []
+    assert ub._atx_rows() == []
+    assert ub._atx_rows_wikipedia() == []
 
 
 def test_sp500_and_djia_rows_parse_expected_columns(monkeypatch):
@@ -124,11 +154,24 @@ def test_stoxx_closecomposition_read_errors_return_none(monkeypatch):
     assert ub._read_stoxx_closecomposition("dax") is None
 
 
+def test_stoxx_closecomposition_generic_error_warns(monkeypatch, capsys):
+    monkeypatch.setattr(ub, "urlopen", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert ub._read_stoxx_closecomposition("dax") is None
+    assert "failed to read STOXX composition" in capsys.readouterr().out
+
+
 def test_atx_rows_falls_back_when_table_has_no_symbol_or_name(monkeypatch):
     monkeypatch.setattr(ub, "_safe_read_html", lambda *args, **kwargs: [pd.DataFrame({"Other": ["x"]})])
     monkeypatch.setattr(ub, "_atx_rows_wikipedia", lambda: [{"symbol": "", "name": "Fallback AG"}])
 
     assert ub._atx_rows() == [{"symbol": "", "name": "Fallback AG"}]
+
+
+def test_atx_rows_returns_parsed_rows_when_table_has_data(monkeypatch):
+    monkeypatch.setattr(ub, "_safe_read_html", lambda *args, **kwargs: [pd.DataFrame({"Symbol": ["EBS"], "Name": ["Erste"], "ISIN": ["AT0000652011"]})])
+    rows = ub._atx_rows()
+    assert rows[0]["symbol"] == "EBS"
+    assert rows[0]["isin"] == "AT0000652011"
 
 
 def test_atx_wikipedia_rows_require_name_column(monkeypatch):
@@ -174,3 +217,9 @@ def test_stoxx_rows_empty_frame_returns_empty(monkeypatch):
     monkeypatch.setattr(ub, "_read_stoxx_closecomposition", lambda index_symbol: pl.DataFrame())
 
     assert ub._stoxx_closecomposition_rows("dax", "dax_stoxx") == []
+
+
+def test_dax_and_mdax_row_helpers_delegate_to_wikipedia(monkeypatch):
+    monkeypatch.setattr(ub, "_wikipedia_index_rows", lambda **kwargs: [{"symbol": "AAA", "source": kwargs["source"]}])
+    assert ub._dax_rows_wikipedia() == [{"symbol": "AAA", "source": "dax_wikipedia"}]
+    assert ub._mdax_rows_wikipedia() == [{"symbol": "AAA", "source": "mdax_wikipedia"}]

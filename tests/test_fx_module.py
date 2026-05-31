@@ -47,6 +47,12 @@ def test_normalize_pair_accepts_six_letter_pair():
     assert normalize_pair("usdEUR") == "USDEUR"
 
 
+def test_normalize_currency_and_pair_reject_invalid_values():
+    assert fx_mod.normalize_currency(None) == ""
+    with pytest.raises(ValueError, match="Invalid FX pair"):
+        normalize_pair("USD")
+
+
 def test_split_pair_returns_source_and_target_currency():
     assert split_pair("USDEUR") == ("USD", "EUR")
 
@@ -79,6 +85,12 @@ def test_validate_fx_pair_rejects_nonpositive_close(tmp_path: Path):
     write_fx_pair(bad, tmp_path, "USDEUR")
     errors = validate_fx_pair(tmp_path, "USDEUR")
     assert any("invalid_rows" in error for error in errors)
+
+
+def test_validate_fx_pair_reports_missing_file(tmp_path: Path):
+    errors = validate_fx_pair(tmp_path, "USDEUR")
+    assert len(errors) == 1
+    assert "USDEUR.parquet" in errors[0]
 
 
 def test_validate_fx_pair_rejects_mismatched_pair_column(tmp_path: Path):
@@ -188,6 +200,17 @@ def test_sync_fx_pair_yahoo_raises_when_direct_and_inverse_missing(tmp_path: Pat
 
     with pytest.raises(ValueError, match="No FX data returned"):
         sync_fx_pair_yahoo("USDEUR", tmp_path)
+
+
+def test_sync_fx_pair_yahoo_raises_when_inverse_disabled(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        fx_mod,
+        "_fetch_yahoo_pair",
+        lambda symbol, start=None, end=None: pl.DataFrame(schema={"date": pl.Datetime, "open": pl.Float64, "high": pl.Float64, "low": pl.Float64, "close": pl.Float64}),
+    )
+
+    with pytest.raises(ValueError, match="No FX data returned for USDEUR"):
+        sync_fx_pair_yahoo("USDEUR", tmp_path, allow_inverse=False)
 
 
 def test_sync_fx_pair_yahoo_rejects_invalid_provider_output(tmp_path: Path, monkeypatch):

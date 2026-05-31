@@ -90,6 +90,13 @@ def test_load_symbols_from_config_prefers_override_list(dummy_cfg_factory):
     assert out == ["AAPL", "MSFT"]
 
 
+def test_symbol_and_currency_helpers_cover_none_nan_and_missing_currency():
+    assert workflows._normalize_symbol(None) == ""
+    assert workflows._normalize_symbol(float("nan")) == ""
+    assert workflows._normalize_symbol(" aapl ") == "AAPL"
+    assert workflows._normalized_currency_series(pl.DataFrame({"symbol": ["AAA"]})) is None
+
+
 def test_load_symbols_from_config_raises_when_universe_empty(dummy_cfg_factory, monkeypatch):
     cfg = dummy_cfg_factory({"paths": {"store_root": "/tmp/store"}})
     monkeypatch.setattr(workflows, "load_universe_frame", lambda *args, **kwargs: pl.DataFrame({"symbol": []}))
@@ -138,6 +145,31 @@ def test_fetch_shares_full_handles_frame_construction_failure(monkeypatch):
     assert workflows._fetch_shares_full("AAA").is_empty()
 
 
+def test_fetch_shares_full_success_and_fetch_sector_empty_info(monkeypatch):
+    class _Shares:
+        index = [datetime(2026, 1, 1), datetime(2026, 1, 1), datetime(2026, 2, 1)]
+
+        def to_numpy(self):
+            return [1_000_000.0, 1_100_000.0, 2_000_000.0]
+
+    class _Ticker:
+        def __init__(self, symbol):
+            self.symbol = symbol
+
+        def get_shares_full(self, start=None, end=None):
+            return _Shares()
+
+        def get_info(self):
+            return {}
+
+    monkeypatch.setattr(workflows.yf, "Ticker", _Ticker)
+
+    shares = workflows._fetch_shares_full("AAA")
+    assert shares.height == 2
+    assert shares.get_column("shares_outstanding").to_list() == [1_100_000.0, 2_000_000.0]
+    assert workflows._fetch_sector("AAA") is None
+
+
 def test_build_market_cap_frame_returns_empty_for_missing_inputs_and_non_usd_prices():
     empty = workflows.build_market_cap_frame("AAA", pl.DataFrame(), pl.DataFrame())
     assert empty.is_empty()
@@ -155,6 +187,15 @@ def test_build_market_cap_frame_returns_empty_for_missing_inputs_and_non_usd_pri
         pl.DataFrame({"date": [datetime(2026, 1, 1)], "shares_outstanding": [None]}),
     )
     assert no_shares.is_empty()
+
+
+def test_build_market_cap_frame_returns_empty_when_no_backward_share_match_exists():
+    frame = workflows.build_market_cap_frame(
+        "AAA",
+        pl.DataFrame({"date": [datetime(2026, 1, 1)], "close": [11.0], "currency": ["USD"]}),
+        pl.DataFrame({"date": [datetime(2026, 2, 1)], "shares_outstanding": [1_000_000.0]}),
+    )
+    assert frame.is_empty()
 
 
 def test_sync_market_caps_yahoo_reports_non_usd_listing_currency(tmp_path: Path, monkeypatch, caplog: pytest.LogCaptureFixture):
@@ -187,6 +228,19 @@ def test_sync_market_caps_yahoo_reports_non_usd_listing_currency(tmp_path: Path,
     assert "skipping market-cap sync for non-USD listing AAA: EUR" in caplog.text
 
 
+def test_sync_market_caps_yahoo_filters_blank_symbols_and_reports_no_usd_or_shares(tmp_path: Path, monkeypatch):
+    daily_root = tmp_path / "daily"
+    cap_root = tmp_path / "market_caps"
+    _write_daily(daily_root, "AAA")
+    monkeypatch.setattr(workflows, "_fetch_shares_full", lambda symbol, start=None, end=None: pl.DataFrame())
+
+    result = workflows.sync_market_caps_yahoo(["", "AAA"], daily_root=daily_root, market_cap_root=cap_root, end="2026-01-15")
+
+    assert result["symbols_requested"] == 2
+    assert result["symbols_written"] == 0
+    assert result["skipped"]["AAA"] == "no_usd_price_or_shares"
+
+
 def test_sync_sector_assignments_yahoo_writes_current_gics_sectors(tmp_path: Path, monkeypatch):
     output = tmp_path / "meta" / "sector_assignments.csv"
     monkeypatch.setattr(workflows, "_fetch_sector", lambda symbol: {"AAA": "Financials", "BAD": "Unknown Sector"}.get(symbol))
@@ -198,6 +252,28 @@ def test_sync_sector_assignments_yahoo_writes_current_gics_sectors(tmp_path: Pat
     frame = pl.read_csv(output)
     assert frame.get_column("sector").to_list() == ["Financials"]
     assert frame.get_column("effective_start").to_list() == [frame.get_column("ingested_at").item().split("T", 1)[0]]
+
+
+def test_fetch_sector_handles_non_dict_and_blank_values(monkeypatch):
+    class _TickerNonDict:
+        def __init__(self, symbol):
+            self.symbol = symbol
+
+        def get_info(self):
+            return []
+
+    class _TickerBlank:
+        def __init__(self, symbol):
+            self.symbol = symbol
+
+        def get_info(self):
+            return {"sector": "   "}
+
+    monkeypatch.setattr(workflows.yf, "Ticker", _TickerNonDict)
+    assert workflows._fetch_sector("AAPL") is None
+
+    monkeypatch.setattr(workflows.yf, "Ticker", _TickerBlank)
+    assert workflows._fetch_sector("AAPL") is None
 
 
 def test_fetch_sector_normalizes_yahoo_sector_to_gics(monkeypatch):
@@ -243,6 +319,26 @@ def test_sync_index_returns_yahoo_writes_total_return_frame(tmp_path: Path, monk
     assert result["skipped"]["BAD"] == "unsupported_index_id"
     frame = pl.read_parquet(root / "SPX.parquet")
     assert frame.get_column("return").to_list()[1] == 0.01
+
+
+def test_download_index_level_returns_empty_on_no_data(monkeypatch):
+    monkeypatch.setattr(workflows.yf, "download", lambda *args, **kwargs: None)
+    frame = workflows._download_index_level("^SP500TR")
+    assert frame.is_empty()
+    assert frame.columns == ["date", "adj_close", "close"]
+
+
+def test_download_index_level_normalizes_non_empty_response(monkeypatch):
+    monkeypatch.setattr(
+        workflows.yf,
+        "download",
+        lambda *args, **kwargs: pl.DataFrame(
+            {"date": [datetime(2026, 1, 2)], "open": [1.0], "high": [2.0], "low": [0.5], "close": [1.5], "adj_close": [1.4], "volume": [100.0]}
+        ).to_pandas(),
+    )
+    frame = workflows._download_index_level("^SP500TR")
+    assert frame.height == 1
+    assert "adj_close" in frame.columns
 
 
 def test_index_provider_symbols_use_yahoo_total_return_series():
@@ -386,6 +482,42 @@ def test_validate_and_inspect_market_data_from_config(tmp_path: Path, dummy_cfg_
 
     assert validation["ok"] is True
     assert any(item["artifact"] == "market_cap" and item["exists"] for item in inspection)
+
+
+def test_sync_sector_assignments_skips_blank_symbols_and_sync_index_returns_reports_empty_download(tmp_path: Path, monkeypatch):
+    output = tmp_path / "meta" / "sector_assignments.csv"
+    monkeypatch.setattr(workflows, "_fetch_sector", lambda symbol: "Financials")
+    result = workflows.sync_sector_assignments_yahoo(["", "AAA"], output_path=output)
+    assert result["symbols_written"] == 1
+
+    monkeypatch.setattr(workflows, "_download_index_level", lambda *args, **kwargs: pl.DataFrame())
+    index_result = workflows.sync_index_returns_yahoo(["SPX"], root=tmp_path / "index_returns")
+    assert index_result["skipped"]["SPX"] == "empty_download"
+
+
+def test_inspect_market_data_reports_missing_files(tmp_path: Path, dummy_cfg_factory):
+    store = tmp_path / "store"
+    meta = store / "meta"
+    universe = meta / "universe_master.csv"
+    universe.parent.mkdir(parents=True)
+    pl.DataFrame({"symbol": ["AAA"], "active": [1]}).write_csv(universe)
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {
+                "store_root": store,
+                "universe_csv": universe,
+                "market_cap_root": store / "parquet" / "market_caps",
+                "sector_assignments_csv": meta / "sector_assignments.csv",
+                "index_returns_root": store / "parquet" / "index_returns",
+                "runs_root": store / "runs",
+            }
+        }
+    )
+
+    rows = workflows.inspect_market_data_from_config(cfg, index_ids=["SPX"])
+
+    assert {"artifact": "market_cap", "id": "AAA", "exists": False, "rows": 0, "path": str(store / "parquet" / "market_caps" / "AAA.parquet")} in rows
+    assert {"artifact": "index_return", "id": "SPX", "exists": False, "rows": 0, "path": str(store / "parquet" / "index_returns" / "SPX.parquet")} in rows
 
 
 def test_validate_market_data_helpers_report_invalid_files(tmp_path: Path):
