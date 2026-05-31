@@ -2,9 +2,26 @@
 
 ## [Unreleased]
 
-Work targeting the next patch release, `0.4.2`, should be recorded here.
+Work targeting the next patch release, `0.4.3`, should be recorded here.
 
-- harden CI and package metadata around the Hatch development environment so declared quality tools are provisioned and smoke-checked from a clean checkout
+## [0.4.2] - 2026-05-31
+
+Patch release.
+
+This release keeps the `0.4.x` public API and artifact contracts intact while tightening validator behavior, metadata handling, and release documentation.
+
+Highlights:
+
+- remove the dead `_column_nonempty_count` helper
+- fix `validate_intraday_research_frame` so non-`5m` intraday research frames validate correctly
+- fix `validate_symbol_master_frame` so `strict=False` is a real tolerant mode
+- fix `validate_fx_daily_frame` so row-level failures are counted once per row
+- warn and surface explicit skip reasons for non-USD market-cap sync rows instead of silently dropping them
+- align `UniverseNotFoundError` with the package exception hierarchy by subclassing `Exception`
+- make return-threshold and history-tolerance checks configurable for downstream consumers
+- stamp Yahoo sector assignments with their observation date instead of leaving point-in-time columns empty
+- document the legacy thin intraday schema as compatibility-only and keep the release notes aligned with the `1m` live-store interval support
+- update the release contract and changelog to match the `0.4.2` public package state
 
 ## [0.4.1] - 2026-05-28
 
