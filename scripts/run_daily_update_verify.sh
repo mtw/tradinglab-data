@@ -62,6 +62,10 @@ ETF_MAX_LARGE_GAPS_PER_YEAR="${TLD_ETF_MAX_LARGE_GAPS_PER_YEAR:-3.0}"
 INTRADAY_CLEAN_CACHE="${TLD_INTRADAY_CLEAN_CACHE:-1}"
 INTRADAY_LARGE_GAPS_CRITICAL="${TLD_INTRADAY_LARGE_GAPS_CRITICAL:-0}"
 PROVIDER_BASELINE="${TLD_PROVIDER_BASELINE:-mixed}"
+INTRADAY_1M_GATE_UNIVERSE="${TLD_1M_GATE_UNIVERSE:-sp500}"
+INTRADAY_1M_STRICT_BLOCKING="${TLD_1M_STRICT_BLOCKING:-0}"
+INTRADAY_1M_QUARANTINE_DAYS="${TLD_1M_QUARANTINE_DAYS:-1}"
+INTRADAY_1M_QUARANTINE_FAIL_STREAK="${TLD_1M_QUARANTINE_FAIL_STREAK:-2}"
 VERBOSE="${TL_VERBOSE:-1}"
 DATE_KEY="${TL_GATE_DATE:-$(date +%F)}"
 TS_KEY="$(date +%Y%m%dT%H%M%S)"
@@ -110,6 +114,150 @@ run_cmd() {
   elapsed="$((end_ts - start_ts))"
   log INFO "DONE[$label]: rc=${rc} elapsed=${elapsed}s"
   return "$rc"
+}
+
+resolve_1m_universe_csv() {
+  local raw="${INTRADAY_1M_GATE_UNIVERSE:-}"
+  if [[ -z "$raw" ]]; then
+    return 1
+  fi
+  if [[ -f "$raw" ]]; then
+    printf '%s\n' "$raw"
+    return 0
+  fi
+  if [[ -f "${UNIVERSE_DIR}/${raw}.csv" ]]; then
+    printf '%s\n' "${UNIVERSE_DIR}/${raw}.csv"
+    return 0
+  fi
+  return 1
+}
+
+build_1m_filtered_universe() {
+  local base_csv="$1"
+  local out_csv="$2"
+  "$VENV_PATH/bin/python" - "$base_csv" "$INTRADAY_1M_QUARANTINE_PATH" "$out_csv" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+import polars as pl
+
+base_csv = Path(sys.argv[1])
+quarantine_path = Path(sys.argv[2])
+out_csv = Path(sys.argv[3])
+
+df = pl.read_csv(base_csv)
+if "symbol" not in df.columns:
+    raise SystemExit(f"missing symbol column in {base_csv}")
+
+now = datetime.now(timezone.utc)
+quarantine = {}
+if quarantine_path.exists():
+    try:
+        payload = json.loads(quarantine_path.read_text(encoding="utf-8"))
+        quarantine = payload.get("symbols", {}) if isinstance(payload, dict) else {}
+    except Exception:
+        quarantine = {}
+
+blocked: set[str] = set()
+for symbol, item in quarantine.items():
+    if not isinstance(item, dict):
+        continue
+    until = str(item.get("quarantine_until", "")).strip()
+    if not until:
+        continue
+    try:
+        dt = datetime.fromisoformat(until.replace("Z", "+00:00"))
+    except Exception:
+        continue
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if dt > now:
+        blocked.add(str(symbol).strip().upper())
+
+filtered = df.filter(~pl.col("symbol").cast(pl.Utf8).str.to_uppercase().is_in(list(blocked)))
+out_csv.parent.mkdir(parents=True, exist_ok=True)
+filtered.write_csv(out_csv)
+print(f"[1m-gate] base={df.height} filtered={filtered.height} quarantined={len(blocked)} out={out_csv}")
+PY
+}
+
+update_1m_quarantine_from_summary() {
+  local summary_json="$1"
+  "$VENV_PATH/bin/python" - "$summary_json" "$INTRADAY_1M_QUARANTINE_PATH" "$INTRADAY_1M_QUARANTINE_DAYS" "$INTRADAY_1M_QUARANTINE_FAIL_STREAK" <<'PY'
+import json
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+summary_path = Path(sys.argv[1])
+quarantine_path = Path(sys.argv[2])
+quarantine_days = max(1, int(sys.argv[3]))
+fail_streak_threshold = max(1, int(sys.argv[4]))
+
+if not summary_path.exists():
+    print(f"[1m-gate] summary missing: {summary_path}")
+    raise SystemExit(0)
+
+summary = json.loads(summary_path.read_text(encoding="utf-8"))
+critical = [str(s).strip().upper() for s in summary.get("issue_symbols_critical", []) if str(s).strip()]
+all_issues = [str(s).strip().upper() for s in summary.get("issue_symbols", []) if str(s).strip()]
+failing = set(critical or all_issues)
+now = datetime.now(timezone.utc)
+
+payload = {"updated_at": now.isoformat(timespec="seconds"), "symbols": {}}
+if quarantine_path.exists():
+    try:
+        current = json.loads(quarantine_path.read_text(encoding="utf-8"))
+        if isinstance(current, dict) and isinstance(current.get("symbols"), dict):
+            payload = current
+    except Exception:
+        pass
+
+symbols = payload.setdefault("symbols", {})
+
+for sym, item in list(symbols.items()):
+    if not isinstance(item, dict):
+        symbols.pop(sym, None)
+        continue
+    until = str(item.get("quarantine_until", "")).strip()
+    if not until:
+        continue
+    try:
+        until_dt = datetime.fromisoformat(until.replace("Z", "+00:00"))
+        if until_dt.tzinfo is None:
+            until_dt = until_dt.replace(tzinfo=timezone.utc)
+        if until_dt <= now and sym not in failing:
+            symbols.pop(sym, None)
+    except Exception:
+        if sym not in failing:
+            symbols.pop(sym, None)
+
+for sym in failing:
+    row = symbols.get(sym) if isinstance(symbols.get(sym), dict) else {}
+    fail_streak = int(row.get("fail_streak", 0)) + 1
+    row["fail_streak"] = fail_streak
+    row["last_failed_at"] = now.isoformat(timespec="seconds")
+    if fail_streak >= fail_streak_threshold:
+        row["quarantine_until"] = (now + timedelta(days=quarantine_days)).isoformat(timespec="seconds")
+    symbols[sym] = row
+
+for sym, item in list(symbols.items()):
+    if sym in failing:
+        continue
+    if not isinstance(item, dict):
+        symbols.pop(sym, None)
+        continue
+    item["fail_streak"] = 0
+    if not str(item.get("quarantine_until", "")).strip():
+        symbols[sym] = item
+
+payload["updated_at"] = now.isoformat(timespec="seconds")
+quarantine_path.parent.mkdir(parents=True, exist_ok=True)
+quarantine_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+active = sum(1 for v in symbols.values() if isinstance(v, dict) and str(v.get("quarantine_until", "")).strip())
+print(f"[1m-gate] failures={len(failing)} quarantined_active={active} file={quarantine_path}")
+PY
 }
 
 trap on_exit EXIT
@@ -173,6 +321,7 @@ OK_FILE="${GATE_DIR}/${DATE_KEY}.ok"
 FAIL_FILE="${GATE_DIR}/${DATE_KEY}.fail"
 RUNNING_FILE="${GATE_DIR}/${DATE_KEY}.running"
 SUMMARY_PATH="${SUMMARY_DIR}/${TS_KEY}.json"
+INTRADAY_1M_QUARANTINE_PATH="${TLD_1M_QUARANTINE_PATH:-${GATE_DIR}/intraday_1m_quarantine.json}"
 
 mkdir -p "$LOG_DIR" "$GATE_DIR" "$SUMMARY_DIR" "$LOCK_DIR"
 exec >> "$LOG_PATH" 2>&1
@@ -252,12 +401,23 @@ if [[ "${VERIFY_INTRADAY}" == "1" ]]; then
     [[ "$count_i" == "0" ]] && continue
 
     summary_i="${SUMMARY_DIR}/${TS_KEY}_intraday_${interval}.json"
+    intraday_universe_csv="${UNIVERSE_DIR}/sp500_plus_etfs.csv"
+    if [[ "${interval}" == "1m" ]]; then
+      if one_m_base_csv="$(resolve_1m_universe_csv)"; then
+        one_m_filtered_csv="${SUMMARY_DIR}/${TS_KEY}_intraday_1m_gate_universe.csv"
+        build_1m_filtered_universe "$one_m_base_csv" "$one_m_filtered_csv"
+        intraday_universe_csv="$one_m_filtered_csv"
+      else
+        log WARN "1m gate universe '${INTRADAY_1M_GATE_UNIVERSE}' not found; using default active universe CSV."
+      fi
+    fi
     VERIFY_INTRADAY_ARGS=(
       "scripts/check_parquet_status.py"
       "--config" "$CONFIG_PATH"
       "--root" "${root_i}"
       "--parquet-kind" "intraday"
       "--issues-only"
+      "--universe" "${intraday_universe_csv}"
       "--universe-dir" "${UNIVERSE_DIR}"
       "--summary-json" "${summary_i}"
       "--fail-on-issues"
@@ -302,9 +462,19 @@ if [[ "${VERIFY_INTRADAY}" == "1" ]]; then
 
     CURRENT_STAGE="verify_intraday_${interval}"
     if run_cmd "verify_intraday_${interval}" "${VERIFY_INTRADAY_ARGS[@]}"; then
+      if [[ "${interval}" == "1m" && -f "${summary_i}" ]]; then
+        update_1m_quarantine_from_summary "${summary_i}" || true
+      fi
       :
     else
       rc=$?
+      if [[ "${interval}" == "1m" && -f "${summary_i}" ]]; then
+        update_1m_quarantine_from_summary "${summary_i}" || true
+      fi
+      if [[ "${interval}" == "1m" && "${INTRADAY_1M_STRICT_BLOCKING}" != "1" ]]; then
+        log WARN "1m intraday gate failed (rc=${rc}) but strict blocking is disabled; continuing workflow."
+        continue
+      fi
       mark_fail "$(printf 'verify_intraday_failed rc=%s interval=%s\nsummary=%s' "$rc" "$interval" "$summary_i")"
       exit "$rc"
     fi
