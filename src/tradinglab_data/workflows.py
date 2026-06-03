@@ -154,6 +154,28 @@ class _IntradayLiveConfig:
     log_repeat_cooldown_hours: float
 
 
+def _normalized_symbol_set(values: object) -> set[str]:
+    if not isinstance(values, (list, tuple, set)):
+        return set()
+    out: set[str] = set()
+    for value in values:
+        symbol = str(value).strip().upper()
+        if symbol:
+            out.add(symbol)
+    return out
+
+
+def _resolve_intraday_symbol_exclusions(cfg: ConfigLike, *, section: str, universe_name: str) -> set[str]:
+    excluded = _normalized_symbol_set(cfg.get(section, "excluded_symbols", default=[]))
+    by_universe = cfg.get(section, "excluded_symbols_by_universe", default={})
+    if isinstance(by_universe, dict):
+        requested = str(universe_name or "").strip().lower()
+        for raw_name, raw_symbols in by_universe.items():
+            if str(raw_name).strip().lower() == requested:
+                excluded.update(_normalized_symbol_set(raw_symbols))
+    return excluded
+
+
 def _run_dir(runs_root: str | Path) -> Path:
     d = datetime.now().strftime("%Y-%m-%d")
     p = Path(runs_root) / d
@@ -308,6 +330,9 @@ def _load_intraday_research_symbols_from_cfg(
         frame = frame.filter(pl.col("source").fill_null("").str.to_lowercase() != "exchange")
     if "instrument_type" in frame.columns:
         frame = frame.filter(pl.col("instrument_type").cast(pl.String, strict=False).str.to_lowercase().is_in(["stock", "etf"]))
+    excluded_symbols = _resolve_intraday_symbol_exclusions(cfg, section="intraday", universe_name=universe_name)
+    if excluded_symbols:
+        frame = frame.filter(~pl.col("symbol").cast(pl.String, strict=False).str.to_uppercase().is_in(sorted(excluded_symbols)))
     symbols = frame.get_column("symbol").to_list()
     if symbols_override:
         requested = [canonicalize_symbol(str(symbol), overrides=load_ticker_overrides(overrides_path)) for symbol in symbols_override]
@@ -349,6 +374,9 @@ def _load_intraday_live_symbols_from_cfg(
         frame = frame.filter(pl.col("source").fill_null("").str.to_lowercase() != "exchange")
     if "instrument_type" in frame.columns:
         frame = frame.filter(pl.col("instrument_type").cast(pl.String, strict=False).str.to_lowercase().is_in(["stock", "etf"]))
+    excluded_symbols = _resolve_intraday_symbol_exclusions(cfg, section="intraday_live", universe_name=universe_name)
+    if excluded_symbols:
+        frame = frame.filter(~pl.col("symbol").cast(pl.String, strict=False).str.to_uppercase().is_in(sorted(excluded_symbols)))
     symbols = frame.get_column("symbol").to_list()
     if symbols_override:
         requested = [canonicalize_symbol(str(symbol), overrides=load_ticker_overrides(overrides_path)) for symbol in symbols_override]

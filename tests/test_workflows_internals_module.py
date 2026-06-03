@@ -143,6 +143,21 @@ def test_load_intraday_live_symbols_uses_default_universe_when_name_is_blank(tmp
     assert "MISSING" in capsys.readouterr().out
 
 
+def test_resolve_intraday_symbol_exclusions_matches_universe_case_insensitively(dummy_cfg_factory):
+    cfg = dummy_cfg_factory(
+        {
+            "intraday_live": {
+                "excluded_symbols": ["BASE"],
+                "excluded_symbols_by_universe": {"EU_ETF": ["POLY.SW", "MVEU.L"]},
+            }
+        }
+    )
+
+    excluded = workflows._resolve_intraday_symbol_exclusions(cfg, section="intraday_live", universe_name="eu_etf")
+
+    assert excluded == {"BASE", "POLY.SW", "MVEU.L"}
+
+
 def test_migrate_symbol_alias_parquet_moves_daily_and_intraday(tmp_path: Path, monkeypatch, capsys):
     daily_root = tmp_path / "daily"
     intraday_root = tmp_path / "intraday"
