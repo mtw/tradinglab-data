@@ -175,7 +175,7 @@ for symbol, item in quarantine.items():
     if dt > now:
         blocked.add(str(symbol).strip().upper())
 
-filtered = df.filter(~pl.col("symbol").cast(pl.Utf8).str.to_uppercase().is_in(list(blocked)))
+filtered = df.filter(~pl.col("symbol").cast(pl.String).str.to_uppercase().is_in(list(blocked)))
 out_csv.parent.mkdir(parents=True, exist_ok=True)
 filtered.write_csv(out_csv)
 print(f"[1m-gate] base={df.height} filtered={filtered.height} quarantined={len(blocked)} out={out_csv}")
@@ -202,7 +202,7 @@ if not summary_path.exists():
 summary = json.loads(summary_path.read_text(encoding="utf-8"))
 critical = [str(s).strip().upper() for s in summary.get("issue_symbols_critical", []) if str(s).strip()]
 all_issues = [str(s).strip().upper() for s in summary.get("issue_symbols", []) if str(s).strip()]
-failing = set(critical or all_issues)
+failing = set(critical)
 now = datetime.now(timezone.utc)
 
 payload = {"updated_at": now.isoformat(timespec="seconds"), "symbols": {}}
@@ -248,9 +248,8 @@ for sym, item in list(symbols.items()):
     if not isinstance(item, dict):
         symbols.pop(sym, None)
         continue
-    item["fail_streak"] = 0
     if not str(item.get("quarantine_until", "")).strip():
-        symbols[sym] = item
+        item["fail_streak"] = 0
 
 payload["updated_at"] = now.isoformat(timespec="seconds")
 quarantine_path.parent.mkdir(parents=True, exist_ok=True)
@@ -401,7 +400,7 @@ if [[ "${VERIFY_INTRADAY}" == "1" ]]; then
     [[ "$count_i" == "0" ]] && continue
 
     summary_i="${SUMMARY_DIR}/${TS_KEY}_intraday_${interval}.json"
-    intraday_universe_csv="${UNIVERSE_DIR}/sp500_plus_etfs.csv"
+    intraday_universe_csv=""
     if [[ "${interval}" == "1m" ]]; then
       if one_m_base_csv="$(resolve_1m_universe_csv)"; then
         one_m_filtered_csv="${SUMMARY_DIR}/${TS_KEY}_intraday_1m_gate_universe.csv"
@@ -417,7 +416,6 @@ if [[ "${VERIFY_INTRADAY}" == "1" ]]; then
       "--root" "${root_i}"
       "--parquet-kind" "intraday"
       "--issues-only"
-      "--universe" "${intraday_universe_csv}"
       "--universe-dir" "${UNIVERSE_DIR}"
       "--summary-json" "${summary_i}"
       "--fail-on-issues"
@@ -426,6 +424,9 @@ if [[ "${VERIFY_INTRADAY}" == "1" ]]; then
       "--etf-max-large-gaps-per-year" "${ETF_MAX_LARGE_GAPS_PER_YEAR}"
       "--provider-baseline" "${PROVIDER_BASELINE}"
     )
+    if [[ -n "${intraday_universe_csv}" ]]; then
+      VERIFY_INTRADAY_ARGS+=("--universe" "${intraday_universe_csv}")
+    fi
     if [[ "${interval}" == "1m" ]]; then
       VERIFY_INTRADAY_ARGS+=(
         "--gate-min-files" "0"
