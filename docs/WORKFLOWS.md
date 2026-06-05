@@ -495,6 +495,20 @@ Config precedence for this wrapper:
 - `configs/config.local.yaml` when it exists
 - `configs/config.yaml` otherwise
 
+Daily maintenance behavior for this wrapper:
+
+- runs `tradinglab-data update`, then daily parquet verification, then legacy intraday-cache verification for configured intervals
+- `TLD_VERIFY_INTRADAY=1` enables intraday verification, default `1`
+- `TLD_INTRADAY_INTERVALS` selects verified legacy intraday intervals, default `5m,1m`
+- `TLD_1M_GATE_UNIVERSE` selects the universe shard or CSV used for the `1m` gate, default `sp500`
+- the `1m` gate writes a temporary filtered universe CSV after applying ticker overrides and removing currently quarantined effective symbols
+- `TLD_1M_QUARANTINE_PATH` overrides the persisted `1m` quarantine state JSON path
+- `TLD_1M_QUARANTINE_FAIL_STREAK` sets how many consecutive critical `1m` failures trigger quarantine, default `2`
+- `TLD_1M_QUARANTINE_DAYS` sets how long quarantined `1m` symbols stay excluded from the gate universe, default `1`
+- `TLD_1M_STRICT_BLOCKING=1` makes a failing `1m` gate stop the wrapper immediately; default `0` logs the failure, updates quarantine state, and continues
+- quarantine matching is done on effective canonical symbols, so ticker overrides such as `BRK.B -> BRK-B` are respected by the gate
+- `TLD_FAIL_SEVERITY`, `TLD_MIN_PARQUET_FILES`, `TLD_MAX_ZERO_BYTE`, `TLD_MAX_MISSING_RATIO`, `TLD_MAX_DROP_RATIO`, and `TLD_SAMPLE_READ_FILES` continue to control the verifier thresholds
+
 Crypto maintenance behavior for this wrapper:
 
 - `TLD_CRYPTO_REFRESH_UNIVERSE=1` refreshes the configured dynamic universe before updates

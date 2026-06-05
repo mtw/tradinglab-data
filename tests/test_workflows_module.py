@@ -325,6 +325,33 @@ def test_load_intraday_live_symbols_applies_universe_exclusions(
     assert selected == ["GOOD.L"]
 
 
+def test_load_intraday_research_symbols_applies_universe_exclusions(
+    monkeypatch,
+    dummy_cfg_factory,
+    tmp_path: Path,
+):
+    universe_dir = tmp_path / "universes"
+    universe_dir.mkdir(parents=True, exist_ok=True)
+    (universe_dir / "pilot.csv").write_text(
+        "symbol,source,instrument_type\nEXCL,universe,stock\nKEEP,universe,stock\n",
+        encoding="utf-8",
+    )
+    cfg = dummy_cfg_factory(
+        {
+            "paths": {"universe_csv": tmp_path / "u.csv", "universe_dir": universe_dir},
+            "intraday": {
+                "excluded_symbols_by_universe": {"pilot": ["EXCL"]},
+            },
+        }
+    )
+    intraday_cfg = workflows._read_intraday_research_config(cfg)
+    monkeypatch.setattr(workflows, "load_ticker_overrides", lambda path: {})
+
+    selected = workflows._load_intraday_research_symbols_from_cfg(cfg, intraday_cfg, universe="pilot")
+
+    assert selected == ["KEEP"]
+
+
 def test_read_intraday_research_config_defaults(dummy_cfg_factory):
     cfg = dummy_cfg_factory(
         {

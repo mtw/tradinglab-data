@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import polars as pl
@@ -178,6 +179,52 @@ def _resolve_intraday_symbol_exclusions(
     if overrides:
         return {canonicalize_symbol(s, overrides=overrides) for s in raw}
     return raw
+
+
+def _write_filtered_quarantine_universe(
+    base_csv: str | Path,
+    quarantine_path: str | Path,
+    out_csv: str | Path,
+    *,
+    ticker_overrides_csv: str | Path | None = None,
+) -> tuple[int, int, int]:
+    frame = load_universe_frame(base_csv, ticker_overrides_path=ticker_overrides_csv)
+    if "symbol" not in frame.columns:
+        raise ValueError(f"missing symbol column in {base_csv}")
+
+    overrides = load_ticker_overrides(ticker_overrides_csv)
+    now = datetime.now(timezone.utc)
+    blocked: set[str] = set()
+    quarantine_file = Path(quarantine_path)
+    if quarantine_file.exists():
+        try:
+            payload = json.loads(quarantine_file.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        symbols = payload.get("symbols", {}) if isinstance(payload, dict) else {}
+        if isinstance(symbols, dict):
+            for raw_symbol, item in symbols.items():
+                if not isinstance(item, dict):
+                    continue
+                until = str(item.get("quarantine_until", "")).strip()
+                if not until:
+                    continue
+                try:
+                    until_dt = datetime.fromisoformat(until.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+                if until_dt.tzinfo is None:
+                    until_dt = until_dt.replace(tzinfo=timezone.utc)
+                if until_dt.astimezone(timezone.utc) > now:
+                    blocked.add(canonicalize_symbol(str(raw_symbol), overrides=overrides))
+
+    base_count = frame.height
+    if blocked:
+        frame = frame.filter(~pl.col("symbol").cast(pl.String, strict=False).str.to_uppercase().is_in(sorted(blocked)))
+    output_path = Path(out_csv)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    frame.write_csv(output_path)
+    return base_count, frame.height, len(blocked)
 
 
 def _run_dir(runs_root: str | Path) -> Path:

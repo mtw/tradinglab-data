@@ -135,50 +135,24 @@ resolve_1m_universe_csv() {
 build_1m_filtered_universe() {
   local base_csv="$1"
   local out_csv="$2"
-  "$VENV_PATH/bin/python" - "$base_csv" "$INTRADAY_1M_QUARANTINE_PATH" "$out_csv" <<'PY'
-import json
+  "$VENV_PATH/bin/python" - "$CONFIG_PATH" "$base_csv" "$INTRADAY_1M_QUARANTINE_PATH" "$out_csv" <<'PY'
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-import polars as pl
 
-base_csv = Path(sys.argv[1])
-quarantine_path = Path(sys.argv[2])
-out_csv = Path(sys.argv[3])
+config_path = Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(config_path.parent.parent / "src"))
 
-df = pl.read_csv(base_csv)
-if "symbol" not in df.columns:
-    raise SystemExit(f"missing symbol column in {base_csv}")
+from tradinglab_data.config import Config, symbol_overrides_path  # noqa: E402
+from tradinglab_data.workflows import _write_filtered_quarantine_universe  # noqa: E402
 
-now = datetime.now(timezone.utc)
-quarantine = {}
-if quarantine_path.exists():
-    try:
-        payload = json.loads(quarantine_path.read_text(encoding="utf-8"))
-        quarantine = payload.get("symbols", {}) if isinstance(payload, dict) else {}
-    except Exception:
-        quarantine = {}
-
-blocked: set[str] = set()
-for symbol, item in quarantine.items():
-    if not isinstance(item, dict):
-        continue
-    until = str(item.get("quarantine_until", "")).strip()
-    if not until:
-        continue
-    try:
-        dt = datetime.fromisoformat(until.replace("Z", "+00:00"))
-    except Exception:
-        continue
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    if dt > now:
-        blocked.add(str(symbol).strip().upper())
-
-filtered = df.filter(~pl.col("symbol").cast(pl.String).str.to_uppercase().is_in(list(blocked)))
-out_csv.parent.mkdir(parents=True, exist_ok=True)
-filtered.write_csv(out_csv)
-print(f"[1m-gate] base={df.height} filtered={filtered.height} quarantined={len(blocked)} out={out_csv}")
+cfg = Config.load(config_path)
+base_count, filtered_count, blocked_count = _write_filtered_quarantine_universe(
+    base_csv=Path(sys.argv[2]),
+    quarantine_path=Path(sys.argv[3]),
+    out_csv=Path(sys.argv[4]),
+    ticker_overrides_csv=symbol_overrides_path(cfg),
+)
+print(f"[1m-gate] base={base_count} filtered={filtered_count} quarantined={blocked_count} out={sys.argv[4]}")
 PY
 }
 

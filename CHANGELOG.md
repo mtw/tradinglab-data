@@ -4,6 +4,9 @@
 
 Work targeting the next patch release, `0.4.3`, should be recorded here.
 
+- fix the daily maintenance wrapper `1m` quarantine gate so symbol quarantine matches effective canonical symbols after ticker overrides
+- add public config and workflow documentation for intraday exclusion lists and the `1m` maintenance-wrapper quarantine controls
+
 ## [0.4.2] - 2026-05-31
 
 Patch release.

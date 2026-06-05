@@ -50,12 +50,15 @@ ci-matrix:
 	  fi; \
 	  echo "  python$$v — $$py"; \
 	  tmp=$$(mktemp -d); \
+	  log=$$tmp/pytest.log; \
 	  $$py -m venv $$tmp/venv 2>/dev/null; \
-	  $$tmp/venv/bin/pip install -q -e ".[test,dev]" 2>/dev/null; \
-	  if PYTHONPATH=src $$tmp/venv/bin/python -m pytest -q --no-header --no-cov tests 2>&1 | tail -3; then \
+	  $$tmp/venv/bin/pip install -q ".[test,dev]" 2>/dev/null; \
+	  if $$tmp/venv/bin/python -m pytest -q --no-header --no-cov tests >$$log 2>&1; then \
+	    tail -3 $$log; \
 	    passed=$$((passed+1)); \
 	    echo "  python$$v — PASSED"; \
 	  else \
+	    tail -20 $$log; \
 	    echo "  python$$v — FAILED ***"; \
 	    failed=$$((failed+1)); \
 	  fi; \

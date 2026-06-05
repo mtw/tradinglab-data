@@ -11,7 +11,7 @@ The package now uses a simpler model:
 
 Consumers should not depend on a second standalone API-version number.
 
-Current package version in [`pyproject.toml`](../pyproject.toml): `0.4.2`
+Current package version in [`pyproject.toml`](../pyproject.toml): `0.4.3`
 
 ## Compatibility Model
 
@@ -939,6 +939,8 @@ Operational keys currently consumed by workflows:
   - `backoff_max_seconds`
   - `threads`
   - `log_repeat_cooldown_hours`
+  - `excluded_symbols`
+  - `excluded_symbols_by_universe`
 - `intraday_live.*`:
   - `enabled`
   - `live_root`
@@ -953,6 +955,8 @@ Operational keys currently consumed by workflows:
   - `backoff_max_seconds`
   - `threads`
   - `log_repeat_cooldown_hours`
+  - `excluded_symbols`
+  - `excluded_symbols_by_universe`
 - `crypto.*`:
   - `provider`
   - `exchange`

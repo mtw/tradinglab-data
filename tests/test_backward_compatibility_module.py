@@ -199,7 +199,19 @@ def test_wrapper_crypto_defaults_can_be_disabled_cleanly():
     assert 'if [[ "${CRYPTO_UPDATE}" == "1" ]]; then' in script
     assert 'if [[ "${VERIFY_CRYPTO}" == "1" ]] && [[ -d "${CRYPTO_ROOT}" ]]; then' in script
     assert 'scripts/check_crypto_status.py' in script
+    assert "_write_filtered_quarantine_universe" in script
+    assert "symbol_overrides_path" in script
     assert "trap 'rmdir" not in script
+
+
+def test_ci_matrix_runs_installed_package_and_checks_real_pytest_exit_status():
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    assert '$$tmp/venv/bin/pip install -q ".[test,dev]"' in makefile
+    assert 'PYTHONPATH=src $$tmp/venv/bin/python -m pytest' not in makefile
+    assert '>$$log 2>&1' in makefile
+    assert 'tail -3 $$log;' in makefile
+    assert 'tail -20 $$log;' in makefile
 
 
 def test_dedicated_crypto_wrapper_uses_check_verify_fix_check_flow():

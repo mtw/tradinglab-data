@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import polars as pl
@@ -156,6 +157,57 @@ def test_resolve_intraday_symbol_exclusions_matches_universe_case_insensitively(
     excluded = workflows._resolve_intraday_symbol_exclusions(cfg, section="intraday_live", universe_name="eu_etf")
 
     assert excluded == {"BASE", "POLY.SW", "MVEU.L"}
+
+
+def test_normalized_symbol_set_returns_empty_for_non_container():
+    assert workflows._normalized_symbol_set(None) == set()
+    assert workflows._normalized_symbol_set(42) == set()
+    assert workflows._normalized_symbol_set({"key": "val"}) == set()
+
+
+def test_resolve_intraday_symbol_exclusions_applies_ticker_overrides(dummy_cfg_factory):
+    cfg = dummy_cfg_factory({"intraday": {"excluded_symbols": ["BRK.B"]}})
+
+    excluded = workflows._resolve_intraday_symbol_exclusions(
+        cfg, section="intraday", universe_name="", overrides={"BRK.B": "BRK-B"}
+    )
+
+    assert excluded == {"BRK-B"}
+
+
+def test_write_filtered_quarantine_universe_applies_ticker_overrides_to_quarantine(tmp_path: Path):
+    base_csv = tmp_path / "sp500.csv"
+    base_csv.write_text("symbol,active\nBRK.B,1\nAAPL,1\n", encoding="utf-8")
+    overrides_csv = tmp_path / "symbol_overrides.csv"
+    overrides_csv.write_text("raw,yahoo\nBRK.B,BRK-B\n", encoding="utf-8")
+    quarantine_json = tmp_path / "intraday_1m_quarantine.json"
+    quarantine_json.write_text(
+        json.dumps(
+            {
+                "symbols": {
+                    "BRK-B": {
+                        "fail_streak": 2,
+                        "quarantine_until": "2099-01-01T00:00:00+00:00",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    out_csv = tmp_path / "filtered.csv"
+
+    base_count, filtered_count, blocked_count = workflows._write_filtered_quarantine_universe(
+        base_csv=base_csv,
+        quarantine_path=quarantine_json,
+        out_csv=out_csv,
+        ticker_overrides_csv=overrides_csv,
+    )
+
+    filtered = pl.read_csv(out_csv)
+    assert base_count == 2
+    assert filtered_count == 1
+    assert blocked_count == 1
+    assert filtered.get_column("symbol").to_list() == ["AAPL"]
 
 
 def test_migrate_symbol_alias_parquet_moves_daily_and_intraday(tmp_path: Path, monkeypatch, capsys):

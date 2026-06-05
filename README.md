@@ -19,7 +19,7 @@ This repository does not own signal generation, screening decisions, research wo
 
 Latest PyPI release: `0.4.2`
 
-Current development version: `0.4.2`
+Current development version: `0.4.3`
 
 Artifact schema version: `v0.4.0`
 
