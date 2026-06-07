@@ -11,7 +11,7 @@
 #   make build        — wheel + sdist + twine check
 #   make clean        — remove build/dist artefacts
 
-VENV_PY  := .venv/bin/python
+PYTHON ?= $(shell if [ -x .venv/bin/python ]; then printf '%s' .venv/bin/python; elif [ -x .venv314/bin/python ]; then printf '%s' .venv314/bin/python; else command -v python3 || command -v python; fi)
 
 .PHONY: ci ci-matrix lint typecheck test smoke build clean
 
@@ -20,23 +20,23 @@ ci: lint typecheck test smoke build
 	@echo "✓ all CI checks passed"
 
 lint:
-	$(VENV_PY) -m ruff check src tests
+	$(PYTHON) -m ruff check src tests
 
 typecheck:
-	$(VENV_PY) -m mypy src
+	$(PYTHON) -m mypy src
 
 test:
-	PYTHONPATH=src $(VENV_PY) -m pytest -q tests --cov-fail-under=85
+	PYTHONPATH=src $(PYTHON) -m pytest -q tests --cov-fail-under=85
 
 smoke:
-	PYTHONPATH=src $(VENV_PY) -m tradinglab_data.cli schema --format markdown
+	PYTHONPATH=src $(PYTHON) -m tradinglab_data.cli schema --format markdown
 
 build:
-	$(VENV_PY) -m build
-	$(VENV_PY) -m twine check dist/*
+	$(PYTHON) -m build
+	$(PYTHON) -m twine check dist/*
 
-# CI matrix: 3.10 3.11 3.12 3.13
-MATRIX_VERSIONS := 3.10 3.11 3.12 3.13
+# CI matrix: 3.10 3.11 3.12 3.13 3.14
+MATRIX_VERSIONS := 3.10 3.11 3.12 3.13 3.14
 
 ci-matrix:
 	@echo "Running pytest across available Python versions..."

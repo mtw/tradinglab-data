@@ -210,6 +210,69 @@ def test_write_filtered_quarantine_universe_applies_ticker_overrides_to_quaranti
     assert filtered.get_column("symbol").to_list() == ["AAPL"]
 
 
+def test_write_filtered_quarantine_universe_handles_malformed_quarantine_entries(tmp_path: Path):
+    base_csv = tmp_path / "sp500.csv"
+    base_csv.write_text("symbol,active\nAAA,1\nBBB,1\nCCC,1\nDDD,1\nEEE,1\n", encoding="utf-8")
+    quarantine_json = tmp_path / "intraday_1m_quarantine.json"
+    quarantine_json.write_text(
+        json.dumps(
+            {
+                "symbols": {
+                    "AAA": "not-a-dict",
+                    "BBB": {},
+                    "CCC": {"quarantine_until": "not-a-date"},
+                    "DDD": {"quarantine_until": "2000-01-01T00:00:00+00:00"},
+                    "EEE": {"quarantine_until": "2099-01-01T00:00:00"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    out_csv = tmp_path / "filtered.csv"
+
+    base_count, filtered_count, blocked_count = workflows._write_filtered_quarantine_universe(
+        base_csv=base_csv,
+        quarantine_path=quarantine_json,
+        out_csv=out_csv,
+    )
+
+    filtered = pl.read_csv(out_csv)
+    assert base_count == 5
+    assert filtered_count == 4
+    assert blocked_count == 1
+    assert filtered.get_column("symbol").to_list() == ["AAA", "BBB", "CCC", "DDD"]
+
+
+def test_write_filtered_quarantine_universe_ignores_invalid_json_and_requires_symbol_column(
+    tmp_path: Path,
+    monkeypatch,
+):
+    base_csv = tmp_path / "sp500.csv"
+    base_csv.write_text("symbol,active\nAAA,1\n", encoding="utf-8")
+    quarantine_json = tmp_path / "intraday_1m_quarantine.json"
+    quarantine_json.write_text("{not-json", encoding="utf-8")
+    out_csv = tmp_path / "filtered.csv"
+
+    base_count, filtered_count, blocked_count = workflows._write_filtered_quarantine_universe(
+        base_csv=base_csv,
+        quarantine_path=quarantine_json,
+        out_csv=out_csv,
+    )
+
+    assert base_count == 1
+    assert filtered_count == 1
+    assert blocked_count == 0
+    assert pl.read_csv(out_csv).get_column("symbol").to_list() == ["AAA"]
+
+    monkeypatch.setattr(workflows, "load_universe_frame", lambda *args, **kwargs: pl.DataFrame({"ticker": ["AAA"]}))
+    with pytest.raises(ValueError, match="missing symbol column"):
+        workflows._write_filtered_quarantine_universe(
+            base_csv=tmp_path / "missing_symbol.csv",
+            quarantine_path=quarantine_json,
+            out_csv=tmp_path / "unused.csv",
+        )
+
+
 def test_migrate_symbol_alias_parquet_moves_daily_and_intraday(tmp_path: Path, monkeypatch, capsys):
     daily_root = tmp_path / "daily"
     intraday_root = tmp_path / "intraday"
