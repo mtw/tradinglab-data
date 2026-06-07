@@ -150,9 +150,12 @@ def fetch_yahoo_quote_html(
             final_url = response.geturl()
             status = getattr(response, "status", 200)
     except urllib.error.HTTPError as exc:
-        payload = exc.read().decode("utf-8", errors="replace")
-        final_url = exc.geturl()
-        status = int(exc.code)
+        try:
+            payload = exc.read().decode("utf-8", errors="replace")
+            final_url = exc.geturl()
+            status = int(exc.code)
+        finally:
+            exc.close()
     return payload, final_url, status
 
 
