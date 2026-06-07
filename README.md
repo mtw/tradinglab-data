@@ -326,7 +326,7 @@ python -m twine check dist/*
 Use `@pytest.mark.network` for live upstream smoke tests so CI can exclude them by default.
 Network tests should skip cleanly when an upstream provider blocks or returns no live data.
 
-GitHub CI runs Ruff, mypy, pytest with non-network coverage, a schema CLI smoke check, build validation, `twine check`, and wheel install smoke checks across Python 3.10 through 3.13.
+GitHub CI runs Ruff, mypy, pytest with non-network coverage, a schema CLI smoke check, build validation, `twine check`, and wheel install smoke checks across Python 3.10 through 3.14.
 
 PyPI publishing is handled by GitHub Trusted Publishing through `.github/workflows/publish.yml`. The publishing job uses GitHub OIDC with a `pypi` environment and does not require a long-lived PyPI API token secret.
 

@@ -18,6 +18,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Office/Business :: Financial",
   "Topic :: Software Development :: Libraries :: Python Modules",
   "Typing :: Typed",
@@ -66,6 +67,11 @@ test = "pytest -q tests --cov-fail-under=85"
 lint = "ruff check src tests scripts"
 typecheck = "mypy src"
 build-check = "python -m build && python -m twine check dist/*"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.venv*",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tradinglab_data"]

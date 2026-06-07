@@ -6,7 +6,7 @@ dist/
 build/
 var/
 refactor/
-.venv/
+.venv*/
 configs/config.local.yaml
 .clawpatch/
 local_docs/
